@@ -37,6 +37,70 @@ from duh.kernel.messages import (
     UserMessage,
 )
 
+# Max chars per tool result sent to the model (prevents context explosion)
+MAX_RESULT_SIZE = 80_000
+
+
+def _extract_tool_use_blocks(content: Any) -> list[dict[str, Any]]:
+    """Extract tool_use blocks from message content (list of blocks)."""
+    if not isinstance(content, list):
+        return []
+    blocks = []
+    for block in content:
+        bt = block.get("type", "") if isinstance(block, dict) else getattr(block, "type", "")
+        if bt == "tool_use":
+            if isinstance(block, dict):
+                blocks.append(block)
+            else:
+                blocks.append({
+                    "type": "tool_use",
+                    "id": getattr(block, "id", ""),
+                    "name": getattr(block, "name", ""),
+                    "input": getattr(block, "input", {}),
+                })
+    return blocks
+
+
+def _get_content(msg: Any) -> Any:
+    """Get content from a Message or dict."""
+    if isinstance(msg, Message):
+        return msg.content
+    if isinstance(msg, dict):
+        return msg.get("content", [])
+    return []
+
+
+def _get_stop_reason(msg: Any) -> str:
+    """Extract stop_reason from assistant message metadata."""
+    if isinstance(msg, Message):
+        return msg.metadata.get("stop_reason", "end_turn")
+    if isinstance(msg, dict):
+        return msg.get("metadata", {}).get("stop_reason", "end_turn")
+    return "end_turn"
+
+
+def _is_partial(msg: Any) -> bool:
+    """Check if message is a partial (mid-stream error) response."""
+    if isinstance(msg, Message):
+        return msg.metadata.get("partial", False)
+    if isinstance(msg, dict):
+        return msg.get("metadata", {}).get("partial", False)
+    return False
+
+
+def _to_message(msg: Any) -> Message:
+    """Ensure msg is a Message object."""
+    if isinstance(msg, Message):
+        return msg
+    return Message(role="assistant", content=msg.get("content", "") if isinstance(msg, dict) else "")
+
+
+def _truncate_result(text: str) -> str:
+    """Truncate tool result to MAX_RESULT_SIZE to prevent context explosion."""
+    if len(text) <= MAX_RESULT_SIZE:
+        return text
+    return text[:MAX_RESULT_SIZE] + f"\n... (truncated, {len(text) - MAX_RESULT_SIZE} chars omitted)"
+
 
 async def query(
     *,
@@ -83,7 +147,6 @@ async def query(
                 thinking=thinking,
                 tool_choice=tool_choice,
             ):
-                # Pass through stream events
                 event_type = event.get("type", "") if isinstance(event, dict) else ""
 
                 if event_type in ("text_delta", "thinking_delta", "content_block_start",
@@ -94,43 +157,13 @@ async def query(
                     assistant_message = event.get("message")
                     yield event
 
-                    # Skip tool extraction for partial messages (mid-stream errors)
-                    is_partial = False
-                    if assistant_message and isinstance(assistant_message, Message):
-                        is_partial = assistant_message.metadata.get("partial", False)
-                    elif assistant_message and isinstance(assistant_message, dict):
-                        is_partial = assistant_message.get("metadata", {}).get("partial", False)
-
-                    if is_partial:
-                        # Partial message — don't extract tool_use blocks,
-                        # they may be incomplete. Exit loop with error.
+                    if _is_partial(assistant_message):
                         yield {"type": "done", "stop_reason": "error", "turns": turn}
                         return
 
-                    # Extract tool_use blocks
-                    if assistant_message:
-                        content = (
-                            assistant_message.content
-                            if isinstance(assistant_message, Message)
-                            else assistant_message.get("content", [])
-                            if isinstance(assistant_message, dict)
-                            else []
-                        )
-                        if isinstance(content, list):
-                            for block in content:
-                                bt = (
-                                    block.get("type", "")
-                                    if isinstance(block, dict)
-                                    else getattr(block, "type", "")
-                                )
-                                if bt == "tool_use":
-                                    tool_use_blocks.append(
-                                        block if isinstance(block, dict)
-                                        else {"type": "tool_use",
-                                              "id": getattr(block, "id", ""),
-                                              "name": getattr(block, "name", ""),
-                                              "input": getattr(block, "input", {})}
-                                    )
+                    tool_use_blocks = _extract_tool_use_blocks(
+                        _get_content(assistant_message)
+                    )
 
         except Exception as e:
             yield {"type": "error", "error": str(e)}
@@ -138,9 +171,7 @@ async def query(
 
         # --- No tool use → done ---
         if not tool_use_blocks:
-            stop_reason = "end_turn"
-            if assistant_message and isinstance(assistant_message, Message):
-                stop_reason = assistant_message.metadata.get("stop_reason", "end_turn")
+            stop_reason = _get_stop_reason(assistant_message) if assistant_message else "end_turn"
             yield {"type": "done", "stop_reason": stop_reason, "turns": turn}
             return
 
@@ -173,7 +204,9 @@ async def query(
             if deps.run_tool:
                 try:
                     output = await deps.run_tool(tool_name, tool_input)
-                    result_text = output if isinstance(output, str) else str(output)
+                    result_text = _truncate_result(
+                        output if isinstance(output, str) else str(output)
+                    )
                     result = ToolResultBlock(
                         tool_use_id=tool_id,
                         content=result_text,
@@ -196,16 +229,10 @@ async def query(
                    "output": result.content, "is_error": result.is_error}
 
         # --- Build next turn messages ---
-        # Add assistant message to history
         if assistant_message:
-            if isinstance(assistant_message, Message):
-                current_messages.append(assistant_message)
-            else:
-                current_messages.append(
-                    Message(role="assistant", content=assistant_message.get("content", ""))
-                )
+            current_messages.append(_to_message(assistant_message))
 
-        # Add tool results as user message
+        # All tool results in ONE user message (required by Anthropic API)
         current_messages.append(
             Message(
                 role="user",
@@ -218,8 +245,6 @@ async def query(
                 ],
             )
         )
-
-        # Continue the loop (next turn will call the model again)
 
     # Max turns reached
     yield {"type": "done", "stop_reason": "max_turns", "turns": turn}

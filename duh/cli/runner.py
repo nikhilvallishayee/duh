@@ -203,6 +203,18 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     if memory_prompt:
         system_prompt_parts.append(memory_prompt)
 
+    # --- Inject environment context (cwd, platform, shell) ---
+    import platform as _platform
+    _shell = os.environ.get("SHELL", "unknown").rsplit("/", 1)[-1]
+    system_prompt_parts.append(
+        f"<environment>\n"
+        f"cwd: {cwd}\n"
+        f"platform: {_platform.system().lower()}\n"
+        f"shell: {_shell}\n"
+        f"python: {_platform.python_version()}\n"
+        f"</environment>"
+    )
+
     # --- Inject git context ---
     from duh.kernel.git_context import get_git_context, get_git_warnings
     git_ctx = get_git_context(cwd)

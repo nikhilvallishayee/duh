@@ -104,6 +104,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Override the default system prompt.")
     parser.add_argument("--tool-choice", type=str, default=None,
                         help="Control tool use: auto (default), none (text only), any (force tool), or a tool name.")
+    parser.add_argument("-c", "--continue", action="store_true", dest="continue_session",
+                        default=False, help="Continue the most recent session.")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Resume a specific session by ID.")
     parser.add_argument("--debug", "-d", action="store_true", default=False,
                         help="Enable debug output (full event tracing to stderr).")
 
@@ -205,23 +209,107 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     if debug:
         sys.stderr.write(f"[DEBUG] provider={provider_name} model={model}\n")
 
-    tools = get_all_tools()
-    executor = NativeExecutor(tools=tools, cwd=os.getcwd())
+    cwd = os.getcwd()
+    tools = list(get_all_tools())
+
+    # --- Wire DUH.md / AGENTS.md instructions ---
+    from duh.config import load_instructions
+    instruction_list = load_instructions(cwd)
+    system_prompt_parts = [args.system_prompt or SYSTEM_PROMPT]
+    if instruction_list:
+        system_prompt_parts.extend(instruction_list if isinstance(instruction_list, list) else [instruction_list])
+
+    # --- Wire plugins (discover and merge tools) ---
+    from duh.plugins import discover_plugins, PluginRegistry
+    plugin_specs = discover_plugins()
+    plugin_registry = PluginRegistry()
+    for spec in plugin_specs:
+        plugin_registry.load(spec)
+    tools.extend(plugin_registry.plugin_tools)
+
+    # --- Wire MCP (connect servers, merge tools) ---
+    mcp_executor = None
+    from duh.config import Config
+    try:
+        config = Config.load(cwd)
+        if config.mcp_servers:
+            from duh.adapters.mcp_executor import MCPExecutor
+            mcp_executor = MCPExecutor.from_config(config.mcp_servers)
+            # MCP tools will be discovered after connect
+    except Exception:
+        pass  # MCP is optional
+
+    # --- Wire hooks ---
+    from duh.hooks import HookRegistry
+    hook_registry = HookRegistry()
+    try:
+        config = Config.load(cwd)
+        if config.hooks:
+            hook_registry = HookRegistry.from_config(config.hooks)
+    except Exception:
+        pass
+
+    # --- Wire compactor ---
+    from duh.adapters.simple_compactor import SimpleCompactor
+    compactor = SimpleCompactor()
+
+    # --- Wire session store ---
+    from duh.adapters.file_store import FileStore
+    store = FileStore()
+
+    # --- Build executor and approver ---
+    executor = NativeExecutor(tools=tools, cwd=cwd)
     approver: Any = AutoApprover() if args.dangerously_skip_permissions else InteractiveApprover()
 
     deps = Deps(
         call_model=call_model,
         run_tool=executor.run,
         approve=approver.check,
+        compact=compactor.compact,
     )
     config = EngineConfig(
         model=model,
-        system_prompt=args.system_prompt or SYSTEM_PROMPT,
+        system_prompt="\n\n".join(system_prompt_parts),
         tools=tools,
         max_turns=args.max_turns,
         tool_choice=args.tool_choice,
     )
     engine = Engine(deps=deps, config=config)
+
+    # --- Resume session if --continue or --resume ---
+    if getattr(args, "continue_session", False) or args.resume:
+        try:
+            if args.resume:
+                prev = await store.load(args.resume)
+            else:
+                sessions = await store.list_sessions()
+                if sessions:
+                    latest = sorted(sessions, key=lambda s: s.get("modified", ""), reverse=True)[0]
+                    prev = await store.load(latest.get("session_id") or latest.get("id", ""))
+                else:
+                    prev = None
+            if prev:
+                from duh.kernel.messages import Message as Msg
+                for m in prev:
+                    role = m.get("role", "user") if isinstance(m, dict) else getattr(m, "role", "user")
+                    content = m.get("content", "") if isinstance(m, dict) else getattr(m, "content", "")
+                    engine._messages.append(Msg(role=role, content=content))
+                if debug:
+                    logger.debug("resumed %d messages", len(prev))
+            elif debug:
+                logger.debug("no session to resume")
+        except Exception as e:
+            import traceback
+            logger.debug("resume failed: %s", e)
+            if debug:
+                traceback.print_exc(file=sys.stderr)
+
+    # --- Session start hooks ---
+    try:
+        from duh.hooks import HookEvent
+        await hook_registry.execute(HookEvent.SESSION_START, {"session_id": engine.session_id})
+    except Exception:
+        pass
 
     json_events: list[dict[str, Any]] = []
     had_output = False
@@ -283,6 +371,29 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         sys.stdout.write("\n")
     elif had_output:
         print()  # final newline after streaming
+
+    # --- Save session ---
+    try:
+        await store.save(engine.session_id, engine.messages)
+        if debug:
+            logger.debug("session saved: %s (%d messages)", engine.session_id, len(engine.messages))
+    except Exception as e:
+        if debug:
+            logger.debug("session save failed: %s", e)
+
+    # --- Session end hooks ---
+    from duh.hooks import HookEvent
+    try:
+        await hook_registry.execute(HookEvent.SESSION_END, {"session_id": engine.session_id})
+    except Exception:
+        pass
+
+    # --- Disconnect MCP ---
+    if mcp_executor:
+        try:
+            await mcp_executor.disconnect_all()
+        except Exception:
+            pass
 
     return 1 if had_error else 0
 

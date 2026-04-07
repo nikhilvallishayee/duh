@@ -103,6 +103,7 @@ class TestAgentToolCall:
         mock_run.assert_awaited_once_with(
             prompt="say hello",
             agent_type="general",
+            model="",
             deps=tool._parent_deps,
         )
 

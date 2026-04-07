@@ -1,0 +1,2 @@
+#!/bin/bash
+exec /Users/nomind/Code/duh/.venv/bin/python3 -m duh "$@"

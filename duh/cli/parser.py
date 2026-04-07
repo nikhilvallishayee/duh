@@ -30,6 +30,9 @@ def build_parser() -> argparse.ArgumentParser:
                         default="text", help="Input format (default: text).")
     parser.add_argument("--dangerously-skip-permissions", action="store_true",
                         default=False, help="Auto-approve all tool calls.")
+    parser.add_argument("--permission-mode", type=str, default=None,
+                        choices=["default", "acceptEdits", "plan", "bypassPermissions", "dontAsk", "auto"],
+                        help="Permission mode (SDK compat). bypassPermissions = auto-approve.")
     parser.add_argument("--system-prompt", type=str, default=None,
                         help="Override the default system prompt.")
     parser.add_argument("--tool-choice", type=str, default=None,

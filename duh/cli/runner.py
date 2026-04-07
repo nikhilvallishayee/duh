@@ -221,7 +221,8 @@ async def run_print_mode(args: argparse.Namespace) -> int:
 
     # --- Build executor and approver ---
     executor = NativeExecutor(tools=tools, cwd=cwd)
-    approver: Any = AutoApprover() if args.dangerously_skip_permissions else InteractiveApprover()
+    skip_perms = args.dangerously_skip_permissions or getattr(args, "permission_mode", None) in ("bypassPermissions", "dontAsk")
+    approver: Any = AutoApprover() if skip_perms else InteractiveApprover()
 
     deps = Deps(
         call_model=call_model,

@@ -33,7 +33,7 @@ Use the `FileStore` adapter (already implemented) with the `SessionStore` port f
   def-456.jsonl
 ```
 
-Unlike Claude Code which scopes sessions to the project directory, D.U.H. uses a single flat directory. Project-scoping can be added later via a session metadata field.
+Unlike some harnesses which scope sessions to the project directory, D.U.H. uses a single flat directory. Project-scoping can be added later via a session metadata field.
 
 ### JSONL Format
 

@@ -5,19 +5,17 @@
 
 ## Context
 
-Claude Code has a powerful hook system that lets users run shell commands, HTTP webhooks, prompt-based hooks, and agent-based hooks at 20+ lifecycle events (PreToolUse, PostToolUse, SessionStart, SessionEnd, Notification, Stop, etc.). This enables linting before tool calls, logging after tool calls, custom notifications, and session setup scripts.
-
-The implementation is spread across ~17 files and ~2500 LOC: `hooks.ts` (the main dispatch), `hookEvents.ts` (event broadcasting), `hooksSettings.ts` (config loading), `hooksConfigManager.ts` (event metadata), `sessionHooks.ts` (in-memory session hooks), `execAgentHook.ts`, `execHttpHook.ts`, `execPromptHook.ts`, `AsyncHookRegistry.ts`, and more.
+Production harnesses have powerful hook systems that let users run shell commands, HTTP webhooks, prompt-based hooks, and agent-based hooks at 20+ lifecycle events. This enables linting before tool calls, logging after tool calls, custom notifications, and session setup scripts.
 
 ### The copy-paste problem
 
-Claude Code has 20+ individual functions like `executePreToolUseHooks()`, `executePostToolUseHooks()`, `executeSessionStartHooks()`, etc. Each follows the same pattern: gather hooks for this event, build the JSON input, iterate hooks, execute each one, aggregate results. This is ~800 lines of near-identical code.
+A common anti-pattern is having 20+ individual dispatch functions (one per event) that each follow the same pattern: gather hooks, build JSON input, iterate, execute, aggregate results. This creates hundreds of lines of near-identical code.
 
 D.U.H. replaces this with one function: `execute_hooks(event, data)`. An event descriptor table defines the event names and their input shapes. The dispatch logic is written once.
 
 ### What D.U.H. keeps
 
-| Claude Code feature | D.U.H. | Rationale |
+| Typical feature | D.U.H. | Rationale |
 |---------------------|--------|-----------|
 | Shell command hooks | Yes | Core use case |
 | Function callback hooks | Yes | Essential for in-process validation |
@@ -103,7 +101,7 @@ The caller passes the event and the data dict. The registry looks up all hooks r
 }
 ```
 
-This matches Claude Code's config shape so users migrating from Claude Code can reuse their hook definitions.
+This uses a standard config shape compatible with other harnesses, so users can reuse their hook definitions.
 
 ### 5. Hook execution semantics
 
@@ -146,7 +144,7 @@ Kernel (engine.py)
 
 - Adding a new event = add one enum value, zero dispatch code
 - Adding a new hook type = add one executor function
-- The entire hook system is ~200 LOC (vs Claude Code's ~2500 LOC)
+- The entire hook system is compact -- one dispatch function, not 20+ per-event functions
 - No per-event boilerplate functions
-- Config format is compatible with Claude Code's (subset)
+- Config format is compatible with other harnesses (subset of the standard shape)
 - Function hooks enable in-process validation without subprocess overhead

@@ -5,7 +5,7 @@
 
 ## Context
 
-Claude Code has a sophisticated 3-tier permission system. Aider has none. The universal harness needs defense-in-depth that's simple to understand and extend.
+Leading harnesses have multi-tier permission systems. Others have none. The universal harness needs defense-in-depth that's simple to understand and extend.
 
 ## Decision
 

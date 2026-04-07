@@ -5,35 +5,17 @@
 
 ## Context
 
-Claude Code has a substantial plugin system spanning ~45 files and ~5000+ LOC in `src/utils/plugins/`. It handles marketplace-based discovery (official and third-party), git-based installation, NPM packages, version management, auto-update, blocklists, dependency resolution, zip caching, symlink management, and even an anti-impersonation system for marketplace names.
-
-Key pieces:
-- `pluginLoader.ts` -- discovers and loads plugins from marketplaces and local directories. Handles manifest validation, hooks loading, duplicate detection, enable/disable state
-- `schemas.ts` -- Zod schemas for plugin manifests, marketplace entries, anti-impersonation patterns
-- `pluginDirectories.ts` -- manages plugin installation paths
-- `loadPluginAgents.ts`, `loadPluginCommands.ts`, `loadPluginHooks.ts` -- load specific plugin components
-- `marketplaceManager.ts` -- marketplace registry, fetching, caching
-- `pluginBlocklist.ts` -- security blocklist for known-bad plugins
-- `pluginVersioning.ts` -- semver-based version management
-
-Plugin directory structure in Claude Code:
-```
-my-plugin/
-  plugin.json          # Manifest with metadata
-  commands/            # Custom slash commands (.md files)
-  agents/              # Custom agent definitions (.md files)
-  hooks/               # Hook configurations (hooks.json)
-```
+Production harnesses can have substantial plugin systems handling marketplace-based discovery, git-based installation, package management, version management, auto-update, blocklists, dependency resolution, caching, and anti-impersonation systems.
 
 ### What D.U.H. simplifies
 
-Claude Code's plugin system is enterprise-grade: marketplace federation, git transports, NPM resolution, SSRF guards, homograph attack prevention, policy-based source filtering. D.U.H. needs none of this at v0.1.
+Enterprise-grade plugin systems include marketplace federation, git transports, package resolution, SSRF guards, homograph attack prevention, and policy-based source filtering. D.U.H. needs none of this at v0.1.
 
 What matters: a plugin is a package that provides tools, hooks, commands, or provider adapters. Discovery uses Python's standard `entry_points` mechanism. No marketplace. No git cloning. No zip caching.
 
 ### What D.U.H. keeps
 
-| Claude Code feature | D.U.H. | Rationale |
+| Typical feature | D.U.H. | Rationale |
 |---------------------|--------|-----------|
 | Plugin provides tools | Yes | Core use case |
 | Plugin provides hooks | Yes | Lifecycle extensibility |
@@ -97,7 +79,7 @@ For local development, plugins can also be loaded from a directory:
   hooks.json        # Hook configurations
 ```
 
-The `--plugin-dir` CLI flag or `DUH_PLUGIN_DIR` env var adds a directory to the plugin search path. This is the same pattern Claude Code uses for session-only plugins.
+The `--plugin-dir` CLI flag or `DUH_PLUGIN_DIR` env var adds a directory to the plugin search path. This is a common pattern for session-only plugins.
 
 ### 4. Plugin lifecycle
 

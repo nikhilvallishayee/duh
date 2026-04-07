@@ -7,28 +7,28 @@
 
 Production AI coding agents typically have multi-layered configuration systems with project-level instructions, user settings, and environment-specific overrides.
 
-### Settings layers (Claude Code)
+### Settings layers (typical harness)
 
-Settings are loaded from 5 sources in increasing priority:
+Settings are loaded from multiple sources in increasing priority:
 
-1. **User settings** (`~/.claude/settings.json`) -- global preferences
-2. **Project settings** (`.claude/settings.json`) -- shared per-repo, checked in
-3. **Local settings** (`.claude/settings.local.json`) -- gitignored, per-machine
-4. **Flag settings** (`--settings path` CLI flag) -- explicit override
-5. **Policy settings** (`/etc/claude-code/managed-settings.json`) -- admin/MDM
+1. **User settings** -- global preferences
+2. **Project settings** -- shared per-repo, checked in
+3. **Local settings** -- gitignored, per-machine
+4. **Flag settings** -- explicit CLI override
+5. **Policy settings** -- admin/enterprise managed
 
 Later sources override earlier ones. Settings include permissions, hooks, MCP servers, environment variables, model preferences, and feature flags.
 
-### CLAUDE.md (instruction files)
+### Instruction files
 
-Separate from JSON settings, `CLAUDE.md` files provide natural-language instructions that are injected into the system prompt. These are loaded from 4 tiers:
+Separate from JSON settings, markdown instruction files provide natural-language instructions that are injected into the system prompt. These are loaded from multiple tiers:
 
-1. **Managed** (`/etc/claude-code/CLAUDE.md`) -- admin instructions for all users
-2. **User** (`~/.claude/CLAUDE.md`) -- personal global instructions
-3. **Project** (`CLAUDE.md`, `.claude/CLAUDE.md`, `.claude/rules/*.md`) -- per-repo instructions, traversed from cwd up to git root
-4. **Local** (`CLAUDE.local.md`) -- gitignored personal project instructions
+1. **Managed** -- admin instructions for all users
+2. **User** -- personal global instructions
+3. **Project** -- per-repo instructions, traversed from cwd up to git root
+4. **Local** -- gitignored personal project instructions
 
-Project instruction files support directory traversal, include directives, frontmatter parsing, and gitignore exclusion patterns.
+Instruction file loaders handle directory traversal, include directives, frontmatter parsing, and gitignore exclusion patterns.
 
 ### What D.U.H. simplifies
 
@@ -43,7 +43,7 @@ D.U.H. renames `CLAUDE.md` to `DUH.md` (same concept, different branding). D.U.H
 
 ### What D.U.H. keeps
 
-| Claude Code feature | D.U.H. | Rationale |
+| Typical feature | D.U.H. | Rationale |
 |---------------------|--------|-----------|
 | Multi-layer settings precedence | Yes (simplified) | Essential for override chains |
 | CLAUDE.md instruction files | Yes, as DUH.md | Core feature, renamed |

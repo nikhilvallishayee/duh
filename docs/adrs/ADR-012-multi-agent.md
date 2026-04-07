@@ -5,17 +5,13 @@
 
 ## Context
 
-Claude Code supports subagent spawning: the model can call an `AgentTool` to create a child agent that runs in parallel with its own conversation, tools, and context. This is spread across ~14 files and ~3000 LOC in `src/tools/AgentTool/`.
+Production harnesses support subagent spawning: the model can call an agent tool to create a child agent that runs with its own conversation, tools, and context. Typical implementations include:
 
-Key pieces:
-- `AgentTool.tsx` -- the tool definition (schema, description, execution logic). Accepts `prompt`, `subagent_type`, `model`, `run_in_background`, `isolation`, `cwd`
-- `runAgent.ts` -- creates a subagent context, resolves tools, builds a system prompt, runs the query loop, records transcripts. ~400 LOC of lifecycle orchestration
-- `forkSubagent.ts` -- a special "fork" mode where the child inherits the parent's full conversation for prompt cache sharing
-- `builtInAgents.ts` -- defines built-in agent types: `general_purpose`, `explore`, `plan`, `verification`, `statusline_setup`, `claude_code_guide`
-- `loadAgentsDir.ts` -- discovers user-defined agents from `.claude/agents/*.md` frontmatter files
-- `agentToolUtils.ts` -- tool resolution, progress tracking, result classification
-- `agentMemory.ts` -- agent-scoped memory injection
-- Worktree isolation via `utils/worktree.ts` -- git worktree for file-safe parallel work
+- A tool definition accepting prompt, agent type, model, isolation mode, and working directory
+- Lifecycle orchestration: create context, resolve tools, build system prompt, run query loop
+- Built-in agent types (general purpose, coder, researcher, planner, etc.)
+- User-defined agents from frontmatter markdown files
+- Worktree isolation via git worktrees for file-safe parallel work
 
 ### The core insight
 
@@ -23,7 +19,7 @@ Each agent is a new `Engine` with its own conversation history, system prompt, t
 
 ### What D.U.H. keeps
 
-| Claude Code feature | D.U.H. | Rationale |
+| Typical feature | D.U.H. | Rationale |
 |---------------------|--------|-----------|
 | Agent = new Engine instance | Yes | Core pattern, simple and correct |
 | Built-in agent types (general, coder, researcher, planner) | Yes | Useful defaults |
@@ -96,7 +92,7 @@ This prevents parallel agents from conflicting on file writes.
 
 The parent sends a prompt to the child via the `AgentTool`. The child runs to completion. The child's final assistant message text is returned as the tool result. There is no bidirectional communication during execution.
 
-Future work: a `SendMessage` tool for inter-agent communication (as Claude Code has for multi-agent swarms). Not needed for v0.1.
+Future work: a `SendMessage` tool for inter-agent communication (as some harnesses have for multi-agent swarms). Not needed for v0.1.
 
 ## Architecture
 

@@ -63,7 +63,7 @@ $ duh doctor
 
 ```
 duh/
-  kernel/           # 5 files, <1K LOC — the agentic loop
+  kernel/           # 5 files — the agentic loop
     loop.py         # async generator: prompt → model → tool → result
     engine.py       # session lifecycle wrapper
     tool.py         # Tool protocol (4 required fields)
@@ -154,7 +154,7 @@ duh --version                        # version
 | ADR | Decision |
 |-----|----------|
 | [001](docs/adrs/ADR-001-project-vision.md) | Project vision — 10 principles |
-| [002](docs/adrs/ADR-002-kernel-design.md) | Kernel — 5 files, <1K LOC, zero deps |
+| [002](docs/adrs/ADR-002-kernel-design.md) | Kernel — 5 files, zero deps |
 | [003](docs/adrs/ADR-003-ports-and-adapters.md) | Ports and adapters — providers don't give uniform interfaces |
 | [004](docs/adrs/ADR-004-tool-protocol.md) | Tool protocol — 4 fields vs 30 methods |
 | [005](docs/adrs/ADR-005-safety-architecture.md) | Safety — 3 layers: schema, approval, tool validation |
@@ -176,7 +176,7 @@ duh --version                        # version
 | Language | TypeScript | Go | Python | Rust | **Python** |
 | Multi-provider | No | Yes | Yes | Yes | **Yes** |
 | MCP support | Full | Config | None | Native | **Adapter** |
-| Clean kernel | Large monolith | Lean | Focused | Multi-crate | **<1K LOC** |
+| Clean kernel | Large monolith | Lean | Focused | Multi-crate | **Clean** |
 | Safety layers | 3 | 1 | 0 | 1 | **3** |
 | tool_choice | Yes | No | No | No | **Yes (uniform)** |
 | Open source | No | Yes | Yes | Yes | **Yes** |

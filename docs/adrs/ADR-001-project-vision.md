@@ -6,7 +6,7 @@
 ## Context
 
 AI coding agents are becoming essential developer tools, but every harness is either:
-- Locked to one provider (Claude Code → Anthropic only)
+- Locked to one provider (e.g. Anthropic-only harnesses)
 - Missing production safety (Aider → no permissions)
 - Too complex to understand (production harnesses grow to hundreds of thousands of lines)
 - Not extensible via standards (Aider → no MCP)
@@ -44,5 +44,5 @@ duh/
 
 - Every feature starts with a test, then a spec, then code
 - Every commit builds on the previous — clean, incremental, reviewable
-- Reference implementations: Claude Code TS, open_tengu Python, OpenCode Go, Codex
+- Reference implementations studied: leading TS, Python, Go, and Rust harnesses
 - No single codebase is copied — universal patterns are extracted

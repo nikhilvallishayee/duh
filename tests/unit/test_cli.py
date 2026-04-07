@@ -256,7 +256,7 @@ class TestPrintModeMocked:
             args = parser.parse_args(["-p", "test"])
             code = await run_print_mode(args)
 
-        assert code == 0
+        assert code == 1  # errors return non-zero exit
         captured = capsys.readouterr()
         assert "something broke" in captured.err
 

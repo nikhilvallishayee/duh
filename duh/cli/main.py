@@ -1,15 +1,11 @@
 """CLI entry point for D.U.H.
 
 Usage:
-    duh -p "fix the bug"              # print mode (non-interactive)
-    duh                                # interactive REPL (future)
+    duh -p "fix the bug"              # print mode
     duh --version                      # show version
-    duh --help                         # show help
-    duh --model claude-opus-4-6        # specify model
-    duh --max-turns 5                  # limit turns
-    duh --output-format json           # JSON output
-    duh --dangerously-skip-permissions # bypass approval
     duh doctor                         # diagnostics
+    duh -p "prompt" --debug            # full event tracing
+    duh -p "prompt" --model opus       # specify model
 """
 
 from __future__ import annotations
@@ -17,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import sys
 from typing import Any
@@ -27,19 +24,57 @@ from duh.adapters.native_executor import NativeExecutor
 from duh.adapters.approvers import AutoApprover, InteractiveApprover
 from duh.kernel.deps import Deps
 from duh.kernel.engine import Engine, EngineConfig
+from duh.kernel.messages import Message
 from duh.tools.registry import get_all_tools
 
-
-# ---------------------------------------------------------------------------
-# System prompt
-# ---------------------------------------------------------------------------
+logger = logging.getLogger("duh")
 
 SYSTEM_PROMPT = (
-    "You are D.U.H. (Duh is a Universal Harness), an AI coding assistant. "
+    "You are D.U.H. (D.U.H. is a Universal Harness), an AI coding assistant. "
     "You have access to tools for reading, writing, editing files, running "
     "bash commands, globbing, and grepping. Use them to help the user with "
     "their coding tasks. Be concise and direct."
 )
+
+# ---------------------------------------------------------------------------
+# Error interpretation — translate API errors into human-friendly messages
+# ---------------------------------------------------------------------------
+
+_ERROR_HINTS: dict[str, str] = {
+    "credit balance is too low": (
+        "Your API key has no credits. Go to console.anthropic.com "
+        "→ Plans & Billing to add credits."
+    ),
+    "invalid x-api-key": (
+        "Your API key is invalid. Check ANTHROPIC_API_KEY is set correctly."
+    ),
+    "authentication_error": (
+        "Authentication failed. Verify your ANTHROPIC_API_KEY."
+    ),
+    "rate_limit": (
+        "Rate limited. Wait a moment and try again."
+    ),
+    "overloaded": (
+        "The API is overloaded. Try again in a few seconds, "
+        "or use --model claude-haiku-4-5-20251001 for lower latency."
+    ),
+    "prompt is too long": (
+        "Your conversation is too long for the model's context window. "
+        "Try a shorter prompt or start a new session."
+    ),
+    "Could not resolve authentication": (
+        "No API key found. Set ANTHROPIC_API_KEY:\n"
+        "  export ANTHROPIC_API_KEY=sk-ant-..."
+    ),
+}
+
+
+def _interpret_error(error_text: str) -> str:
+    """Translate raw API errors into actionable user messages."""
+    for pattern, hint in _ERROR_HINTS.items():
+        if pattern.lower() in error_text.lower():
+            return hint
+    return error_text
 
 
 # ---------------------------------------------------------------------------
@@ -47,58 +82,28 @@ SYSTEM_PROMPT = (
 # ---------------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
         prog="duh",
-        description="D.U.H. -- Duh is a Universal Harness. Provider-agnostic AI coding agent.",
+        description="D.U.H. -- D.U.H. is a Universal Harness. Provider-agnostic AI coding agent.",
     )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"duh {duh.__version__}",
-    )
-    parser.add_argument(
-        "-p", "--prompt",
-        type=str,
-        default=None,
-        help="Run in print mode: execute a single prompt and exit.",
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="claude-sonnet-4-6",
-        help="Model to use (default: claude-sonnet-4-6).",
-    )
-    parser.add_argument(
-        "--max-turns",
-        type=int,
-        default=10,
-        help="Maximum number of agentic turns (default: 10).",
-    )
-    parser.add_argument(
-        "--output-format",
-        type=str,
-        choices=["text", "json"],
-        default="text",
-        help="Output format (default: text).",
-    )
-    parser.add_argument(
-        "--dangerously-skip-permissions",
-        action="store_true",
-        default=False,
-        help="Skip permission prompts (auto-approve all tool calls).",
-    )
-    parser.add_argument(
-        "--system-prompt",
-        type=str,
-        default=None,
-        help="Override the default system prompt.",
-    )
+    parser.add_argument("--version", action="version", version=f"duh {duh.__version__}")
+    parser.add_argument("-p", "--prompt", type=str, default=None,
+                        help="Run in print mode: execute a single prompt and exit.")
+    parser.add_argument("--model", type=str, default="claude-sonnet-4-6",
+                        help="Model to use (default: claude-sonnet-4-6).")
+    parser.add_argument("--max-turns", type=int, default=10,
+                        help="Maximum agentic turns (default: 10).")
+    parser.add_argument("--output-format", type=str, choices=["text", "json"],
+                        default="text", help="Output format (default: text).")
+    parser.add_argument("--dangerously-skip-permissions", action="store_true",
+                        default=False, help="Auto-approve all tool calls.")
+    parser.add_argument("--system-prompt", type=str, default=None,
+                        help="Override the default system prompt.")
+    parser.add_argument("--debug", "-d", action="store_true", default=False,
+                        help="Enable debug output (full event tracing to stderr).")
 
-    # Subcommands
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("doctor", help="Run diagnostics and health checks.")
-
     return parser
 
 
@@ -107,57 +112,30 @@ def build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 
 def run_doctor() -> int:
-    """Run diagnostic checks and print results."""
     checks: list[tuple[str, bool, str]] = []
 
-    # Python version
     py_version = sys.version.split()[0]
     py_ok = sys.version_info >= (3, 12)
-    checks.append((
-        "Python version",
-        py_ok,
-        f"{py_version} {'(>= 3.12)' if py_ok else '(need >= 3.12)'}",
-    ))
+    checks.append(("Python version", py_ok,
+                    f"{py_version} {'(>= 3.12)' if py_ok else '(need >= 3.12)'}"))
 
-    # ANTHROPIC_API_KEY
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    key_ok = bool(api_key)
-    checks.append((
-        "ANTHROPIC_API_KEY",
-        key_ok,
-        "set" if key_ok else "not set",
-    ))
+    checks.append(("ANTHROPIC_API_KEY", bool(api_key), "set" if api_key else "not set"))
 
-    # Config directory
     config_dir = os.path.expanduser("~/.config/duh")
-    config_exists = os.path.isdir(config_dir)
-    checks.append((
-        "Config directory",
-        True,  # not a hard failure
-        f"{config_dir} {'(exists)' if config_exists else '(not created yet)'}",
-    ))
+    checks.append(("Config directory", True,
+                    f"{config_dir} {'(exists)' if os.path.isdir(config_dir) else '(not created yet)'}"))
 
-    # anthropic SDK
     try:
         import anthropic  # noqa: F401
-        sdk_ok = True
-        sdk_msg = "installed"
+        checks.append(("anthropic SDK", True, "installed"))
     except ImportError:
-        sdk_ok = False
-        sdk_msg = "not installed"
-    checks.append(("anthropic SDK", sdk_ok, sdk_msg))
+        checks.append(("anthropic SDK", False, "not installed (pip install anthropic)"))
 
-    # Available tools
-    from duh.tools.registry import get_all_tools
     tools = get_all_tools()
-    tool_names = [getattr(t, "name", "?") for t in tools]
-    checks.append((
-        "Tools available",
-        len(tools) > 0,
-        ", ".join(tool_names) if tool_names else "none",
-    ))
+    checks.append(("Tools available", len(tools) > 0,
+                    ", ".join(getattr(t, "name", "?") for t in tools)))
 
-    # Print results
     all_ok = True
     for name, ok, detail in checks:
         status = "ok" if ok else "FAIL"
@@ -165,12 +143,7 @@ def run_doctor() -> int:
             all_ok = False
         sys.stdout.write(f"  [{status:>4}] {name}: {detail}\n")
 
-    sys.stdout.write("\n")
-    if all_ok:
-        sys.stdout.write("All checks passed.\n")
-    else:
-        sys.stdout.write("Some checks failed. See above.\n")
-
+    sys.stdout.write(f"\n{'All checks passed.' if all_ok else 'Some checks failed.'}\n")
     return 0 if all_ok else 1
 
 
@@ -179,66 +152,120 @@ def run_doctor() -> int:
 # ---------------------------------------------------------------------------
 
 async def run_print_mode(args: argparse.Namespace) -> int:
-    """Execute a single prompt in print mode, stream output, and exit."""
+    debug = args.debug
+    if debug:
+        logging.basicConfig(level=logging.DEBUG, stream=sys.stderr,
+                            format="[%(levelname)s] %(name)s: %(message)s")
 
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
-        sys.stderr.write("Error: ANTHROPIC_API_KEY environment variable is not set.\n")
+        sys.stderr.write(
+            "Error: ANTHROPIC_API_KEY not set.\n"
+            "  export ANTHROPIC_API_KEY=sk-ant-...\n"
+        )
         return 1
 
     tools = get_all_tools()
-    provider = AnthropicProvider(api_key=api_key)
+    provider = AnthropicProvider(api_key=api_key, model=args.model)
     executor = NativeExecutor(tools=tools, cwd=os.getcwd())
-
-    if args.dangerously_skip_permissions:
-        approver: Any = AutoApprover()
-    else:
-        approver = InteractiveApprover()
-
-    system_prompt = args.system_prompt or SYSTEM_PROMPT
+    approver: Any = AutoApprover() if args.dangerously_skip_permissions else InteractiveApprover()
 
     deps = Deps(
         call_model=provider.stream,
         run_tool=executor.run,
         approve=approver.check,
     )
-
     config = EngineConfig(
         model=args.model,
-        system_prompt=system_prompt,
+        system_prompt=args.system_prompt or SYSTEM_PROMPT,
         tools=tools,
         max_turns=args.max_turns,
     )
-
     engine = Engine(deps=deps, config=config)
 
     json_events: list[dict[str, Any]] = []
+    had_output = False
+    had_error = False
 
     async for event in engine.run(args.prompt):
         event_type = event.get("type", "")
 
+        if debug:
+            logger.debug("event: %s", _summarize_event(event))
+
         if args.output_format == "json":
-            # Collect events for JSON output (skip non-serializable)
-            serializable = _make_serializable(event)
-            json_events.append(serializable)
+            json_events.append(_make_serializable(event))
         else:
-            # Text streaming mode
             if event_type == "text_delta":
                 sys.stdout.write(event.get("text", ""))
                 sys.stdout.flush()
+                had_output = True
+
+            elif event_type == "thinking_delta":
+                if debug:
+                    sys.stderr.write(f"\033[2;3m{event.get('text', '')}\033[0m")
+                    sys.stderr.flush()
+
+            elif event_type == "tool_use":
+                name = event.get("name", "?")
+                inp = event.get("input", {})
+                summary = ", ".join(f"{k}={v!r}" for k, v in list(inp.items())[:2])
+                sys.stderr.write(f"  \033[33m> {name}\033[0m({summary})\n")
+                sys.stderr.flush()
+
+            elif event_type == "tool_result":
+                if event.get("is_error"):
+                    sys.stderr.write(f"  \033[31m! {event.get('output', '')[:200]}\033[0m\n")
+                elif debug:
+                    sys.stderr.write(f"  \033[32m< {str(event.get('output', ''))[:100]}\033[0m\n")
+
+            elif event_type == "assistant":
+                # Check for API errors in the assistant message
+                msg = event.get("message")
+                if isinstance(msg, Message) and msg.metadata.get("is_error"):
+                    error_text = msg.text
+                    hint = _interpret_error(error_text)
+                    sys.stderr.write(f"\n\033[31mError: {hint}\033[0m\n")
+                    had_error = True
+
             elif event_type == "error":
-                sys.stderr.write(f"Error: {event.get('error', 'unknown')}\n")
+                hint = _interpret_error(event.get("error", "unknown"))
+                sys.stderr.write(f"\n\033[31mError: {hint}\033[0m\n")
+                had_error = True
+
+            elif event_type == "done":
+                if debug:
+                    logger.debug("done: turns=%s reason=%s",
+                                 event.get("turns"), event.get("stop_reason"))
 
     if args.output_format == "json":
-        sys.stdout.write(json.dumps(json_events, indent=2))
-    else:
+        sys.stdout.write(json.dumps(json_events, indent=2, default=str))
+        sys.stdout.write("\n")
+    elif had_output:
         print()  # final newline after streaming
 
-    return 0
+    return 1 if had_error else 0
+
+
+def _summarize_event(event: dict[str, Any]) -> str:
+    """One-line summary of an event for debug output."""
+    t = event.get("type", "?")
+    if t == "text_delta":
+        return f"text_delta: {event.get('text', '')[:40]!r}"
+    if t == "tool_use":
+        return f"tool_use: {event.get('name', '?')}({event.get('input', {})})"
+    if t == "tool_result":
+        return f"tool_result: err={event.get('is_error')} out={str(event.get('output', ''))[:60]!r}"
+    if t == "assistant":
+        msg = event.get("message")
+        text = msg.text[:60] if isinstance(msg, Message) else "?"
+        return f"assistant: {text!r}"
+    if t == "error":
+        return f"error: {event.get('error', '')[:80]}"
+    return f"{t}: {str(event)[:80]}"
 
 
 def _make_serializable(event: dict[str, Any]) -> dict[str, Any]:
-    """Convert an event dict to a JSON-serializable form."""
     out: dict[str, Any] = {}
     for k, v in event.items():
         if hasattr(v, "__dataclass_fields__"):
@@ -256,18 +283,14 @@ def _make_serializable(event: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns exit code."""
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    # Subcommand: doctor
     if args.command == "doctor":
         return run_doctor()
 
-    # Print mode
     if args.prompt is not None:
         return asyncio.run(run_print_mode(args))
 
-    # No prompt and no subcommand → show help (REPL is future)
     parser.print_help()
     return 0

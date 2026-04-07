@@ -210,7 +210,31 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         sys.stderr.write(f"[DEBUG] provider={provider_name} model={model}\n")
 
     cwd = os.getcwd()
-    tools = list(get_all_tools())
+
+    # --- Load skills (ADR-017) ---
+    from duh.kernel.skill import load_all_skills
+    loaded_skills = load_all_skills(cwd)
+
+    # --- Wire plugins (discover and merge tools) ---
+    from duh.plugins import discover_plugins, PluginRegistry
+    plugin_specs = discover_plugins()
+    plugin_registry = PluginRegistry()
+    for spec in plugin_specs:
+        plugin_registry.load(spec)
+
+    # --- Build deferred tools from plugin tools (ADR-018) ---
+    from duh.tools.tool_search import DeferredTool
+    deferred_tools: list[DeferredTool] = []
+    for pt in plugin_registry.plugin_tools:
+        if hasattr(pt, "input_schema") and hasattr(pt, "name"):
+            deferred_tools.append(DeferredTool(
+                name=pt.name,
+                description=getattr(pt, "description", ""),
+                input_schema=getattr(pt, "input_schema", {}),
+                source="plugin",
+            ))
+
+    tools = list(get_all_tools(skills=loaded_skills, deferred_tools=deferred_tools))
 
     # --- Wire DUH.md / AGENTS.md instructions ---
     from duh.config import load_instructions
@@ -219,13 +243,36 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     if instruction_list:
         system_prompt_parts.extend(instruction_list if isinstance(instruction_list, list) else [instruction_list])
 
-    # --- Wire plugins (discover and merge tools) ---
-    from duh.plugins import discover_plugins, PluginRegistry
-    plugin_specs = discover_plugins()
-    plugin_registry = PluginRegistry()
-    for spec in plugin_specs:
-        plugin_registry.load(spec)
-    tools.extend(plugin_registry.plugin_tools)
+    # --- Wire per-project memory ---
+    from duh.adapters.memory_store import FileMemoryStore
+    from duh.kernel.memory import build_memory_prompt
+    memory_store = FileMemoryStore(cwd=cwd)
+    memory_prompt = build_memory_prompt(memory_store)
+    if memory_prompt:
+        system_prompt_parts.append(memory_prompt)
+
+    # --- Inject skill descriptions into system prompt (ADR-017) ---
+    if loaded_skills:
+        skill_lines = [
+            "\nAvailable skills (invoke via the Skill tool):"
+        ]
+        for s in loaded_skills:
+            hint = f" ({s.argument_hint})" if s.argument_hint else ""
+            skill_lines.append(f"- {s.name}: {s.description}{hint}")
+        system_prompt_parts.append("\n".join(skill_lines))
+
+    # --- Inject deferred tools into system prompt (ADR-018) ---
+    if deferred_tools:
+        dt_lines = [
+            "\n<deferred-tools>",
+            "The following tools are available but their schemas are not yet loaded.",
+            "Use the ToolSearch tool to load a tool's full schema before calling it.",
+            "",
+        ]
+        for dt in deferred_tools:
+            dt_lines.append(f"- {dt.name}: {dt.description}")
+        dt_lines.append("</deferred-tools>")
+        system_prompt_parts.append("\n".join(dt_lines))
 
     # --- Wire MCP (connect servers, merge tools) ---
     mcp_executor = None

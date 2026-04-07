@@ -12,7 +12,7 @@ D.U.H. is the scaffolding between you and any AI model. It handles the agentic l
 
 ## Principles
 
-Built on Kent Beck's 4 Rules of Simple Design, Unix philosophy, Clean Architecture, and hard-won lessons from analyzing Claude Code (513K LOC TS), OpenCode (Go), Aider (Python), and Goose (Rust).
+Built on Kent Beck's 4 Rules of Simple Design, Unix philosophy, Clean Architecture, and lessons from studying the functionality of leading AI coding agents — Claude Code, OpenCode, Aider, and Goose.
 
 1. **The core loop must be basically good** — ship what works, iterate
 2. **Ports and adapters** — core never imports provider SDKs
@@ -108,7 +108,7 @@ All architectural decisions are documented as ADRs in [`docs/adrs/`](docs/adrs/)
 | Language | TypeScript | Go | Python | Rust | **Python** |
 | Multi-provider | No | Yes | Yes (litellm) | Yes | **Yes** |
 | MCP support | Full | Config | None | Native | **Planned** |
-| Kernel size | 513K LOC | ~25K | ~30K | ~50K | **<1K LOC** |
+| Clean kernel | Large monolith | Lean | Focused | Multi-crate | **<1K LOC** |
 | Safety layers | 3 | 1 | 0 | 1 | **3** |
 | Open source | No | Yes | Yes | Yes | **Yes** |
 

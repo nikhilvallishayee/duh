@@ -9,6 +9,13 @@ import sys
 from duh.tools.registry import get_all_tools
 
 
+def _format_latency(ms: int) -> str:
+    """Format latency for display."""
+    if ms < 1000:
+        return f"{ms}ms"
+    return f"{ms / 1000:.1f}s"
+
+
 def run_doctor() -> int:
     checks: list[tuple[str, bool, str]] = []
 
@@ -17,7 +24,7 @@ def run_doctor() -> int:
     checks.append(("Python version", py_ok,
                     f"{py_version} {'(>= 3.12)' if py_ok else '(need >= 3.12)'}"))
 
-    # Provider API keys
+    # Provider API keys (presence check)
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
     checks.append(("ANTHROPIC_API_KEY", bool(anthropic_key),
                     "set" if anthropic_key else "not set"))
@@ -26,20 +33,48 @@ def run_doctor() -> int:
     checks.append(("OPENAI_API_KEY", True,
                     "set" if openai_key else "not set (optional)"))
 
-    # Ollama
-    ollama_ok = False
-    try:
-        import httpx
-        r = httpx.get("http://localhost:11434/api/tags", timeout=2)
-        if r.status_code == 200:
-            models = r.json().get("models", [])
-            model_names = [m.get("name", "?") for m in models[:5]]
-            ollama_ok = True
-            checks.append(("Ollama", True, f"running ({', '.join(model_names)})"))
+    # --- Provider connectivity (actual health checks) ---
+    from duh.kernel.health_check import HealthChecker
+    checker = HealthChecker(timeout=5.0)
+
+    if anthropic_key:
+        result = checker.check_provider("anthropic")
+        latency = _format_latency(result["latency_ms"])
+        if result["healthy"]:
+            checks.append(("Anthropic connectivity", True, f"reachable ({latency})"))
         else:
-            checks.append(("Ollama", True, "not running (optional)"))
-    except Exception:
-        checks.append(("Ollama", True, "not running (optional)"))
+            checks.append(("Anthropic connectivity", False,
+                            f"unreachable ({result['error']}, {latency})"))
+
+    if openai_key:
+        result = checker.check_provider("openai")
+        latency = _format_latency(result["latency_ms"])
+        if result["healthy"]:
+            checks.append(("OpenAI connectivity", True, f"reachable ({latency})"))
+        else:
+            checks.append(("OpenAI connectivity", False,
+                            f"unreachable ({result['error']}, {latency})"))
+
+    # Ollama (connectivity replaces old presence check)
+    ollama_ok = False
+    result = checker.check_provider("ollama")
+    latency = _format_latency(result["latency_ms"])
+    if result["healthy"]:
+        ollama_ok = True
+        # Try to get model names from Ollama
+        model_info = ""
+        try:
+            import httpx
+            r = httpx.get("http://localhost:11434/api/tags", timeout=2)
+            if r.status_code == 200:
+                models = r.json().get("models", [])
+                model_names = [m.get("name", "?") for m in models[:5]]
+                model_info = f", models: {', '.join(model_names)}" if model_names else ""
+        except Exception:
+            pass
+        checks.append(("Ollama", True, f"running ({latency}{model_info})"))
+    else:
+        checks.append(("Ollama", True, f"not running (optional, {latency})"))
 
     # Config
     config_dir = os.path.expanduser("~/.config/duh")
@@ -69,6 +104,23 @@ def run_doctor() -> int:
     skills = load_all_skills(".")
     checks.append(("Skills loaded", True,
                     f"{len(skills)} skills" if skills else "none (check .duh/skills/ or .claude/skills/)"))
+
+    # --- MCP server health ---
+    mcp_healthy = 0
+    mcp_total = 0
+    try:
+        from duh.config import load_config
+        app_config = load_config(cwd=os.getcwd())
+        if app_config.mcp_servers:
+            mcp_servers = app_config.mcp_servers.get("mcpServers", app_config.mcp_servers)
+            mcp_total = len(mcp_servers)
+            # We can only check config presence here (no live connections in doctor).
+            # Report configured servers.
+            server_names = list(mcp_servers.keys())
+            checks.append(("MCP servers configured", mcp_total > 0,
+                            ", ".join(server_names)))
+    except Exception:
+        pass  # No config or config error -- skip MCP section
 
     # Provider summary
     providers = []

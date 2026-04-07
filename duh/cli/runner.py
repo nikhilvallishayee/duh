@@ -275,15 +275,33 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         approve=approver.check,
         compact=compactor.compact,
     )
+    # Resolve max_cost: CLI flag > env var > None
+    max_cost = getattr(args, "max_cost", None)
+    if max_cost is None:
+        env_cost = os.environ.get("DUH_MAX_COST")
+        if env_cost is not None:
+            try:
+                max_cost = float(env_cost)
+            except (ValueError, TypeError):
+                pass
+
     engine_config = EngineConfig(
         model=model,
         fallback_model=getattr(args, "fallback_model", None),
         system_prompt="\n\n".join(system_prompt_parts),
         tools=tools,
         max_turns=args.max_turns,
+        max_cost=max_cost,
         tool_choice=args.tool_choice,
     )
-    engine = Engine(deps=deps, config=engine_config, session_store=store)
+    # --- Wire structured JSON logger ---
+    structured_logger = None
+    if getattr(args, "log_json", False) or os.environ.get("DUH_LOG_JSON", "") == "1":
+        from duh.adapters.structured_logging import StructuredLogger
+        structured_logger = StructuredLogger()
+
+    engine = Engine(deps=deps, config=engine_config, session_store=store,
+                    structured_logger=structured_logger)
 
     # --- Resume session if --continue or --resume ---
     if getattr(args, "continue_session", False) or args.resume:
@@ -398,6 +416,15 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         await execute_hooks(hook_registry, HookEvent.SESSION_END, {"session_id": engine.session_id})
     except Exception:
         logger.debug("Session end hooks failed", exc_info=True)
+
+    # --- Close structured logger ---
+    if structured_logger:
+        structured_logger.session_end(
+            turns=engine.turn_count,
+            input_tokens=engine.total_input_tokens,
+            output_tokens=engine.total_output_tokens,
+        )
+        structured_logger.close()
 
     # --- Disconnect MCP ---
     if mcp_executor:

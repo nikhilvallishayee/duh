@@ -4,11 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "duh-cli"
-version = "0.1.0"
+dynamic = ["version"]
 description = "D.U.H. — Duh is a Universal Harness. Provider-agnostic AI coding agent."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
+authors = [
+    { name = "Nikhil Vallishayee" },
+]
 keywords = ["ai", "coding", "agent", "harness", "mcp", "cli"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -25,11 +28,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+openai = ["openai>=1.0"]
 rich = ["rich>=13.0"]
 dev = ["pytest", "pytest-asyncio"]
 
 [project.scripts]
-duh = "duh.cli:main"
+duh = "duh.cli.main:main"
+
+[tool.hatch.version]
+path = "duh/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["duh"]

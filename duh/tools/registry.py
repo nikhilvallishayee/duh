@@ -154,6 +154,34 @@ def get_all_tools(
     except ImportError:
         pass
 
+    # HTTP (API testing)
+    try:
+        from duh.tools.http_tool import HTTPTool
+        tools.append(HTTPTool())
+    except ImportError:
+        pass
+
+    # Docker (container management)
+    try:
+        from duh.tools.docker_tool import DockerTool
+        tools.append(DockerTool())
+    except ImportError:
+        pass
+
+    # Database (read-only SQL queries against SQLite)
+    try:
+        from duh.tools.db_tool import DatabaseTool
+        tools.append(DatabaseTool())
+    except ImportError:
+        pass
+
+    # GitHub (PR workflow via gh CLI)
+    try:
+        from duh.tools.github_tool import GitHubTool
+        tools.append(GitHubTool())
+    except ImportError:
+        pass
+
     # LSP (deferred — registered via ToolSearch, not loaded eagerly)
     try:
         from duh.tools.lsp_tool import LSPTool

@@ -48,6 +48,8 @@ TOOL_TIMEOUTS: dict[str, int] = {
     "NotebookEdit": 30,
     "MemoryStore": 10,
     "MemoryRecall": 10,
+    "HTTP": 60,
+    "Database": 30,
 }
 
 

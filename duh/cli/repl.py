@@ -24,7 +24,9 @@ Slash commands:
     /jobs     — list background jobs (/jobs <id> for result)
     /search   — search messages in the current session
     /plan     — plan mode (/plan <desc>, /plan show, /plan clear)
+    /pr       — GitHub PRs (/pr list, /pr view <n>, /pr diff <n>, /pr checks <n>)
     /undo     — undo the last file modification (Write or Edit)
+    /health   — run provider and MCP health checks
     /clear    — clear conversation history
     /compact  — compact conversation (summarize older messages)
     /exit     — exit the REPL (also Ctrl-D)
@@ -265,8 +267,10 @@ SLASH_COMMANDS = {
     "/search": "Search session messages (/search <query>)",
     "/template": "Prompt templates (/template list | use <name> | <name> <prompt>)",
     "/plan": "Plan mode (/plan <desc>, /plan show, /plan clear)",
+    "/pr": "GitHub PRs (/pr list, /pr view <n>, /pr diff <n>, /pr checks <n>)",
     "/undo": "Undo the last file modification (Write or Edit)",
     "/jobs": "Background jobs (/jobs to list, /jobs <id> for result)",
+    "/health": "Run provider and MCP health checks",
     "/clear": "Clear conversation history",
     "/compact": "Compact older messages",
     "/exit": "Exit the REPL",
@@ -458,6 +462,8 @@ def _handle_slash(
     task_manager: Any | None = None,
     template_state: dict[str, Any] | None = None,
     plan_mode: PlanMode | None = None,
+    mcp_executor: Any | None = None,
+    provider_name: str = "",
 ) -> tuple[bool, str]:
     """Handle a slash command. Returns (should_continue, new_model).
 
@@ -618,6 +624,10 @@ def _handle_slash(
         # Return a sentinel: model prefixed with \x00 signals plan request
         return True, f"\x00plan\x00{arg.strip()}"
 
+    if name == "/pr":
+        _handle_pr_command(arg)
+        return True, model
+
     if name == "/undo":
         if executor is None:
             sys.stdout.write("  No executor available.\n")
@@ -627,6 +637,49 @@ def _handle_slash(
             sys.stdout.write(f"  {msg}\n")
         except IndexError:
             sys.stdout.write("  Nothing to undo.\n")
+        return True, model
+
+    if name == "/health":
+        from duh.kernel.health_check import HealthChecker
+        from duh.cli.doctor import _format_latency
+        checker = HealthChecker(timeout=5.0)
+
+        sys.stdout.write("  Running health checks...\n")
+
+        # Check providers
+        providers_to_check = ["anthropic", "openai", "ollama"]
+        disabled: list[str] = []
+        for pname in providers_to_check:
+            result = checker.check_provider(pname)
+            latency = _format_latency(result["latency_ms"])
+            if result["healthy"]:
+                status = f"healthy ({latency})"
+            else:
+                status = f"UNHEALTHY ({result['error']}, {latency})"
+                disabled.append(pname)
+            sys.stdout.write(f"    {pname:12s} {status}\n")
+
+        # Check MCP servers
+        if mcp_executor is not None:
+            connections = getattr(mcp_executor, "_connections", {})
+            configs = getattr(mcp_executor, "_servers", {})
+            if connections or configs:
+                sys.stdout.write("  MCP servers:\n")
+                all_names = set(configs.keys()) | set(connections.keys())
+                for sname in sorted(all_names):
+                    result = checker.check_mcp(sname, connections=connections)
+                    if result["healthy"]:
+                        status = f"healthy ({result['tools']} tools)"
+                    else:
+                        status = "UNHEALTHY (disconnected)"
+                        disabled.append(f"mcp:{sname}")
+                    sys.stdout.write(f"    {sname:12s} {status}\n")
+
+        # Report disabled items
+        if disabled:
+            sys.stdout.write(f"  Unhealthy: {', '.join(disabled)}\n")
+        else:
+            sys.stdout.write("  All checks passed.\n")
         return True, model
 
     if name == "/clear":
@@ -653,6 +706,82 @@ def _handle_slash(
 
     sys.stdout.write(f"  Unknown command: {name}. Type /help for commands.\n")
     return True, model
+
+
+def _handle_pr_command(arg: str) -> None:
+    """Handle /pr subcommands by calling the gh CLI directly.
+
+    Subcommands:
+        /pr list [--state open|closed|merged|all]  -- list PRs
+        /pr view <number>                          -- view PR details
+        /pr diff <number>                          -- show PR diff
+        /pr checks <number>                        -- show PR checks
+    """
+    from duh.tools.github_tool import _gh_available, _run_gh
+
+    if not _gh_available():
+        sys.stdout.write("  GitHub CLI (gh) not found. Install: brew install gh\n")
+        return
+
+    parts = arg.strip().split()
+    if not parts:
+        sys.stdout.write(
+            "  Usage:\n"
+            "    /pr list [--state open|closed|merged|all]\n"
+            "    /pr view <number>\n"
+            "    /pr diff <number>\n"
+            "    /pr checks <number>\n"
+        )
+        return
+
+    sub = parts[0].lower()
+
+    if sub == "list":
+        gh_args = ["pr", "list", "--json", "number,title,state,author"]
+        # Pass through extra flags like --state
+        if len(parts) > 1:
+            gh_args.extend(parts[1:])
+        stdout, stderr, rc = _run_gh(gh_args)
+        if rc != 0:
+            sys.stdout.write(f"  Error: {stderr.strip()}\n")
+            return
+        import json as _json
+        try:
+            prs = _json.loads(stdout)
+        except _json.JSONDecodeError:
+            sys.stdout.write(f"  {stdout}\n")
+            return
+        if not prs:
+            sys.stdout.write("  No pull requests found.\n")
+            return
+        for pr in prs:
+            author = pr.get("author", {})
+            login = author.get("login", "?") if isinstance(author, dict) else str(author)
+            sys.stdout.write(
+                f"  #{pr.get('number', '?')} [{pr.get('state', '?')}] "
+                f"{pr.get('title', '(no title)')} (by {login})\n"
+            )
+        return
+
+    if sub in ("view", "diff", "checks"):
+        if len(parts) < 2:
+            sys.stdout.write(f"  Usage: /pr {sub} <number>\n")
+            return
+        number = parts[1]
+        if sub == "view":
+            gh_args = ["pr", "view", number, "--json", "title,body,state,reviews"]
+        elif sub == "diff":
+            gh_args = ["pr", "diff", number]
+        else:  # checks
+            gh_args = ["pr", "checks", number]
+        stdout, stderr, rc = _run_gh(gh_args)
+        if rc != 0:
+            sys.stdout.write(f"  Error: {stderr.strip()}\n")
+            return
+        sys.stdout.write(f"  {stdout.strip()}\n" if stdout.strip() else "  (no output)\n")
+        return
+
+    sys.stdout.write(f"  Unknown /pr subcommand: {sub}\n")
 
 
 def _handle_template_command(arg: str, state: dict[str, Any]) -> None:
@@ -830,14 +959,32 @@ async def run_repl(args: argparse.Namespace) -> int:
         approve=approver.check,
         compact=compactor.compact,
     )
+    # Resolve max_cost: CLI flag > env var > None
+    max_cost = getattr(args, "max_cost", None)
+    if max_cost is None:
+        env_cost = os.environ.get("DUH_MAX_COST")
+        if env_cost is not None:
+            try:
+                max_cost = float(env_cost)
+            except (ValueError, TypeError):
+                pass
+
     engine_config = EngineConfig(
         model=model,
         fallback_model=getattr(args, "fallback_model", None),
         system_prompt=system_prompt,
         tools=tools,
         max_turns=args.max_turns,
+        max_cost=max_cost,
     )
-    engine = Engine(deps=deps, config=engine_config, session_store=store)
+    # --- Wire structured JSON logger ---
+    structured_logger = None
+    if getattr(args, "log_json", False) or os.environ.get("DUH_LOG_JSON", "") == "1":
+        from duh.adapters.structured_logging import StructuredLogger
+        structured_logger = StructuredLogger()
+
+    engine = Engine(deps=deps, config=engine_config, session_store=store,
+                    structured_logger=structured_logger)
     _plan_mode = PlanMode(engine)
 
     # --- Load readline history & set up tab completion ---
@@ -865,6 +1012,8 @@ async def run_repl(args: argparse.Namespace) -> int:
                 task_manager=_task_manager,
                 template_state=_template_state,
                 plan_mode=_plan_mode,
+                mcp_executor=mcp_executor,
+                provider_name=provider_name,
             )
             if not keep_going:
                 break
@@ -985,12 +1134,33 @@ async def run_repl(args: argparse.Namespace) -> int:
                 hint = _interpret_error(event.get("error", "unknown"))
                 renderer.error(hint)
 
+            elif event_type == "budget_warning":
+                # Display budget warnings in yellow
+                sys.stderr.write(
+                    f"\033[33mWarning: {event.get('message', '')}\033[0m\n"
+                )
+
+            elif event_type == "budget_exceeded":
+                # Display budget exceeded in bold yellow
+                sys.stderr.write(
+                    f"\033[1;33m{event.get('message', '')}\033[0m\n"
+                )
+
         # Re-render accumulated text as Rich Markdown (no-op for plain)
         renderer.flush_response()
         renderer.turn_end()
 
     # --- Save readline history on exit ---
     _save_history()
+
+    # --- Close structured logger ---
+    if structured_logger:
+        structured_logger.session_end(
+            turns=engine.turn_count,
+            input_tokens=engine.total_input_tokens,
+            output_tokens=engine.total_output_tokens,
+        )
+        structured_logger.close()
 
     # --- Disconnect MCP ---
     if mcp_executor:

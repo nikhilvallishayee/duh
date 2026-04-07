@@ -40,6 +40,7 @@ class Config:
     model: str = ""
     provider: str = ""
     max_turns: int = 10
+    max_cost: float | None = None
     system_prompt: str = ""
     permissions: dict[str, Any] = field(default_factory=dict)
     hooks: dict[str, Any] = field(default_factory=dict)
@@ -93,6 +94,11 @@ def _merge_into(config: Config, data: dict[str, Any]) -> None:
             config.max_turns = int(data["max_turns"])
         except (ValueError, TypeError):
             pass
+    if "max_cost" in data and data["max_cost"] is not None:
+        try:
+            config.max_cost = float(data["max_cost"])
+        except (ValueError, TypeError):
+            pass
     if "system_prompt" in data and data["system_prompt"]:
         config.system_prompt = str(data["system_prompt"])
     if "permissions" in data and isinstance(data["permissions"], dict):
@@ -111,6 +117,7 @@ _ENV_MAP: dict[str, str] = {
     "DUH_MODEL": "model",
     "DUH_PROVIDER": "provider",
     "DUH_MAX_TURNS": "max_turns",
+    "DUH_MAX_COST": "max_cost",
     "DUH_SYSTEM_PROMPT": "system_prompt",
 }
 

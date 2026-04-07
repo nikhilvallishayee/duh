@@ -371,7 +371,7 @@ class TestMemoryRecallTool:
         assert self.tool.is_destructive is False
 
     async def test_recall_with_limit(self, tmp_path: Path):
-        with patch("duh.tools.memory_tool.FileMemoryStore") as MockStore:
+        with patch("duh.adapters.memory_store.FileMemoryStore") as MockStore:
             instance = MockStore.return_value
             instance.recall_facts.return_value = [
                 {"key": "k1", "value": "v1", "tags": [], "timestamp": "t"},

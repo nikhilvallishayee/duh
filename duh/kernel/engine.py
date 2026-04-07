@@ -18,13 +18,16 @@ from __future__ import annotations
 
 import uuid as _uuid
 from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator
+from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 from duh.kernel.deps import Deps
 from duh.kernel.loop import query
 from duh.kernel.messages import Message, UserMessage
 from duh.kernel.tokens import count_tokens, estimate_cost, format_cost, get_context_limit
 from duh.ports.store import SessionStore
+
+if TYPE_CHECKING:
+    from duh.adapters.structured_logging import StructuredLogger
 
 import logging
 
@@ -50,6 +53,7 @@ class EngineConfig:
     thinking: dict[str, Any] | None = None
     tool_choice: str | dict[str, Any] | None = None
     max_turns: int = 1000
+    max_cost: float | None = None
     cwd: str = "."
 
 
@@ -65,6 +69,7 @@ class Engine:
         deps: Deps,
         config: EngineConfig | None = None,
         session_store: SessionStore | None = None,
+        structured_logger: StructuredLogger | None = None,
         **kwargs: Any,
     ):
         self._deps = deps
@@ -75,6 +80,10 @@ class Engine:
         self._total_input_tokens = 0
         self._total_output_tokens = 0
         self._session_store = session_store
+        self._budget_warned_80 = False
+        self._slog = structured_logger
+        if self._slog:
+            self._slog.session_id = self._session_id
 
     @property
     def messages(self) -> list[Message]:
@@ -100,20 +109,69 @@ class Engine:
     def model(self) -> str:
         return self._config.model
 
+    @property
+    def max_cost(self) -> float | None:
+        return self._config.max_cost
+
+    def budget_remaining(self, model: str | None = None) -> float | None:
+        """Return remaining budget in USD, or None if no budget is set."""
+        if self._config.max_cost is None:
+            return None
+        return max(0.0, self._config.max_cost - self.estimated_cost(model))
+
     def estimated_cost(self, model: str | None = None) -> float:
         """Return estimated session cost in USD."""
         m = model or self._config.model
         return estimate_cost(m, self._total_input_tokens, self._total_output_tokens)
 
+    def _check_budget(self, model: str | None = None) -> list[dict[str, Any]]:
+        """Check budget and return any warning/stop events to yield.
+
+        Returns a list of 0-2 events:
+        - budget_warning at 80% usage
+        - budget_exceeded at 100% (with stop signal)
+        """
+        max_cost = self._config.max_cost
+        if max_cost is None or max_cost <= 0:
+            return []
+        cost = self.estimated_cost(model)
+        events: list[dict[str, Any]] = []
+
+        # 80% warning (once per session)
+        if not self._budget_warned_80 and cost >= max_cost * 0.80:
+            self._budget_warned_80 = True
+            pct = cost / max_cost * 100
+            events.append({
+                "type": "budget_warning",
+                "message": f"Approaching budget limit ({pct:.0f}% used)",
+                "cost": cost,
+                "max_cost": max_cost,
+            })
+
+        # 100% exceeded
+        if cost >= max_cost:
+            events.append({
+                "type": "budget_exceeded",
+                "message": f"Budget limit reached ({format_cost(cost)}). Session stopped.",
+                "cost": cost,
+                "max_cost": max_cost,
+            })
+
+        return events
+
     def cost_summary(self, model: str | None = None) -> str:
         """Return a human-readable cost summary string."""
         m = model or self._config.model
         cost = self.estimated_cost(m)
-        return (
-            f"Input tokens:  ~{self._total_input_tokens:,}\n"
-            f"Output tokens: ~{self._total_output_tokens:,}\n"
-            f"Estimated cost: {format_cost(cost)} ({m})"
-        )
+        lines = [
+            f"Input tokens:  ~{self._total_input_tokens:,}",
+            f"Output tokens: ~{self._total_output_tokens:,}",
+            f"Estimated cost: {format_cost(cost)} ({m})",
+        ]
+        remaining = self.budget_remaining(m)
+        if remaining is not None:
+            lines.append(f"Budget remaining: {format_cost(remaining)} of {format_cost(self._config.max_cost or 0.0)}")
+        return "\n".join(lines)
 
     async def run(
         self,
@@ -153,6 +211,9 @@ class Engine:
             "turn": self._turn_count,
         }
 
+        if self._slog and self._turn_count == 1:
+            self._slog.session_start(model=self._config.model)
+
         # --- Auto-compact if approaching context limit ---
         if self._deps.compact:
             effective_model = model or self._config.model
@@ -173,6 +234,9 @@ class Engine:
         fallback_model = self._config.fallback_model
         should_fallback = False
 
+        if self._slog:
+            self._slog.model_request(model=effective_model, turn=self._turn_count)
+
         async for event in query(
             messages=self._messages,
             system_prompt=self._config.system_prompt,
@@ -191,6 +255,24 @@ class Engine:
                 if isinstance(msg, Message):
                     self._messages.append(msg)
                     self._total_output_tokens += count_tokens(msg.text)
+                if self._slog:
+                    self._slog.model_response(model=effective_model, turn=self._turn_count)
+
+            # Structured logging for tool & error events
+            if self._slog:
+                if event_type == "tool_use":
+                    self._slog.tool_call(
+                        name=event.get("name", ""),
+                        input=event.get("input"),
+                    )
+                elif event_type == "tool_result":
+                    self._slog.tool_result(
+                        name=event.get("name", ""),
+                        output=str(event.get("output", "")),
+                        is_error=event.get("is_error", False),
+                    )
+                elif event_type == "error":
+                    self._slog.error(error=event.get("error", ""))
 
             # Detect fallback-eligible errors
             if fallback_model and event_type == "error":
@@ -201,6 +283,14 @@ class Engine:
                     continue
 
             yield event
+
+            # --- Budget enforcement after each turn ---
+            if event_type == "done":
+                budget_events = self._check_budget(effective_model)
+                for be in budget_events:
+                    yield be
+                if any(be["type"] == "budget_exceeded" for be in budget_events):
+                    return
 
             # Auto-save session after each turn completes
             if event_type == "done" and self._session_store:
@@ -236,6 +326,14 @@ class Engine:
                         self._total_output_tokens += count_tokens(msg.text)
 
                 yield event
+
+                # --- Budget enforcement in fallback loop ---
+                if event_type == "done":
+                    budget_events = self._check_budget(fallback_model)
+                    for be in budget_events:
+                        yield be
+                    if any(be["type"] == "budget_exceeded" for be in budget_events):
+                        return
 
                 if event_type == "done" and self._session_store:
                     try:

@@ -1,213 +1,214 @@
 # D.U.H. — D.U.H. is a Universal Harness
 
-> Because connecting AI to your codebase should be obvious.
+> An evolving, open-source alternative to Claude Code, OpenCode, Codex, and Cline.
 
-The first production-grade, open-source, provider-agnostic AI coding harness built on first principles.
+Provider-agnostic AI coding harness. Use Claude, GPT, Gemini, Ollama, or any model through one clean interface. SDK-compatible — drop-in replacement for Claude Code in any Claude Agent SDK app.
 
-## What is D.U.H.?
+**Status**: Actively evolving. 954 tests, 19 ADRs, 3 providers, full SDK compatibility.
 
-D.U.H. is the scaffolding between you and any AI model. It handles the agentic loop (prompt → model → tool → result → iterate), tool execution, safety, sessions, and terminal UI — so you can use Claude, GPT, Gemini, Ollama, or any model through one clean interface.
+## Why D.U.H.?
 
-**Not another AI wrapper.** D.U.H. is a harness — the hands, eyes, memory, and safety boundaries that make a model useful as a coding agent.
+Every AI coding tool locks you into one model, one vendor, one way of working. D.U.H. is the harness between you and *any* model — it handles the agentic loop, tool execution, safety, sessions, skills, hooks, MCP, and REPL so you can swap providers without rewriting your workflow.
 
 ## Quick Start
 
 ```bash
-pip install duh-cli
+# With Anthropic
 export ANTHROPIC_API_KEY=sk-ant-...
-duh -p "fix the bug"
+duh -p "fix the bug in auth.py"
+
+# With OpenAI
+export OPENAI_API_KEY=sk-...
+duh -p "add error handling to the API" --provider openai
+
+# With local models (no API key, no cost)
+ollama serve && ollama pull qwen2.5-coder:7b
+duh -p "what files are here?" --provider ollama
+
+# Interactive REPL
+duh
+# duh> /help
+# duh> explain this codebase
+# duh> /model claude-opus-4-6
+# duh> refactor the auth module
+# duh> /exit
 ```
 
-Or with a local model (no API key needed):
+## What You Can Do
 
 ```bash
-# Start Ollama
-ollama serve
-ollama pull qwen2.5-coder:7b
+# Read, analyze, and modify code
+duh -p "find all TODO comments and create a summary"
 
-# Use D.U.H. with local model
-duh -p "what files are here?" --provider ollama
+# Multi-turn agentic workflows (reads files, runs tools, iterates)
+duh -p "add input validation to the API endpoints" --dangerously-skip-permissions
+
+# Use as a Claude Agent SDK backend (drop-in for Claude Code)
+CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK=1 python my_app.py  # uses duh via cli_path
+
+# Stream-JSON protocol for programmatic control
+echo '{"type":"user","message":{"role":"user","content":"hello"}}' | \
+  duh --input-format stream-json --output-format stream-json
+
+# Skills auto-discovery (loads from .claude/skills/ and .duh/skills/)
+cd my-project  # has .claude/skills/deploy/SKILL.md
+duh -p "deploy to staging"  # skill auto-invoked
+
+# MCP server integration
+# Configure in .duh/settings.json, tools auto-discovered
+duh -p "open example.com and take a screenshot" --dangerously-skip-permissions
+
+# Hook system — log, enforce policy, automate
+# Configure PreToolUse/PostToolUse hooks in .duh/settings.json
+
+# Doctor diagnostics
+duh doctor
 ```
 
-## Verified Working
+## Comparison
 
+| | **D.U.H.** | Claude Code | OpenCode | Cline | Aider | Claw-code |
+|---|---|---|---|---|---|---|
+| Language | Python | TypeScript | TypeScript | TypeScript | Python | Python+Rust |
+| Open source | Yes (Apache 2.0) | No | Yes | Yes | Yes | Yes (legal grey) |
+| Multi-provider | **3 built-in** | Anthropic only | 75+ via config | Multi | Multi | Multi |
+| Local models | **Ollama native** | No | Yes | Yes | Yes | Yes |
+| SDK compatible | **Yes** | N/A (is the SDK) | No | No | No | Partial |
+| MCP support | **Adapter** | Full | Config | Extension | None | Partial |
+| Hooks system | **6 events** | Hooks | None | None | None | None |
+| Skills | **.claude/ + .duh/** | .claude/ only | None | None | None | None |
+| Safety layers | **3** | 3 | 1 | 1 | 0 | Unknown |
+| tool_choice | **Uniform** | Yes | No | No | No | No |
+| REPL | **Yes (readline)** | Yes | Yes | IDE | Terminal | Yes |
+| Tests | **954** | Internal | Unknown | Unknown | Yes | Minimal |
+
+### vs Claude Code
+
+D.U.H. is not a clone — it's a clean-room harness that speaks the same protocol. Skills built for Claude Code work in D.U.H. The Claude Agent SDK can use D.U.H. as a drop-in backend. But D.U.H. also works with OpenAI, Ollama, and any future provider.
+
+### vs Claw-code
+
+Claw-code (119K GitHub stars) is a viral clean-room rewrite born from Anthropic's npm source leak. D.U.H. predates it and takes a different approach: ports-and-adapters architecture, rigorous testing (954 tests), SDK protocol compatibility, and a focus on being a *harness* rather than a *clone*.
+
+### vs OpenCode / Aider / Cline
+
+These are excellent tools. D.U.H. differentiates on: (1) Claude Agent SDK compatibility for programmatic use, (2) hooks system for policy enforcement and automation, (3) skill format parity with Claude Code, (4) hexagonal architecture with clean kernel/adapter separation.
+
+## SDK Compatibility
+
+D.U.H. speaks the same NDJSON stream-json protocol as Claude Code. Any app using the Claude Agent SDK can switch to D.U.H.:
+
+```python
+from claude_agent_sdk import ClaudeAgentOptions, query, AssistantMessage, TextBlock
+
+async for message in query(
+    prompt="What is 2+2?",
+    options=ClaudeAgentOptions(
+        cli_path="/path/to/duh-sdk-shim",
+        max_turns=1,
+    )
+):
+    if isinstance(message, AssistantMessage):
+        for block in message.content:
+            if isinstance(block, TextBlock):
+                print(block.text)  # "4"
 ```
-$ duh -p "Say DUH"
-DUH! 🤦
 
-$ duh -p "Read pyproject.toml project name" --dangerously-skip-permissions
-  > Read(file_path='pyproject.toml')
-The project name is duh-cli.
-
-$ duh -p "What is 7*8?" --tool-choice none
-56
-
-$ duh -p "List all ADRs" --model claude-opus-4-6 --dangerously-skip-permissions
-  > Glob(pattern='docs/adrs/**/*')
-  > Read(file_path='docs/adrs/ADR-001-project-vision.md')
-  > Read(file_path='docs/adrs/ADR-002-kernel-design.md')
-  ... (11 tools called, all ADRs read and summarized)
-
-$ duh -p "2+2?" --provider ollama --model qwen2.5-coder:1.5b
-4
-
-$ duh doctor
-  [  ok] Python version: 3.12.12 (>= 3.12)
-  [  ok] ANTHROPIC_API_KEY: set
-  [  ok] Config directory: ~/.config/duh
-  [  ok] anthropic SDK: installed
-  [  ok] Tools available: Read, Write, Edit, Bash, Glob, Grep
-```
+Works with the Universal Companion API, claude-flow orchestration, and any Claude Agent SDK consumer.
 
 ## Architecture
 
 ```
 duh/
-  kernel/           # 5 files — the agentic loop
-    loop.py         # async generator: prompt → model → tool → result
-    engine.py       # session lifecycle wrapper
-    tool.py         # Tool protocol (4 required fields)
-    messages.py     # Message data model
-    deps.py         # Injectable dependencies — every external call is a seam
+  kernel/         # The agentic loop (provider-agnostic)
+    loop.py       # async generator: prompt -> model -> tool -> result
+    engine.py     # session lifecycle wrapper
+    messages.py   # Message data model
+    deps.py       # Injectable dependencies
+    skill.py      # Skill loading (.claude/ + .duh/)
+    memory.py     # Per-project memory
 
-  ports/            # Abstract interfaces (what the kernel expects)
-    provider.py     # ModelProvider — any LLM, uniform events
-    executor.py     # ToolExecutor — run tools by name
-    approver.py     # ApprovalGate — check before execution
-    store.py        # SessionStore — persist conversations
-    context.py      # ContextManager — manage context window
+  ports/          # Abstract interfaces
+    provider.py   # ModelProvider protocol
+    executor.py   # ToolExecutor protocol
+    approver.py   # ApprovalGate protocol
 
-  adapters/         # Wrappers WE write (provider SDKs → our format)
-    anthropic.py    # Anthropic SDK → D.U.H. events
-    ollama.py       # Ollama HTTP API → D.U.H. events
-    approvers.py    # Auto / Interactive / Rule-based approval
-    native_executor.py  # Run Python Tool objects
-    mcp_executor.py # MCP server tool transport
-    file_store.py   # JSONL session persistence
-    simple_compactor.py # Context window management
+  adapters/       # Provider wrappers
+    anthropic.py  # Claude (Sonnet, Opus, Haiku)
+    openai.py     # GPT-4o, o1, any OpenAI-compatible API
+    ollama.py     # Local models (Llama, Qwen, Mistral)
+    mcp_executor.py  # MCP server transport
 
-  tools/            # 6 core tools
-    read.py, write.py, edit.py, bash.py, glob_tool.py, grep.py
+  tools/          # 9 core tools
+    read, write, edit, bash, glob, grep, skill, tool_search, agent
 
-  hooks.py          # Data-driven hook system (6 events, 2 types)
-  cli/main.py       # CLI entry point
-```
+  cli/            # CLI interface
+    main.py       # Entry point + signal handling
+    parser.py     # Argument parsing
+    runner.py     # Print mode
+    repl.py       # Interactive REPL with /slash commands
+    sdk_runner.py # Stream-JSON NDJSON protocol
+    ndjson.py     # NDJSON helpers
 
-### Ports and Adapters
-
-Providers each have their own SDK, streaming format, and tool calling convention. **None provide a uniform interface.** The port defines what D.U.H. expects; the adapter translates.
-
-```
-Provider SDK (their code, their format)
-    ↓
-Adapter (our wrapper — translates to our format)
-    ↓
-Port (our interface contract)
-    ↓
-Kernel (consumes uniform events, provider-agnostic)
+  hooks.py        # Hook system (6 events, shell + function executors)
+  config.py       # 4-layer config precedence
+  plugins.py      # Plugin discovery
+  agents.py       # Multi-agent support
 ```
 
 ## Providers
 
-| Provider | Status | Notes |
-|----------|--------|-------|
-| **Anthropic** | Working | Claude Sonnet, Opus, Haiku. Native tool_choice. |
-| **Ollama** | Working | Any local model. tool_choice emulated via prompt. |
-| **OpenAI** | Planned | GPT-4o, o1, etc. |
-| **Google Gemini** | Planned | Via Vertex or direct API. |
-| **litellm** | Planned | 100+ models via one adapter. |
+| Provider | Status | Models |
+|----------|--------|--------|
+| **Anthropic** | Working | Claude Sonnet 4.6, Opus 4.6, Haiku 4.5 |
+| **OpenAI** | Working | GPT-4o, o1, any OpenAI-compatible API |
+| **Ollama** | Working | Any local model (Qwen, Llama, Mistral, etc.) |
+| **Google Gemini** | Planned | Via Vertex or direct API |
+| **litellm** | Planned | 100+ models via one adapter |
 
-Auto-detection: if `ANTHROPIC_API_KEY` is set, uses Anthropic. Otherwise checks for local Ollama.
+Auto-detection: `ANTHROPIC_API_KEY` > `OPENAI_API_KEY` > Ollama > error.
 
-## CLI Flags
+## Skills
 
-```
-duh -p "prompt"                      # print mode (non-interactive)
-duh -p "prompt" --model opus         # specify model
-duh -p "prompt" --provider ollama    # force provider
-duh -p "prompt" --tool-choice none   # no tool use (text only)
-duh -p "prompt" --tool-choice any    # force tool use
-duh -p "prompt" --dangerously-skip-permissions  # auto-approve tools
-duh -p "prompt" --output-format json # JSON output
-duh -p "prompt" --max-turns 5        # limit agentic turns
-duh -p "prompt" --debug              # full event tracing
-duh -p "prompt" --system-prompt "Be a pirate"
-duh doctor                           # diagnostics
-duh --version                        # version
-```
-
-## Design Principles
-
-1. **The core loop must be basically good** — ship what works, iterate
-2. **Ports and adapters** — core never imports provider SDKs
-3. **Remove duplication, improve names** — in small cycles
-4. **Evolutionary design** — YAGNI, refactor when the 3rd case reveals the pattern
-5. **Unix composability** — stdout for data, stderr for humans, `--json` for machines
-6. **Human-first CLI** — errors tell what to do, 30s time-to-value
-7. **Extensibility through plugins** — community adds without modifying core
-8. **Safety as architecture** — defense in depth (schema filtering → approval → tool validation)
-9. **Context engineering** — first-class concern
-10. **Properties not rules** — composable, predictable, idiomatic, domain-based
-
-## Design Decisions (ADRs)
-
-| ADR | Decision |
-|-----|----------|
-| [001](docs/adrs/ADR-001-project-vision.md) | Project vision — 10 principles |
-| [002](docs/adrs/ADR-002-kernel-design.md) | Kernel — 5 files, zero deps |
-| [003](docs/adrs/ADR-003-ports-and-adapters.md) | Ports and adapters — providers don't give uniform interfaces |
-| [004](docs/adrs/ADR-004-tool-protocol.md) | Tool protocol — 4 fields vs 30 methods |
-| [005](docs/adrs/ADR-005-safety-architecture.md) | Safety — 3 layers: schema, approval, tool validation |
-| [006](docs/adrs/ADR-006-context-engineering.md) | Context — token estimation, compaction |
-| [007](docs/adrs/ADR-007-session-persistence.md) | Sessions — JSONL, resume, atomic writes |
-| [008](docs/adrs/ADR-008-cli-design.md) | CLI — flags, errors, debug, auto-detect |
-| [009](docs/adrs/ADR-009-provider-adapters.md) | Providers — Anthropic + Ollama adapters |
-| [010](docs/adrs/ADR-010-mcp-integration.md) | MCP — tool transport protocol |
-| [011](docs/adrs/ADR-011-tui-architecture.md) | TUI — 3 rendering tiers, renderer-agnostic kernel |
-| [012](docs/adrs/ADR-012-multi-agent.md) | Multi-agent — Engine-per-agent, no framework |
-| [013](docs/adrs/ADR-013-hook-system.md) | Hooks — data-driven dispatch, 6 events |
-| [014](docs/adrs/ADR-014-plugin-architecture.md) | Plugins — entry_points discovery, PluginSpec |
-| [015](docs/adrs/ADR-015-configuration.md) | Config — DUH.md + settings.json, 4-layer precedence |
-
-## Comparison
-
-| | Claude Code | OpenCode | Aider | Goose | **D.U.H.** |
-|---|---|---|---|---|---|
-| Language | TypeScript | Go | Python | Rust | **Python** |
-| Multi-provider | No | Yes | Yes | Yes | **Yes** |
-| MCP support | Full | Config | None | Native | **Adapter** |
-| Clean kernel | Large monolith | Lean | Focused | Multi-crate | **Clean** |
-| Safety layers | 3 | 1 | 0 | 1 | **3** |
-| tool_choice | Yes | No | No | No | **Yes (uniform)** |
-| Open source | No | Yes | Yes | Yes | **Yes** |
-
-## Tests
+D.U.H. loads skills from both Claude Code and D.U.H. directories:
 
 ```
-576 tests in 2.70s — 0 failures
-
-Kernel:     70 tests (loop, engine, messages, tool, deps)
-Exhaustive: 83 tests (every branch in loop + messages)
-Ports:      15 tests (protocol satisfaction)
-Adapters:   120 tests (anthropic, ollama, approvers, executor, store, compactor)
-Tools:      81 tests (all 6 tools, protocol conformance)
-Hooks:      34 tests (registry, command, function, timeout)
-MCP:        19 tests (connection, discovery, execution)
-CLI:        30 tests (parsing, doctor, print mode)
-Integration: 4 tests (subprocess e2e)
-Compactor:  39 tests (100% coverage)
-File store: 26 tests (100% coverage)
+Load order (last wins by name):
+1. ~/.claude/skills/         # Claude Code user-global
+2. ~/.config/duh/skills/     # D.U.H. user-global
+3. .claude/skills/           # Claude Code project-local
+4. .duh/skills/              # D.U.H. project-local (highest priority)
 ```
+
+Both flat (`skill.md`) and directory (`skill-name/SKILL.md`) layouts supported. All Claude Code frontmatter fields work: `name`, `description`, `when-to-use`, `allowed-tools`, `model`, `context`, `paths`.
+
+## CLI Reference
+
+```
+duh                                     # interactive REPL
+duh -p "prompt"                         # print mode
+duh -p "prompt" --model gpt-4o          # specific model
+duh -p "prompt" --provider openai       # force provider
+duh -p "prompt" --tool-choice none      # text only, no tools
+duh -p "prompt" --dangerously-skip-permissions
+duh -p "prompt" --output-format json    # JSON array output
+duh -p "prompt" --output-format stream-json  # NDJSON streaming
+duh --input-format stream-json          # SDK mode (stdin NDJSON)
+duh -p "prompt" --max-turns 5           # limit iterations
+duh -p "prompt" --debug                 # full event tracing
+duh -p "prompt" --system-prompt "..."   # override system prompt
+duh -p "prompt" --fallback-model haiku  # fallback on overload
+duh doctor                              # diagnostics
+duh --version
+```
+
+## Design Decisions
+
+19 ADRs document every architectural choice. See [docs/adrs/](docs/adrs/).
 
 ## Contributing
 
-Every change follows the cycle:
-1. Write the test (what)
-2. Watch it fail (red)
-3. Write the code (green)
-4. Refactor (clean)
-5. Verify coverage
-6. Clean commit
+Every change follows: write test > watch fail > write code > refactor > verify > commit.
 
 ## License
 

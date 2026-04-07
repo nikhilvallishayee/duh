@@ -2,12 +2,30 @@
 
 from __future__ import annotations
 
+import difflib
 import os
 from pathlib import Path
 from typing import Any
 
 from duh.kernel.git_context import _run_git
 from duh.kernel.tool import ToolContext, ToolResult
+
+
+def _make_diff(old: str, new: str, path: str, *, context: int = 3) -> str:
+    """Return a unified diff string comparing *old* and *new* content.
+
+    Uses ``difflib.unified_diff`` with ``--- old/<path>`` / ``+++ new/<path>``
+    headers and *context* lines of surrounding context (default 3).
+    Returns an empty string when the texts are identical.
+    """
+    diff_lines = difflib.unified_diff(
+        old.splitlines(keepends=True),
+        new.splitlines(keepends=True),
+        fromfile=f"old/{path}",
+        tofile=f"new/{path}",
+        n=context,
+    )
+    return "".join(diff_lines)
 
 
 class EditTool:
@@ -107,8 +125,14 @@ class EditTool:
         # Check git dirty state for the file's directory
         git_dirty = bool(_run_git(["status", "--short"], str(path.parent)))
 
+        # Build unified diff showing what changed
+        diff = _make_diff(content, new_content, file_path)
+        msg = f"Replaced {replacements} occurrence(s) in {file_path}"
+        if diff:
+            msg = f"{msg}\n{diff}"
+
         return ToolResult(
-            output=f"Replaced {replacements} occurrence(s) in {file_path}",
+            output=msg,
             metadata={"replacements": replacements, "git_dirty": git_dirty},
         )
 

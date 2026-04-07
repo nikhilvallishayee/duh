@@ -11,6 +11,7 @@ from typing import Any
 
 from duh.kernel.file_tracker import FileTracker
 from duh.kernel.tool import MAX_TOOL_OUTPUT, Tool, ToolContext, ToolResult, get_tool_timeout
+from duh.kernel.undo import UndoStack
 
 # Tools whose execution should be recorded as file operations.
 _FILE_TOOL_OPS: dict[str, str] = {
@@ -18,6 +19,9 @@ _FILE_TOOL_OPS: dict[str, str] = {
     "Write": "write",
     "Edit": "edit",
 }
+
+# Tools that mutate files and should be captured by the undo stack.
+_UNDO_TOOLS: set[str] = {"Write", "Edit"}
 
 
 class NativeExecutor:
@@ -30,6 +34,7 @@ class NativeExecutor:
         self._tools: dict[str, Any] = {}
         self._cwd = cwd
         self.file_tracker = FileTracker()
+        self.undo_stack = UndoStack()
         if tools:
             for tool in tools:
                 name = getattr(tool, "name", None)
@@ -81,6 +86,21 @@ class NativeExecutor:
             if isinstance(perm, dict) and not perm.get("allowed", True):
                 reason = perm.get("reason", "Permission denied by tool")
                 raise PermissionError(reason)
+
+        # Snapshot file state for undo before mutating tools execute.
+        if tool_name in _UNDO_TOOLS:
+            file_path = input.get("file_path", "")
+            if file_path:
+                try:
+                    from pathlib import Path
+                    p = Path(file_path)
+                    if p.is_file():
+                        self.undo_stack.push(file_path, p.read_text(encoding="utf-8"))
+                    else:
+                        # File doesn't exist yet (new Write) — undo = delete.
+                        self.undo_stack.push(file_path, None)
+                except OSError:
+                    pass  # Best-effort; don't block tool execution.
 
         # Execute with per-tool timeout
         timeout = get_tool_timeout(tool_name)

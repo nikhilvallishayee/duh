@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.tools.edit import _make_diff
 
 
 class MultiEditTool:
@@ -90,6 +91,7 @@ class MultiEditTool:
         total = len(edits)
         succeeded = 0
         failures: list[str] = []
+        diffs: list[str] = []
 
         for i, edit in enumerate(edits, start=1):
             file_path = edit.get("file_path", "")
@@ -136,6 +138,11 @@ class MultiEditTool:
 
             succeeded += 1
 
+            # Collect per-edit diff
+            diff = _make_diff(content, new_content, file_path)
+            if diff:
+                diffs.append(diff)
+
         # Build summary
         if succeeded == total:
             summary = f"Applied {succeeded}/{total} edits successfully."
@@ -148,6 +155,9 @@ class MultiEditTool:
             fail_detail = "; ".join(failures)
             summary = f"Applied 0/{total} edits. All failed: {fail_detail}"
             is_error = True
+
+        if diffs:
+            summary = f"{summary}\n{''.join(diffs)}"
 
         return ToolResult(
             output=summary,

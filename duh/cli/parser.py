@@ -45,6 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Enable debug output (full event tracing to stderr).")
     parser.add_argument("--verbose", action="store_true", default=False,
                         help="Enable verbose output (used by SDK mode).")
+    parser.add_argument("--brief", action="store_true", default=False,
+                        help="Enable brief mode: shorter, more concise responses.")
 
     # SDK compat: accept (and ignore) unknown flags the SDK may pass
     parser.add_argument("--print", action="store_true", default=False,

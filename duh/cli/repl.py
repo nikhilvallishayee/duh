@@ -15,10 +15,14 @@ If ``rich`` is not installed the REPL falls back to plain ANSI escapes
 Slash commands:
     /help     — show available commands
     /model    — show or change the current model
+    /brief    — toggle brief mode (shorter responses)
     /cost     — show session cost estimate
     /status   — show session status (turns, messages, model)
+    /context  — show context window token breakdown
     /changes  — show files touched in this session
     /tasks    — show task checklist
+    /search   — search messages in the current session
+    /undo     — undo the last file modification (Write or Edit)
     /clear    — clear conversation history
     /compact  — compact conversation (summarize older messages)
     /exit     — exit the REPL (also Ctrl-D)
@@ -29,14 +33,14 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import readline  # noqa: F401 — enables line editing in input()
+import readline
 import sys
 from typing import Any
 
 from duh.adapters.anthropic import AnthropicProvider
 from duh.adapters.native_executor import NativeExecutor
 from duh.adapters.approvers import AutoApprover, InteractiveApprover
-from duh.cli.runner import SYSTEM_PROMPT, _interpret_error
+from duh.cli.runner import BRIEF_INSTRUCTION, SYSTEM_PROMPT, _interpret_error
 from duh.kernel.deps import Deps
 from duh.kernel.engine import Engine, EngineConfig
 from duh.kernel.messages import Message
@@ -250,14 +254,191 @@ SLASH_COMMANDS = {
     "/model": "Show or set model (/model <name>)",
     "/cost": "Show estimated session cost",
     "/status": "Show session status",
+    "/context": "Show context window token breakdown",
     "/changes": "Show files touched in this session (+ git diff --stat)",
     "/git": "Show git branch, status, and recent commits",
     "/tasks": "Show task checklist",
+    "/brief": "Toggle brief mode (/brief on, /brief off, /brief)",
+    "/search": "Search session messages (/search <query>)",
+    "/template": "Prompt templates (/template list | use <name> | <name> <prompt>)",
+    "/undo": "Undo the last file modification (Write or Edit)",
     "/clear": "Clear conversation history",
     "/compact": "Compact older messages",
     "/exit": "Exit the REPL",
 }
 
+
+# ---------------------------------------------------------------------------
+# Readline history persistence + tab completion
+# ---------------------------------------------------------------------------
+
+HISTORY_DIR = os.path.expanduser("~/.config/duh")
+HISTORY_FILE = os.path.join(HISTORY_DIR, "repl_history")
+MAX_HISTORY = 1000
+
+
+def _load_history() -> None:
+    """Load readline history from disk. Creates the config dir if needed."""
+    os.makedirs(HISTORY_DIR, exist_ok=True)
+    try:
+        readline.read_history_file(HISTORY_FILE)
+    except FileNotFoundError:
+        pass  # first run — no history yet
+
+
+def _save_history() -> None:
+    """Save readline history to disk, truncating to MAX_HISTORY entries."""
+    os.makedirs(HISTORY_DIR, exist_ok=True)
+    readline.set_history_length(MAX_HISTORY)
+    readline.write_history_file(HISTORY_FILE)
+
+
+class _SlashCompleter:
+    """Tab-completer for /slash commands."""
+
+    def __init__(self, commands: list[str]):
+        self._commands = sorted(commands)
+        self._matches: list[str] = []
+
+    def complete(self, text: str, state: int) -> str | None:
+        if state == 0:
+            if text.startswith("/"):
+                self._matches = [c for c in self._commands if c.startswith(text)]
+            else:
+                self._matches = []
+        if state < len(self._matches):
+            return self._matches[state]
+        return None
+
+
+def _setup_completion() -> None:
+    """Configure readline tab completion for slash commands."""
+    completer = _SlashCompleter(list(SLASH_COMMANDS.keys()))
+    readline.set_completer(completer.complete)
+    readline.set_completer_delims(" \t\n")
+    # macOS uses libedit which needs a different parse_and_bind syntax
+    if "libedit" in (readline.__doc__ or ""):
+        readline.parse_and_bind("bind ^I rl_complete")
+    else:
+        readline.parse_and_bind("tab: complete")
+
+
+def _search_messages(messages: list[Message], query: str) -> None:
+    """Search through messages for *query* (case-insensitive).
+
+    Prints matching messages with role, turn number, and a snippet with the
+    match highlighted in bold yellow.
+    """
+    query_lower = query.lower()
+    hits = 0
+    # Turn numbering: each user message starts a new turn.
+    turn = 0
+    for msg in messages:
+        if msg.role == "user":
+            turn += 1
+        text = msg.text
+        if not text:
+            continue
+        if query_lower not in text.lower():
+            continue
+        hits += 1
+        # Build a snippet around the first match
+        idx = text.lower().index(query_lower)
+        start = max(0, idx - 40)
+        end = min(len(text), idx + len(query) + 40)
+        snippet = text[start:end]
+        # Replace newlines for compact display
+        snippet = snippet.replace("\n", " ")
+        if start > 0:
+            snippet = "..." + snippet
+        if end < len(text):
+            snippet = snippet + "..."
+        # Highlight the matched portion in bold yellow
+        match_start = idx - start + (3 if start > 0 else 0)
+        matched = snippet[match_start:match_start + len(query)]
+        highlighted = (
+            snippet[:match_start]
+            + f"\033[1;33m{matched}\033[0m"
+            + snippet[match_start + len(query):]
+        )
+        sys.stdout.write(f"  [turn {turn}] [{msg.role}] {highlighted}\n")
+    if hits == 0:
+        sys.stdout.write(f"  No matches for \"{query}\".\n")
+    else:
+        sys.stdout.write(f"  ({hits} match{'es' if hits != 1 else ''})\n")
+
+
+
+def context_breakdown(
+    engine: Engine,
+    model: str,
+) -> str:
+    """Return a formatted table showing context window token usage.
+
+    Breaks down: system prompt, conversation history, tool schemas,
+    and available buffer.
+    """
+    import json
+    from duh.kernel.tokens import count_tokens, get_context_limit
+
+    context_limit = get_context_limit(model)
+
+    # System prompt tokens
+    sys_prompt = engine._config.system_prompt
+    if isinstance(sys_prompt, list):
+        sys_text = " ".join(sys_prompt)
+    else:
+        sys_text = sys_prompt or ""
+    system_tokens = count_tokens(sys_text)
+
+    # Conversation history tokens
+    history_tokens = 0
+    for msg in engine.messages:
+        history_tokens += count_tokens(
+            msg.text if isinstance(msg, Message) else str(msg)
+        )
+
+    # Tool schema tokens (name + description + input_schema JSON)
+    tool_tokens = 0
+    for tool in engine._config.tools:
+        parts = []
+        name = getattr(tool, "name", "")
+        if name:
+            parts.append(name)
+        desc = getattr(tool, "description", "")
+        if callable(desc):
+            desc = desc()
+        if desc:
+            parts.append(str(desc))
+        schema = getattr(tool, "input_schema", None)
+        if schema:
+            parts.append(json.dumps(schema))
+        tool_tokens += count_tokens(" ".join(parts))
+
+    used = system_tokens + history_tokens + tool_tokens
+    available = max(0, context_limit - used)
+
+    def _pct(n: int) -> str:
+        if context_limit == 0:
+            return "0.0%"
+        return f"{n / context_limit * 100:.1f}%"
+
+    def _fmt(n: int) -> str:
+        return f"{n:,}"
+
+    lines = [
+        f"  Context window: {_fmt(context_limit)} tokens ({model})",
+        f"",
+        f"  {'Component':<22s} {'Tokens':>10s} {'%':>7s}",
+        f"  {'-' * 22} {'-' * 10} {'-' * 7}",
+        f"  {'System prompt':<22s} {_fmt(system_tokens):>10s} {_pct(system_tokens):>7s}",
+        f"  {'Conversation history':<22s} {_fmt(history_tokens):>10s} {_pct(history_tokens):>7s}",
+        f"  {'Tool schemas':<22s} {_fmt(tool_tokens):>10s} {_pct(tool_tokens):>7s}",
+        f"  {'-' * 22} {'-' * 10} {'-' * 7}",
+        f"  {'Used':<22s} {_fmt(used):>10s} {_pct(used):>7s}",
+        f"  {'Available':<22s} {_fmt(available):>10s} {_pct(available):>7s}",
+    ]
+    return "\n".join(lines)
 
 def _handle_slash(
     cmd: str,
@@ -267,8 +448,15 @@ def _handle_slash(
     *,
     executor: NativeExecutor | None = None,
     task_manager: Any | None = None,
+    template_state: dict[str, Any] | None = None,
 ) -> tuple[bool, str]:
-    """Handle a slash command. Returns (should_continue, new_model)."""
+    """Handle a slash command. Returns (should_continue, new_model).
+
+    template_state is a mutable dict with keys:
+        'templates': dict[str, TemplateDef] -- loaded templates
+        'active': str | None -- currently active template name
+    Modified in place by /template commands.
+    """
     parts = cmd.strip().split(None, 1)
     name = parts[0].lower()
     arg = parts[1] if len(parts) > 1 else ""
@@ -285,6 +473,34 @@ def _handle_slash(
         sys.stdout.write(f"  Current model: {model}\n")
         return True, model
 
+    if name == "/brief":
+        # Detect current state by checking if BRIEF_INSTRUCTION is in the system prompt
+        sp = engine._config.system_prompt
+        current_text = "\n\n".join(sp) if isinstance(sp, list) else sp
+        is_on = BRIEF_INSTRUCTION in current_text
+
+        arg_lower = arg.strip().lower()
+        if arg_lower == "on":
+            want_on = True
+        elif arg_lower == "off":
+            want_on = False
+        else:
+            # bare /brief → toggle
+            want_on = not is_on
+
+        if want_on and not is_on:
+            new_prompt = current_text + "\n\n" + BRIEF_INSTRUCTION
+            engine._config.system_prompt = new_prompt
+            sys.stdout.write("  Brief mode: ON\n")
+        elif not want_on and is_on:
+            new_prompt = current_text.replace("\n\n" + BRIEF_INSTRUCTION, "")
+            engine._config.system_prompt = new_prompt
+            sys.stdout.write("  Brief mode: OFF\n")
+        else:
+            state = "ON" if is_on else "OFF"
+            sys.stdout.write(f"  Brief mode: {state} (no change)\n")
+        return True, model
+
     if name == "/cost":
         sys.stdout.write(f"  {engine.cost_summary(model)}\n")
         return True, model
@@ -296,6 +512,10 @@ def _handle_slash(
             f"  Messages: {len(engine.messages)}\n"
             f"  Model:   {model}\n"
         )
+        return True, model
+
+    if name == "/context":
+        sys.stdout.write(context_breakdown(engine, model) + "\n")
         return True, model
 
     if name == "/changes":
@@ -330,6 +550,28 @@ def _handle_slash(
             sys.stdout.write("  No tasks.\n")
         return True, model
 
+    if name == "/search":
+        if not arg:
+            sys.stdout.write("  Usage: /search <query>\n")
+            return True, model
+        _search_messages(engine.messages, arg)
+        return True, model
+
+    if name == "/template":
+        _handle_template_command(arg, template_state or {})
+        return True, model
+
+    if name == "/undo":
+        if executor is None:
+            sys.stdout.write("  No executor available.\n")
+            return True, model
+        try:
+            path, msg = executor.undo_stack.undo()
+            sys.stdout.write(f"  {msg}\n")
+        except IndexError:
+            sys.stdout.write("  Nothing to undo.\n")
+        return True, model
+
     if name == "/clear":
         engine._messages.clear()
         sys.stdout.write("  Conversation cleared.\n")
@@ -354,6 +596,58 @@ def _handle_slash(
 
     sys.stdout.write(f"  Unknown command: {name}. Type /help for commands.\n")
     return True, model
+
+
+def _handle_template_command(arg: str, state: dict[str, Any]) -> None:
+    """Handle /template subcommands, mutating *state* in place.
+
+    Subcommands:
+        /template list             -- list available templates
+        /template use <name>       -- set active template for future prompts
+        /template use              -- clear active template
+        /template <name> <prompt>  -- apply template to prompt (one-shot, printed)
+    """
+    templates: dict[str, Any] = state.get("templates", {})
+    active: str | None = state.get("active")
+
+    sub_parts = arg.strip().split(None, 1)
+    sub = sub_parts[0] if sub_parts else ""
+    sub_arg = sub_parts[1] if len(sub_parts) > 1 else ""
+
+    if not sub or sub == "list":
+        if not templates:
+            sys.stdout.write("  No templates loaded.\n")
+        else:
+            for tname, tmpl in sorted(templates.items()):
+                marker = " (active)" if tname == active else ""
+                sys.stdout.write(f"  {tname:20s} {tmpl.description}{marker}\n")
+        return
+
+    if sub == "use":
+        tname = sub_arg.strip()
+        if not tname:
+            if active:
+                sys.stdout.write(f"  Template cleared (was: {active}).\n")
+            else:
+                sys.stdout.write("  No active template.\n")
+            state["active"] = None
+            return
+        if tname not in templates:
+            sys.stdout.write(f"  Template not found: {tname!r}. Use /template list.\n")
+            return
+        sys.stdout.write(f"  Active template set to: {tname}\n")
+        state["active"] = tname
+        return
+
+    # /template <name> <prompt> -- one-shot render
+    tname = sub
+    if tname not in templates:
+        sys.stdout.write(f"  Template not found: {tname!r}. Use /template list.\n")
+        return
+
+    rendered = templates[tname].render(sub_arg)
+    sys.stdout.write(f"  [template: {tname}]\n")
+    sys.stdout.write(f"  {rendered}\n")
 
 
 # ---------------------------------------------------------------------------
@@ -441,6 +735,8 @@ async def run_repl(args: argparse.Namespace) -> int:
 
     # --- Build system prompt with git context ---
     system_prompt_parts = [args.system_prompt or SYSTEM_PROMPT]
+    if getattr(args, "brief", False):
+        system_prompt_parts.append(BRIEF_INSTRUCTION)
 
     from duh.kernel.git_context import get_git_context, get_git_warnings
     git_ctx = get_git_context(cwd)
@@ -485,6 +781,10 @@ async def run_repl(args: argparse.Namespace) -> int:
         max_turns=args.max_turns,
     )
     engine = Engine(deps=deps, config=engine_config, session_store=store)
+
+    # --- Load readline history & set up tab completion ---
+    _load_history()
+    _setup_completion()
 
     renderer.banner(model)
 
@@ -543,6 +843,9 @@ async def run_repl(args: argparse.Namespace) -> int:
         # Re-render accumulated text as Rich Markdown (no-op for plain)
         renderer.flush_response()
         renderer.turn_end()
+
+    # --- Save readline history on exit ---
+    _save_history()
 
     # --- Disconnect MCP ---
     if mcp_executor:

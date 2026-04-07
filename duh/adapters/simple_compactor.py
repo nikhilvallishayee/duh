@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from duh.kernel.messages import Message
+from duh.kernel.messages import Message, ToolUseBlock
 
 
 class SimpleCompactor:
@@ -62,6 +62,7 @@ class SimpleCompactor:
         """Compact messages to fit within token limit.
 
         Strategy:
+        0. Deduplicate: remove redundant file reads and tool results.
         1. Separate system messages (always kept) from conversation.
         2. Walk backward through non-system messages to find what fits.
         3. Summarize dropped messages into a single system message
@@ -73,6 +74,9 @@ class SimpleCompactor:
         limit = token_limit or self._default_limit
         if not messages:
             return []
+
+        # Step 0: remove duplicate file reads and redundant tool results
+        messages = _deduplicate_messages(messages)
 
         # Partition: system vs. conversation
         system_msgs: list[Any] = []
@@ -135,6 +139,159 @@ class SimpleCompactor:
     @property
     def min_keep(self) -> int:
         return self._min_keep
+
+
+# ---------------------------------------------------------------------------
+# Deduplication helpers
+# ---------------------------------------------------------------------------
+
+# Tool names that read files — duplicates of these are safe to collapse.
+_FILE_READ_TOOLS = frozenset({"Read", "read", "cat", "ReadFile", "read_file"})
+
+
+def _extract_tool_uses(msg: Any) -> list[dict[str, Any]]:
+    """Extract tool_use entries from a message's content blocks.
+
+    Returns a list of dicts with at least {id, name, input, type}.
+    Works for both Message objects and plain dicts.
+    """
+    content = msg.content if isinstance(msg, Message) else msg.get("content", "")
+    if isinstance(content, str):
+        return []
+    results: list[dict[str, Any]] = []
+    for block in content:
+        if isinstance(block, ToolUseBlock):
+            results.append(
+                {"id": block.id, "name": block.name,
+                 "input": block.input, "type": "tool_use"}
+            )
+        elif isinstance(block, dict) and block.get("type") == "tool_use":
+            results.append(block)
+    return results
+
+
+def _extract_tool_results(msg: Any) -> list[dict[str, Any]]:
+    """Extract tool_result entries from a message's content blocks."""
+    content = msg.content if isinstance(msg, Message) else msg.get("content", "")
+    if isinstance(content, str):
+        return []
+    results: list[dict[str, Any]] = []
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "tool_result":
+            results.append(block)
+    return results
+
+
+def _tool_use_signature(name: str, tool_input: Any) -> str:
+    """Return a hashable signature for a tool call (name + canonical input)."""
+    return f"{name}::{json.dumps(tool_input, sort_keys=True, default=str)}"
+
+
+def _deduplicate_messages(messages: list[Any]) -> list[Any]:
+    """Remove duplicate file reads and redundant tool results.
+
+    Two deduplication passes (both backward so "latest wins"):
+
+    1. **Duplicate file reads**: When the same file-reading tool (Read, cat,
+       etc.) is called multiple times with identical input, keep only the
+       *latest* tool_use block and its corresponding tool_result. Earlier
+       read pairs are stripped from their respective messages.
+
+    2. **Redundant tool results**: When *any* tool is called again later with
+       the same (name, input), the earlier tool_result is stale. Strip it
+       (and its originating tool_use block) from the conversation.
+
+    Messages that become empty after block removal are dropped entirely.
+    System messages are never touched.
+    """
+    if not messages:
+        return []
+
+    # --- Pass 1: Build a map of tool_use_id → (name, input, msg_index) ---
+    #     by scanning all assistant messages for tool_use blocks.
+    tool_use_info: dict[str, tuple[str, Any, int]] = {}  # id → (name, input, idx)
+    for idx, msg in enumerate(messages):
+        for tu in _extract_tool_uses(msg):
+            tool_use_info[tu["id"]] = (tu["name"], tu.get("input", {}), idx)
+
+    # --- Pass 2: Walk backward, track which (name, input) we've seen. ---
+    #     The latest occurrence wins; earlier ones are marked for removal.
+    seen_signatures: set[str] = set()
+    stale_tool_use_ids: set[str] = set()  # tool_use IDs to remove
+
+    for idx in range(len(messages) - 1, -1, -1):
+        msg = messages[idx]
+        for tu in reversed(_extract_tool_uses(msg)):
+            sig = _tool_use_signature(tu["name"], tu.get("input", {}))
+            if sig in seen_signatures:
+                # This is a duplicate — mark for removal
+                stale_tool_use_ids.add(tu["id"])
+            else:
+                seen_signatures.add(sig)
+
+    if not stale_tool_use_ids:
+        return list(messages)  # nothing to do — return a copy
+
+    # --- Pass 3: Rebuild messages, stripping stale blocks. ---
+    result: list[Any] = []
+    for msg in messages:
+        role = _get_role(msg)
+        if role == "system":
+            result.append(msg)
+            continue
+
+        # Get the content blocks
+        if isinstance(msg, Message):
+            content = msg.content
+        elif isinstance(msg, dict):
+            content = msg.get("content", "")
+        else:
+            result.append(msg)
+            continue
+
+        if isinstance(content, str):
+            result.append(msg)
+            continue
+
+        # Filter out stale tool_use and their matching tool_result blocks
+        new_blocks: list[Any] = []
+        for block in content:
+            # Check tool_use blocks
+            if isinstance(block, ToolUseBlock):
+                if block.id in stale_tool_use_ids:
+                    continue
+            elif isinstance(block, dict) and block.get("type") == "tool_use":
+                if block.get("id") in stale_tool_use_ids:
+                    continue
+            # Check tool_result blocks
+            elif isinstance(block, dict) and block.get("type") == "tool_result":
+                if block.get("tool_use_id") in stale_tool_use_ids:
+                    continue
+            new_blocks.append(block)
+
+        # Drop messages that became empty after block removal
+        if not new_blocks:
+            continue
+
+        # Rebuild the message with filtered content
+        if isinstance(msg, Message):
+            result.append(
+                Message(
+                    role=msg.role,
+                    content=new_blocks,
+                    id=msg.id,
+                    timestamp=msg.timestamp,
+                    metadata=msg.metadata,
+                )
+            )
+        elif isinstance(msg, dict):
+            new_msg = dict(msg)
+            new_msg["content"] = new_blocks
+            result.append(new_msg)
+        else:
+            result.append(msg)
+
+    return result
 
 
 def _get_role(msg: Any) -> str:

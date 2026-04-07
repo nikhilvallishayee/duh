@@ -100,37 +100,72 @@ class OpenAIProvider:
             tool_calls: dict[int, dict[str, Any]] = {}
             finish_reason = "stop"
 
-            async for chunk in response:
-                delta = chunk.choices[0].delta if chunk.choices else None
-                if not delta:
-                    continue
+            try:
+                async for chunk in response:
+                    delta = chunk.choices[0].delta if chunk.choices else None
+                    if not delta:
+                        continue
 
-                # Track finish reason
-                if chunk.choices[0].finish_reason:
-                    finish_reason = chunk.choices[0].finish_reason
+                    # Track finish reason
+                    if chunk.choices[0].finish_reason:
+                        finish_reason = chunk.choices[0].finish_reason
 
-                # Text content
-                if delta.content:
-                    text_parts.append(delta.content)
-                    yield {"type": "text_delta", "text": delta.content}
+                    # Text content
+                    if delta.content:
+                        text_parts.append(delta.content)
+                        yield {"type": "text_delta", "text": delta.content}
 
-                # Tool calls (streamed incrementally)
-                if delta.tool_calls:
-                    for tc in delta.tool_calls:
-                        idx = tc.index
-                        if idx not in tool_calls:
-                            tool_calls[idx] = {
-                                "id": tc.id or "",
-                                "name": "",
-                                "arguments": "",
-                            }
-                        if tc.id:
-                            tool_calls[idx]["id"] = tc.id
-                        if tc.function:
-                            if tc.function.name:
-                                tool_calls[idx]["name"] = tc.function.name
-                            if tc.function.arguments:
-                                tool_calls[idx]["arguments"] += tc.function.arguments
+                    # Tool calls (streamed incrementally)
+                    if delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            idx = tc.index
+                            if idx not in tool_calls:
+                                tool_calls[idx] = {
+                                    "id": tc.id or "",
+                                    "name": "",
+                                    "arguments": "",
+                                }
+                            if tc.id:
+                                tool_calls[idx]["id"] = tc.id
+                            if tc.function:
+                                if tc.function.name:
+                                    tool_calls[idx]["name"] = tc.function.name
+                                if tc.function.arguments:
+                                    tool_calls[idx]["arguments"] += tc.function.arguments
+
+            except (ConnectionError, httpx.ReadError, asyncio.TimeoutError) as mid_err:
+                # Mid-stream error — yield partial content if we have any
+                if text_parts or tool_calls:
+                    content_blocks: list[dict[str, Any]] = []
+                    full_text = "".join(text_parts)
+                    if full_text:
+                        content_blocks.append({"type": "text", "text": full_text})
+                    for idx in sorted(tool_calls):
+                        tc = tool_calls[idx]
+                        try:
+                            parsed_input = json.loads(tc["arguments"])
+                        except (json.JSONDecodeError, KeyError):
+                            parsed_input = {}
+                        content_blocks.append({
+                            "type": "tool_use",
+                            "id": tc["id"],
+                            "name": tc["name"],
+                            "input": parsed_input,
+                        })
+                    yield {
+                        "type": "assistant",
+                        "message": Message(
+                            role="assistant",
+                            content=content_blocks,
+                            metadata={
+                                "partial": True,
+                                "stop_reason": "error",
+                                "usage": {},
+                            },
+                        ),
+                    }
+                yield {"type": "error", "error": f"Stream interrupted: {mid_err}"}
+                return
 
             # Build the complete assistant message
             content_blocks: list[dict[str, Any]] = []

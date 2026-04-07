@@ -26,6 +26,11 @@ SYSTEM_PROMPT = (
     "their coding tasks. Be concise and direct."
 )
 
+BRIEF_INSTRUCTION = (
+    "Be extremely concise. Use short sentences. Skip explanations unless asked. "
+    "Prefer code over prose. Maximum 3 sentences for non-code responses."
+)
+
 # ---------------------------------------------------------------------------
 # Error interpretation — translate API errors into human-friendly messages
 # ---------------------------------------------------------------------------
@@ -162,6 +167,8 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     from duh.config import load_instructions
     instruction_list = load_instructions(cwd)
     system_prompt_parts = [args.system_prompt or SYSTEM_PROMPT]
+    if getattr(args, "brief", False):
+        system_prompt_parts.append(BRIEF_INSTRUCTION)
     if instruction_list:
         system_prompt_parts.extend(instruction_list if isinstance(instruction_list, list) else [instruction_list])
 

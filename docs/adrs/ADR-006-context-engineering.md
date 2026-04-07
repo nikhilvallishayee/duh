@@ -5,37 +5,19 @@
 
 ## Context
 
-LLMs have finite context windows. As conversations grow, they exceed the limit and the model either degrades or rejects the request. Claude Code handles this with a multi-layered compaction system spanning 16 files (`services/compact/`): auto-compact thresholds, micro-compaction of tool results, session memory compaction, reactive compact on prompt-too-long errors, time-based clearing, and context collapse. The total compaction subsystem is ~4,000 LOC.
+LLMs have finite context windows. As conversations grow, they exceed the limit and the model either degrades or rejects the request. Production harnesses handle this with multi-layered compaction systems: auto-compact thresholds, micro-compaction of tool results, session memory compaction, reactive compact on prompt-too-long errors, time-based clearing, and context collapse.
 
 D.U.H. needs context management as a first-class concern, but we start simple and grow only when real usage demands it.
 
-### Legacy Behavior (Claude Code)
+### Patterns from production harnesses
 
-Key patterns from `tengu-legacy/src/services/`:
+1. **Token estimation**: Rough char-based estimation (chars / 4 for text, chars / 2 for JSON), with API-based exact counting as the source of truth. File-type-aware estimation.
 
-1. **Token estimation** (`tokenEstimation.ts`):
-   - `roughTokenCountEstimation(content, bytesPerToken=4)` — `Math.round(content.length / bytesPerToken)` (chars / 4 for text, chars / 2 for JSON)
-   - API-based exact counting via `countTokens` endpoint as the source of truth
-   - File-type-aware estimation (JSON gets 2 bytes/token, everything else 4)
+2. **Auto-compact trigger**: Fires when estimated token count exceeds a threshold (effective context window minus a buffer). Circuit breakers stop after consecutive failures.
 
-2. **Auto-compact trigger** (`autoCompact.ts`):
-   - `getEffectiveContextWindowSize(model)` = context window - reserved output tokens (20K)
-   - `getAutoCompactThreshold(model)` = effective window - 13K buffer
-   - Fires when `tokenCountWithEstimation(messages) >= threshold`
-   - Circuit breaker: stops after 3 consecutive failures
-   - Disabled for sub-agents (compact, session_memory, marble_origami)
+3. **Compaction strategy**: Summarize old conversation via a forked agent, produce a compact boundary marker, keep recent messages after the boundary.
 
-3. **Compaction strategy** (`compact.ts`):
-   - Sends entire conversation to a forked agent with a "summarize" prompt
-   - Produces a compact boundary marker + summary as the new conversation start
-   - Keeps recent messages after the boundary
-   - Strips images, reinjected attachments, and redacted thinking before compaction
-   - Retries with head-truncation if compact itself hits prompt-too-long
-
-4. **Micro-compaction** (`microCompact.ts`):
-   - Clears old tool result content blocks (Read, Bash, Grep outputs) in-place
-   - Keeps the N most recent compactable results
-   - Time-based variant clears when gap since last loop iteration exceeds threshold
+4. **Micro-compaction**: Clear old tool result content blocks in-place, keeping the N most recent compactable results.
 
 ## Decision
 
@@ -45,11 +27,11 @@ Implement the `ContextManager` port (defined in ADR-003) with a `SimpleCompactor
 
 ```python
 def estimate_tokens(self, messages: list[Any]) -> int:
-    """chars / 4 rough estimate — matches Claude Code's roughTokenCountEstimation."""
+    """chars / 4 rough estimate."""
     return len(str(messages)) // 4
 ```
 
-This mirrors `roughTokenCountEstimation(content, bytesPerToken=4)` from legacy. The `str()` serialization captures all content including tool inputs/outputs.
+The `str()` serialization captures all content including tool inputs/outputs.
 
 ### Compaction Strategy
 
@@ -65,23 +47,23 @@ Algorithm:
 4. Stop when adding the next message would exceed the token limit
 5. Return system messages + the tail window of conversation messages
 
-This is simpler than Claude Code's "summarize via forked agent" approach but achieves the same goal: keep recent context, drop old context. The legacy approach is better (summaries preserve information), but requires calling the model recursively. We start with truncation and add summarization when we need it.
+This is simpler than a "summarize via forked agent" approach but achieves the same goal: keep recent context, drop old context. Summarization preserves more information but requires calling the model recursively. We start with truncation and add summarization when we need it.
 
 ### Configurable Parameters
 
-| Parameter | Default | Legacy equivalent |
-|-----------|---------|-------------------|
-| `default_limit` | 100,000 | `getEffectiveContextWindowSize()` - buffer |
-| `bytes_per_token` | 4 | `roughTokenCountEstimation(content, 4)` |
-| `min_keep` | 2 | No equivalent (always keep at least 2 recent messages) |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `default_limit` | 100,000 | Effective context window minus buffer |
+| `bytes_per_token` | 4 | Rough chars-per-token ratio |
+| `min_keep` | 2 | Always keep at least 2 recent messages |
 
 ### Future Enhancements
 
 When the simple compactor proves insufficient:
-- **Summarization compactor**: call the model to summarize old turns (matches legacy)
-- **File-type-aware estimation**: 2 bytes/token for JSON (matches `bytesPerTokenForFileType`)
+- **Summarization compactor**: call the model to summarize old turns
+- **File-type-aware estimation**: 2 bytes/token for JSON
 - **Auto-compact trigger**: fire compaction before model call when threshold exceeded
-- **Micro-compaction**: clear old tool results in-place (matches `microCompact.ts`)
+- **Micro-compaction**: clear old tool results in-place
 - **API-based counting**: use `countTokens` endpoint for exact counts
 
 ## Consequences

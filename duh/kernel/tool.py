@@ -1,6 +1,6 @@
 """Tool protocol — the contract every tool implements.
 
-Deliberately simpler than Claude Code's 30-method monster.
+Deliberately simpler than typical 30-method interfaces.
 A tool needs: a name, a schema, a call method, and a safety classification.
 Everything else is optional.
 

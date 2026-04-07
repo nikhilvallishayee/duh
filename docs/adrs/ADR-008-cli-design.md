@@ -5,15 +5,13 @@
 
 ## Context
 
-Claude Code's CLI (`main.tsx`) is a 500+ line React/Ink application with Commander.js argument parsing, OAuth flows, MDM settings, GrowthBook feature flags, keychain prefetching, and dozens of startup optimizations. The entry point alone imports 80+ modules. The CLI supports interactive REPL mode, print mode (`-p`), API mode (`--json`), coordinator mode, assistant mode, and remote mode.
+Production AI harnesses often have complex CLI entry points: React/Ink rendering, OAuth flows, enterprise settings, feature flags, and dozens of startup optimizations. They support many modes (REPL, print, API, coordinator, assistant, remote) and import a large module graph at startup.
 
 D.U.H. needs a CLI that provides the core workflows without the complexity.
 
-### Legacy Behavior (Claude Code)
+### Patterns from production harnesses
 
-Key patterns from `tengu-legacy/src/main.tsx`:
-
-1. **Provider auto-detection**: Checks `ANTHROPIC_API_KEY` environment variable, falls back to OAuth, then to Bedrock/Vertex credentials. No explicit `--provider` flag needed.
+1. **Provider auto-detection**: Check API key environment variables, fall back to local providers. No explicit `--provider` flag needed.
 
 2. **Flag conventions**:
    - `-p "prompt"` — print mode (non-interactive, outputs to stdout)
@@ -33,7 +31,7 @@ Key patterns from `tengu-legacy/src/main.tsx`:
 
 4. **Error UX**: Errors are human-readable with actionable hints. "Credit balance is too low" → "Go to console.anthropic.com → Plans & Billing to add credits." Not raw stack traces.
 
-5. **Doctor subcommand**: `claude doctor` runs diagnostics (Python version, API key, config, tools).
+5. **Doctor subcommand**: A diagnostics command checks environment health (runtime version, API key, config, tools).
 
 ## Decision
 
@@ -52,9 +50,9 @@ Interactive REPL mode is future work — print mode covers the scripting/automat
 
 ### Flag Conventions
 
-Matching Claude Code where possible:
+Following established conventions where possible:
 
-| Flag | Short | Description | CC equivalent |
+| Flag | Short | Description | Convention |
 |------|-------|-------------|---------------|
 | `--prompt` | `-p` | Print mode prompt | `-p` |
 | `--model` | | Model override | `--model` |
@@ -123,7 +121,7 @@ _ERROR_HINTS = {
 ## Consequences
 
 - Zero external CLI dependencies (stdlib argparse)
-- Matches Claude Code flag conventions where they make sense
+- Matches established CLI flag conventions where they make sense
 - Errors guide users to solutions, not stack traces
 - Provider auto-detection works out of the box (set key → it works)
 - Debug mode gives full visibility without cluttering normal output

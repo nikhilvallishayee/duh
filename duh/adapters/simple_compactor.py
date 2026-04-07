@@ -1,14 +1,8 @@
 """SimpleCompactor adapter — context window management via tail-window truncation.
 
-Implements the ContextManager port. Mirrors Claude Code's
-``roughTokenCountEstimation`` (chars / 4) for token estimation, and keeps
-the most recent messages that fit within the token limit.
-
-Legacy reference: tengu-legacy/src/services/tokenEstimation.ts
-    roughTokenCountEstimation(content, bytesPerToken=4) → Math.round(content.length / bytesPerToken)
-
-Legacy reference: tengu-legacy/src/services/compact/autoCompact.ts
-    getAutoCompactThreshold(model) = effectiveContextWindow - 13,000 buffer tokens
+Implements the ContextManager port. Uses a rough chars-per-token estimate
+(chars / 4) for token estimation, and keeps the most recent messages that
+fit within the token limit.
 
     provider = SimpleCompactor(default_limit=100_000)
     estimated = provider.estimate_tokens(messages)
@@ -27,8 +21,8 @@ class SimpleCompactor:
     """Tail-window context compactor.
 
     Implements the ContextManager port by estimating tokens via
-    chars / bytes_per_token (matching legacy ``roughTokenCountEstimation``)
-    and keeping the most recent messages that fit within the limit.
+    chars / bytes_per_token and keeping the most recent messages that
+    fit within the limit.
     """
 
     def __init__(
@@ -52,8 +46,7 @@ class SimpleCompactor:
     def estimate_tokens(self, messages: list[Any]) -> int:
         """Estimate token count for a list of messages.
 
-        Uses chars / bytes_per_token, matching Claude Code's
-        ``roughTokenCountEstimation(content, 4)``.
+        Uses chars / bytes_per_token as a rough token estimate.
         """
         total = 0
         for msg in messages:

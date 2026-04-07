@@ -163,7 +163,11 @@ duh --version                        # version
 | [008](docs/adrs/ADR-008-cli-design.md) | CLI — flags, errors, debug, auto-detect |
 | [009](docs/adrs/ADR-009-provider-adapters.md) | Providers — Anthropic + Ollama adapters |
 | [010](docs/adrs/ADR-010-mcp-integration.md) | MCP — tool transport protocol |
+| [011](docs/adrs/ADR-011-tui-architecture.md) | TUI — 3 rendering tiers, renderer-agnostic kernel |
+| [012](docs/adrs/ADR-012-multi-agent.md) | Multi-agent — Engine-per-agent, no framework |
 | [013](docs/adrs/ADR-013-hook-system.md) | Hooks — data-driven dispatch, 6 events |
+| [014](docs/adrs/ADR-014-plugin-architecture.md) | Plugins — entry_points discovery, PluginSpec |
+| [015](docs/adrs/ADR-015-configuration.md) | Config — DUH.md + settings.json, 4-layer precedence |
 
 ## Comparison
 

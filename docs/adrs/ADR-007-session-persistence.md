@@ -5,23 +5,21 @@
 
 ## Context
 
-Conversations must survive process restarts. Claude Code stores sessions as JSONL files with sophisticated features: deduplication via UUID sets, parent-UUID chains for forking/resuming, tombstone messages, content replacement records, file history snapshots, and agent sidechain transcripts. The session storage module (`utils/sessionStorage.ts`) is ~4,500 LOC.
+Conversations must survive process restarts. Production harnesses store sessions as JSONL files with sophisticated features: deduplication via UUID sets, parent-UUID chains for forking/resuming, tombstone messages, content replacement records, file history snapshots, and agent sidechain transcripts.
 
 D.U.H. needs reliable persistence that covers the core use cases: save, load, resume, list, delete.
 
-### Legacy Behavior (Claude Code)
+### Patterns from production harnesses
 
-Key patterns from `tengu-legacy/src/utils/sessionStorage.ts`:
+1. **JSONL format**: One JSON object per line. Each entry has a `type` field and a `uuid` for deduplication.
 
-1. **JSONL format**: One JSON object per line. Each entry has a `type` field (`user`, `assistant`, `attachment`, `system`) and a `uuid` for deduplication.
+2. **Storage location**: Sessions scoped to the working directory.
 
-2. **Storage location**: `~/.claude/projects/<sanitized-cwd>/` — sessions are scoped to the working directory. Session files are named `<session-id>.jsonl`.
+3. **Core write function**: Deduplicates by UUID -- only appends messages not already in the file. Tracks parent-UUID chains for resume/fork support.
 
-3. **`recordTranscript()`**: The core write function. Deduplicates by UUID — only appends messages not already in the file. Tracks parent-UUID chains for resume/fork support.
+4. **Resume protocol**: `--continue` resumes the most recent session. `--resume <id>` resumes a specific session. Loading reads the JSONL, filters to transcript entries, and reconstructs the conversation.
 
-4. **Resume protocol**: `--continue` resumes the most recent session. `--resume <id>` resumes a specific session. Loading reads the JSONL, filters to `isTranscriptMessage` entries (user, assistant, attachment, system — NOT progress), and reconstructs the conversation.
-
-5. **Atomic writes**: Legacy uses `writeFile` + `appendFile` with the session file locked. Content replacement records are written as separate entries that reference the original message UUID.
+5. **Atomic writes**: Write + append with the session file locked. Content replacement records reference the original message UUID.
 
 ## Decision
 
@@ -48,7 +46,7 @@ One JSON object per line, matching `dataclasses.asdict(Message)`:
 
 ### Append Semantics
 
-`save(session_id, messages)` receives the full message list. It counts existing lines and only writes the delta (messages beyond the existing count). This matches Claude Code's `recordTranscript` deduplication — but uses line count instead of UUID-based sets, which is simpler and correct for the single-writer case.
+`save(session_id, messages)` receives the full message list. It counts existing lines and only writes the delta (messages beyond the existing count). This is simpler than UUID-based deduplication and correct for the single-writer case.
 
 ### Atomic Writes
 
@@ -70,7 +68,7 @@ Each session carries metadata embedded in the JSONL itself — the first message
 ### Future Enhancements
 
 - **Project-scoped storage**: `~/.duh/sessions/<project-hash>/`
-- **UUID-based deduplication**: match Claude Code's `recordTranscript` pattern
+- **UUID-based deduplication**: deduplicate by message UUID instead of line count
 - **Parent-UUID chains**: enable forking and resume-from-midpoint
 - **SQLite backend**: `SessionStore` port allows a `SqliteStore` adapter
 

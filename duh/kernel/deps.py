@@ -4,8 +4,7 @@ Every external dependency the kernel needs is injected here.
 Tests swap in fakes. Adapters provide real implementations.
 The kernel never imports a provider SDK directly.
 
-This is the single best pattern from Claude Code's architecture
-(query/deps.ts) — preserved and elevated to a first-class concept.
+The dependency injection pattern — elevated to a first-class concept.
 
     deps = Deps(
         call_model=anthropic_adapter.stream,

@@ -19,18 +19,18 @@ D.U.H. needs the same capability. MCP tools must be indistinguishable from nativ
 
 D.U.H. v0.1 focuses on **tools only**. Resources and prompts are future work.
 
-### How Claude Code does it
+### How production harnesses do it
 
-Claude Code's `client.ts` (~700 lines) creates an `@modelcontextprotocol/sdk` `Client`, connects via `StdioClientTransport`, `SSEClientTransport`, or `StreamableHTTPClientTransport`, calls `client.listTools()` to discover tools, wraps each as an `MCPTool` (a `Tool` implementation), and merges them into the global tool pool. The `MCPConnectionManager` React context manages lifecycle (connect, reconnect, toggle, cleanup).
+A typical MCP integration creates an SDK client, connects via stdio/SSE/HTTP transport, discovers tools via `listTools()`, wraps each as a tool implementation, and merges them into the global tool pool. A connection manager handles lifecycle (connect, reconnect, toggle, cleanup).
 
-Key types from `types.ts`:
-- Transport types: `stdio | sse | http | ws | sdk`
+Key abstractions:
+- Transport types: `stdio | sse | http | ws`
 - Server states: `connected | failed | needs-auth | pending | disabled`
-- Config: `McpServerConfig` discriminated union keyed on `type`
+- Config: server config discriminated by transport type
 
 ### What D.U.H. simplifies
 
-Claude Code's MCP layer is ~2000 LOC across 20 files because it handles React context, OAuth, IDE transports, proxy routing, SSRF guards, and binary blob persistence. D.U.H. strips this to the essential: connect to stdio servers, discover tools, execute tool calls, handle errors. ~150 LOC.
+Full MCP implementations grow large because they handle UI framework state, OAuth, IDE transports, proxy routing, SSRF guards, and binary blob persistence. D.U.H. strips this to the essential: connect to stdio servers, discover tools, execute tool calls, handle errors.
 
 ## Decision
 
@@ -40,7 +40,7 @@ Claude Code's MCP layer is ~2000 LOC across 20 files because it handles React co
 
 ### 2. Transport: stdio first
 
-Stdio is the simplest and most common MCP transport (every `npx` server, every local binary). SSE and HTTP transports are future work. The config format matches Claude Code's `mcpServers` shape:
+Stdio is the simplest and most common MCP transport (every `npx` server, every local binary). SSE and HTTP transports are future work. The config format uses the standard `mcpServers` shape:
 
 ```python
 {
@@ -62,9 +62,9 @@ Once connected, MCP tools are merged into the tool pool with a `mcp__<server>__<
 
 The `mcp` Python package is an optional dependency. If not installed, `MCPExecutor` raises a clear error on construction. The rest of D.U.H. works fine without it.
 
-### 5. No React, no OAuth, no IDE transports
+### 5. No UI framework coupling, no OAuth, no IDE transports
 
-Claude Code's MCP layer handles IDE WebSocket connections, OAuth flows, SSRF guards, and React context. D.U.H. does none of that. A server is either connected or failed. Reconnection is explicit.
+Full MCP implementations handle IDE WebSocket connections, OAuth flows, SSRF guards, and UI framework state. D.U.H. does none of that. A server is either connected or failed. Reconnection is explicit.
 
 ## Config format
 

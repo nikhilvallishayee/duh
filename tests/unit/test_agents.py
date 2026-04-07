@@ -115,7 +115,6 @@ class TestRunAgent:
     @pytest.mark.asyncio
     async def test_run_agent_returns_result(self):
         """run_agent creates a child Engine and returns AgentResult."""
-        # We mock the Engine to avoid needing real model calls
         from unittest.mock import patch, MagicMock
 
         async def fake_run(prompt, **kwargs):
@@ -127,7 +126,7 @@ class TestRunAgent:
         mock_engine.run = fake_run
         mock_engine_cls.return_value = mock_engine
 
-        with patch("duh.agents.Engine", mock_engine_cls):
+        with patch("duh.kernel.engine.Engine", mock_engine_cls):
             result = await run_agent(
                 prompt="do something",
                 agent_type="general",
@@ -152,7 +151,7 @@ class TestRunAgent:
         mock_engine.run = fake_run
         mock_engine_cls.return_value = mock_engine
 
-        with patch("duh.agents.Engine", mock_engine_cls):
+        with patch("duh.kernel.engine.Engine", mock_engine_cls):
             result = await run_agent(
                 prompt="do something",
                 agent_type="coder",
@@ -175,7 +174,7 @@ class TestRunAgent:
         mock_engine.run = fake_run
         mock_engine_cls.return_value = mock_engine
 
-        with patch("duh.agents.Engine", mock_engine_cls):
+        with patch("duh.kernel.engine.Engine", mock_engine_cls):
             result = await run_agent(
                 prompt="do something",
                 agent_type="general",

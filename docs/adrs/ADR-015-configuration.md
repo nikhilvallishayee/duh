@@ -5,7 +5,7 @@
 
 ## Context
 
-Claude Code has a multi-layered configuration system spanning ~15 files and ~3000 LOC in `src/utils/settings/` and `src/utils/claudeMd.ts`.
+Production AI coding agents typically have multi-layered configuration systems with project-level instructions, user settings, and environment-specific overrides.
 
 ### Settings layers (Claude Code)
 
@@ -28,7 +28,7 @@ Separate from JSON settings, `CLAUDE.md` files provide natural-language instruct
 3. **Project** (`CLAUDE.md`, `.claude/CLAUDE.md`, `.claude/rules/*.md`) -- per-repo instructions, traversed from cwd up to git root
 4. **Local** (`CLAUDE.local.md`) -- gitignored personal project instructions
 
-`claudeMd.ts` (~900 LOC) handles directory traversal, `@include` directives (one file can include another), frontmatter parsing, gitignore exclusion patterns, and memory file validation.
+Project instruction files support directory traversal, include directives, frontmatter parsing, and gitignore exclusion patterns.
 
 ### What D.U.H. simplifies
 

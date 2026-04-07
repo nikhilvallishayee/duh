@@ -5,23 +5,21 @@
 
 ## Context
 
-Every LLM provider has its own SDK, streaming format, tool calling convention, error shapes, and authentication method. Claude Code is locked to Anthropic — the SDK is imported directly throughout the codebase. D.U.H. isolates provider specifics behind the `ModelProvider` port (ADR-003) so the kernel never sees a provider SDK.
+Every LLM provider has its own SDK, streaming format, tool calling convention, error shapes, and authentication method. Single-provider harnesses import the SDK directly throughout the codebase. D.U.H. isolates provider specifics behind the `ModelProvider` port (ADR-003) so the kernel never sees a provider SDK.
 
-### Legacy Behavior (Claude Code)
+### Patterns from provider integrations
 
-Claude Code wraps the Anthropic SDK in `services/api/claude.ts`:
+1. **Streaming**: Provider SDKs yield event objects with different shapes and naming conventions.
 
-1. **Streaming**: Uses `client.messages.stream()` which yields SDK event objects (`message_start`, `content_block_start`, `content_block_delta`, etc.).
+2. **Thinking**: Some models support extended thinking with configurable token budgets or adaptive modes.
 
-2. **Thinking**: Supports `thinking: {type: "enabled", budget_tokens: N}` for extended thinking, and `{type: "adaptive"}` for models that support it (Opus 4.6, Sonnet 4.6).
+3. **Tool schemas**: Internal tool objects must be translated to each provider's expected format.
 
-3. **Tool schemas**: Translates internal Tool objects to Anthropic's `{name, description, input_schema}` format.
+4. **Token counting**: API-based exact counting with rough estimation (chars / 4) as fallback.
 
-4. **Token counting**: Separate `countTokens` API call for exact token counts. Falls back to `roughTokenCountEstimation` (chars / 4).
+5. **Error handling**: Map API errors to user-friendly messages. Retry with exponential backoff. Handle `prompt_too_long`, `rate_limit`, `overloaded`, `authentication_error`.
 
-5. **Error handling**: Maps API errors to user-friendly messages. Retries with exponential backoff. Handles `prompt_too_long`, `rate_limit`, `overloaded`, `authentication_error`.
-
-6. **Beta headers**: Manages SDK beta feature flags (`computer-use-2024-10-22`, `prompt-caching`, etc.).
+6. **Beta headers**: Manage SDK beta feature flags as providers evolve.
 
 ## Decision
 

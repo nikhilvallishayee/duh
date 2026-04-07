@@ -276,7 +276,7 @@ class HookRegistry:
     def from_config(cls, config: dict[str, Any]) -> "HookRegistry":
         """Build a registry from a config dict.
 
-        Expected format (matches Claude Code's settings.json)::
+        Expected format::
 
             {
                 "hooks": {

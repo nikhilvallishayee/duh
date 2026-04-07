@@ -11,13 +11,13 @@ The kernel is the smallest set of code that implements the universal agentic cyc
 
 The kernel consists of exactly 5 files:
 
-| File | Responsibility | LOC Target |
-|------|---------------|------------|
-| `loop.py` | The async generator — one turn of the agentic cycle | <200 |
-| `engine.py` | Session lifecycle — message history, turn counting | <100 |
-| `tool.py` | Tool protocol — what every tool implements | <80 |
-| `messages.py` | Message data model — the lingua franca | <120 |
-| `deps.py` | Injectable dependencies — every external call is a seam | <50 |
+| File | Responsibility |
+|------|---------------|
+| `loop.py` | The async generator — one turn of the agentic cycle |
+| `engine.py` | Session lifecycle — message history, turn counting |
+| `tool.py` | Tool protocol — what every tool implements |
+| `messages.py` | Message data model — the lingua franca |
+| `deps.py` | Injectable dependencies — every external call is a seam |
 
 ### The Loop (`loop.py`)
 
@@ -47,7 +47,7 @@ class Deps:
 
 ### Tool Protocol (`tool.py`)
 
-Simpler than Claude Code's 30-method interface:
+Simpler than typical 30-method interfaces:
 ```python
 class Tool(Protocol):
     name: str
@@ -62,5 +62,5 @@ class Tool(Protocol):
 
 - The kernel can be fully tested with zero network calls
 - Adding a provider = writing an adapter, not modifying the kernel
-- The kernel is small enough to read in one sitting (~600 LOC)
+- The kernel is small enough to read in one sitting
 - Tests run in 0.05s (no I/O, no imports of heavy libraries)

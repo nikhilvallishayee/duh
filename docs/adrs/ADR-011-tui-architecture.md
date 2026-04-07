@@ -5,29 +5,21 @@
 
 ## Context
 
-Claude Code has a full Ink/Yoga-based terminal UI engine: a React-like component tree, a Yoga layout engine for flexbox in the terminal, a custom renderer that diffs virtual screens and blits only changed cells, scroll boxes, focus management, alt-screen support, bidirectional text, hyperlinks, and terminal progress reporting. This is ~50 files and ~8000+ LOC in `src/ink/`.
+Production harnesses can have full terminal UI engines: component trees, flexbox layout engines, virtual screen diffing, scroll boxes, focus management, alt-screen support, bidirectional text, hyperlinks, and terminal progress reporting.
 
-Key components:
-- `renderer.ts` -- creates a virtual screen from the Yoga layout tree, diffs against previous frame, emits minimal terminal escape sequences
-- `components/` -- React components: `Box`, `Text`, `ScrollBox`, `AlternateScreen`, `Link`, `Button`, etc.
-- `terminal.ts` -- terminal capability detection (progress reporting, hyperlinks, cursor control)
-- `output.ts` -- virtual screen buffer with character-level diffing
-- `screen.ts` -- pooled screen representation for zero-alloc rendering
-- `reconciler.ts` -- React reconciler bridge to the DOM element tree
-
-This is a full terminal rendering engine. It is impressive. It is also not what D.U.H. needs at v0.1.
+This level of TUI sophistication is impressive. It is also not what D.U.H. needs at v0.1.
 
 ### The rendering tiers
 
 Terminal UIs exist on a spectrum:
 
-| Tier | Mechanism | Capabilities | LOC |
-|------|-----------|--------------|-----|
-| **Bare** | `print()` / `sys.stdout.write()` | Text, ANSI colors, streaming | ~50 |
-| **Rich** | Rich library (styled panels, spinners, tables, markdown) | Styled output, live display, progress bars | ~200 |
-| **Full TUI** | textual, prompt_toolkit, or custom Yoga port | Flexbox layout, widgets, mouse, alt-screen | ~2000+ |
+| Tier | Mechanism | Capabilities |
+|------|-----------|--------------|
+| **Bare** | `print()` / `sys.stdout.write()` | Text, ANSI colors, streaming |
+| **Rich** | Rich library (styled panels, spinners, tables, markdown) | Styled output, live display, progress bars |
+| **Full TUI** | textual, prompt_toolkit, or custom layout engine | Flexbox layout, widgets, mouse, alt-screen |
 
-Claude Code jumped straight to Tier 3 because it was built in TypeScript with React/Ink already available. D.U.H. should climb the tiers incrementally.
+Some harnesses jump straight to Tier 3 by leveraging their ecosystem's UI frameworks. D.U.H. should climb the tiers incrementally.
 
 ### Why the kernel is renderer-agnostic
 

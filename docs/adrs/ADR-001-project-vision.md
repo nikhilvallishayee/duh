@@ -8,7 +8,7 @@
 AI coding agents are becoming essential developer tools, but every harness is either:
 - Locked to one provider (Claude Code → Anthropic only)
 - Missing production safety (Aider → no permissions)
-- Too complex to understand (Claude Code → 513K LOC)
+- Too complex to understand (production harnesses grow to hundreds of thousands of lines)
 - Not extensible via standards (Aider → no MCP)
 
 ## Decision

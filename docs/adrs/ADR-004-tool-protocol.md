@@ -5,7 +5,7 @@
 
 ## Context
 
-Claude Code's Tool interface has ~30 methods. Aider has no formal tool interface. OpenCode has a minimal tool set. Goose uses MCP as the tool protocol. We need the sweet spot: rich enough for production safety, simple enough for easy authoring.
+Existing harnesses range from ~30-method tool interfaces to no formal interface at all. Some use MCP as the tool protocol. We need the sweet spot: rich enough for production safety, simple enough for easy authoring.
 
 ## Decision
 
@@ -25,10 +25,10 @@ class Tool(Protocol):
     async def check_permissions(self, input, context) -> dict
 ```
 
-### Comparison with Claude Code
+### Comparison with typical 30-method interfaces
 
-| Claude Code (30 methods) | D.U.H. (4+3) | Where it went |
-|--------------------------|---------------|---------------|
+| Typical interface (30 methods) | D.U.H. (4+3) | Where it went |
+|-------------------------------|---------------|---------------|
 | name | name | Same |
 | description | description | Same |
 | inputSchema | input_schema | Same |

@@ -1,58 +1,72 @@
 # ADR-019: Next Phase Plan
 
-**Status**: Draft  
+**Status**: Active  
 **Date**: 2026-04-07
 
 ## Context
 
-D.U.H. v0.1.0 is feature-complete for the core harness (26 commits, 863 tests, 18 ADRs). The next phase focuses on ecosystem integration, SDK compatibility, and production hardening.
+D.U.H. v0.1.0 core is complete (27 commits, 863 tests, 18 ADRs). Next phase focuses on proving the harness works in real-world scenarios with ecosystem tools, SDK compatibility, and iterative design improvement.
 
 ## Phase 2 Priorities
 
-### P1: SDK Compatibility (Claude Agent SDK can use D.U.H.)
-- Support `--output-format stream-json --input-format stream-json` for SDK consumers
-- Match the NDJSON protocol that the Claude Agent SDK expects
-- Test: `from anthropic import Claude; agent = Claude(cli_path="duh")`
+### P1: Refactor & Anti-Pattern Cleanup
+- Split cli/main.py (494L) into cli/parser.py + cli/runner.py + cli/doctor.py
+- Ensure domain model reveals intention, no duplication, fewest elements
+- Run full anti-pattern audit, fix all findings
+- Write missing tests for uncovered branches
 
-### P2: Interactive REPL
-- Build `duh` (no -p) interactive mode with readline
+### P2: SDK Compatibility
+- Support `--output-format stream-json --input-format stream-json`
+- Match the NDJSON protocol the Claude Agent SDK expects
+- Test: Claude Agent SDK using D.U.H. as the CLI backend
+- Test: PatternSpace app API integration
+
+### P3: Interactive REPL
+- `duh` (no -p) enters interactive mode with readline
 - Slash commands: /help, /model, /cost, /status, /clear, /compact, /exit
 - Streaming text + tool indicators + status bar
 
-### P3: Playwright MCP Integration
-- Configure Playwright MCP server in settings
-- `duh -p "open example.com and take a screenshot" --dangerously-skip-permissions`
-- MCP executor connects to Playwright server at startup
-
-### P4: Additional Providers
+### P4: Additional Provider Adapters
 - OpenAI adapter (GPT-4o, o1 via openai SDK)
 - litellm adapter (100+ models via one adapter)
 - HuggingFace/transformers adapter (local inference)
 
-### P5: Pre/Post Hooks with Insights
-- Pre-tool hooks can modify tool input (linting, validation)
-- Post-tool hooks can analyze output (metrics, learning)
-- Insights injection: after N turns, inject learned patterns
-
-### P6: CLI Refactor
-- Split cli/main.py (494L) into cli/parser.py + cli/runner.py + cli/doctor.py
-- Each under 200L, single responsibility
-
-### P7: Production Hardening
+### P5: Production Hardening
 - Retry with exponential backoff at the loop level
 - Model fallback (sonnet → haiku on overload)
-- Graceful shutdown (cleanup MCP, save session)
-- Signal handling (SIGINT, SIGTERM)
+- Graceful shutdown (cleanup MCP, save session, signal handling)
 
-## Architecture Notes
+## Integration Tests (prove the harness works)
 
-All new features follow the existing pattern:
-1. Define a port (Protocol) if needed
-2. Write the adapter
-3. Wire into CLI via Deps injection
-4. Add tests (target: 100% branch coverage)
-5. Write ADR documenting the decision
+These are TESTS, not features. They validate that D.U.H.'s existing MCP, hooks, and plugin systems work with real ecosystem tools:
+
+### T1: Playwright MCP Test
+- Configure Playwright MCP server in .duh/settings.json
+- `duh -p "open example.com and screenshot" --dangerously-skip-permissions`
+- Validates: MCP executor connects, discovers tools, executes browser actions
+
+### T2: Pre/Post Hook Test with Insights
+- Configure shell hooks that log tool usage to a file
+- Run a multi-tool workflow
+- Verify hooks fired, insights file written
+- Validates: hook system works end-to-end with real shell commands
+
+### T3: RuFlow Integration Test
+- Run RuFlow (claude-flow) orchestration over D.U.H.
+- Validates: D.U.H. can be orchestrated by external tools
+
+### T4: Claude Agent SDK Test
+- Use the Anthropic Python SDK's agent mode with `cli_path="duh"`
+- Validates: stream-json protocol compatibility
+
+## Design Iteration
+
+After each priority, run the cycle:
+1. Use D.U.H. to analyze its own codebase (dogfooding)
+2. Identify friction points
+3. Refactor based on insights
+4. Update ADRs
 
 ## Decision
 
-Execute in priority order. Each priority is a standalone commit with tests. No speculative features — build only what's needed now.
+Execute P1-P5 in order. Run T1-T4 after P2 (SDK compat). Each priority is a standalone commit. No speculative features.

@@ -89,8 +89,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"duh {duh.__version__}")
     parser.add_argument("-p", "--prompt", type=str, default=None,
                         help="Run in print mode: execute a single prompt and exit.")
-    parser.add_argument("--model", type=str, default="claude-sonnet-4-6",
-                        help="Model to use (default: claude-sonnet-4-6).")
+    parser.add_argument("--model", type=str, default=None,
+                        help="Model to use (default: auto-detect from provider).")
+    parser.add_argument("--provider", type=str, choices=["anthropic", "ollama"],
+                        default=None,
+                        help="LLM provider (default: auto-detect from ANTHROPIC_API_KEY or Ollama).")
     parser.add_argument("--max-turns", type=int, default=10,
                         help="Maximum agentic turns (default: 10).")
     parser.add_argument("--output-format", type=str, choices=["text", "json"],
@@ -157,26 +160,60 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         logging.basicConfig(level=logging.DEBUG, stream=sys.stderr,
                             format="[%(levelname)s] %(name)s: %(message)s")
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
+    # Resolve provider: explicit flag > env detection > Ollama fallback
+    provider_name = args.provider
+    if not provider_name:
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            provider_name = "anthropic"
+        else:
+            # Try Ollama as fallback
+            try:
+                import httpx
+                r = httpx.get("http://localhost:11434/api/tags", timeout=2)
+                if r.status_code == 200:
+                    provider_name = "ollama"
+            except Exception:
+                pass
+
+    if not provider_name:
         sys.stderr.write(
-            "Error: ANTHROPIC_API_KEY not set.\n"
-            "  export ANTHROPIC_API_KEY=sk-ant-...\n"
+            "Error: No provider available.\n"
+            "  Option 1: export ANTHROPIC_API_KEY=sk-ant-...\n"
+            "  Option 2: start Ollama (ollama serve)\n"
+            "  Option 3: duh --provider ollama --model qwen2.5-coder:1.5b\n"
         )
         return 1
 
+    # Build provider
+    if provider_name == "anthropic":
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            sys.stderr.write("Error: ANTHROPIC_API_KEY not set.\n")
+            return 1
+        model = args.model or "claude-sonnet-4-6"
+        call_model = AnthropicProvider(api_key=api_key, model=model).stream
+    elif provider_name == "ollama":
+        from duh.adapters.ollama import OllamaProvider
+        model = args.model or "qwen2.5-coder:1.5b"
+        call_model = OllamaProvider(model=model).stream
+    else:
+        sys.stderr.write(f"Error: Unknown provider: {provider_name}\n")
+        return 1
+
+    if debug:
+        sys.stderr.write(f"[DEBUG] provider={provider_name} model={model}\n")
+
     tools = get_all_tools()
-    provider = AnthropicProvider(api_key=api_key, model=args.model)
     executor = NativeExecutor(tools=tools, cwd=os.getcwd())
     approver: Any = AutoApprover() if args.dangerously_skip_permissions else InteractiveApprover()
 
     deps = Deps(
-        call_model=provider.stream,
+        call_model=call_model,
         run_tool=executor.run,
         approve=approver.check,
     )
     config = EngineConfig(
-        model=args.model,
+        model=model,
         system_prompt=args.system_prompt or SYSTEM_PROMPT,
         tools=tools,
         max_turns=args.max_turns,

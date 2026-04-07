@@ -30,7 +30,7 @@ class TestBuildParser:
     def test_model_default(self):
         parser = build_parser()
         args = parser.parse_args([])
-        assert args.model == "claude-sonnet-4-6"
+        assert args.model is None
 
     def test_model_override(self):
         parser = build_parser()
@@ -167,6 +167,8 @@ class TestPrintModeMocked:
     async def test_print_mode_no_api_key(self, capsys, monkeypatch):
         """Print mode should fail gracefully when no API key is set."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        # Also block Ollama auto-detection
+        monkeypatch.setattr("httpx.get", lambda *a, **k: (_ for _ in ()).throw(Exception("blocked")))
         from duh.cli.main import run_print_mode
 
         parser = build_parser()

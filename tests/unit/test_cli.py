@@ -7,7 +7,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from duh.cli.main import build_parser, main, run_doctor
+from duh.cli.parser import build_parser
+from duh.cli.doctor import run_doctor
+from duh.cli.main import main
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +171,7 @@ class TestPrintModeMocked:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         # Also block Ollama auto-detection
         monkeypatch.setattr("httpx.get", lambda *a, **k: (_ for _ in ()).throw(Exception("blocked")))
-        from duh.cli.main import run_print_mode
+        from duh.cli.runner import run_print_mode
 
         parser = build_parser()
         args = parser.parse_args(["-p", "hello"])
@@ -193,11 +195,11 @@ class TestPrintModeMocked:
         mock_engine_instance = MagicMock()
         mock_engine_instance.run = fake_run
 
-        with patch("duh.cli.main.Engine", return_value=mock_engine_instance), \
-             patch("duh.cli.main.AnthropicProvider"), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]):
-            from duh.cli.main import run_print_mode
+        with patch("duh.cli.runner.Engine", return_value=mock_engine_instance), \
+             patch("duh.cli.runner.AnthropicProvider"), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]):
+            from duh.cli.runner import run_print_mode
             parser = build_parser()
             args = parser.parse_args(["-p", "test prompt"])
             code = await run_print_mode(args)
@@ -219,11 +221,11 @@ class TestPrintModeMocked:
         mock_engine_instance = MagicMock()
         mock_engine_instance.run = fake_run
 
-        with patch("duh.cli.main.Engine", return_value=mock_engine_instance), \
-             patch("duh.cli.main.AnthropicProvider"), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]):
-            from duh.cli.main import run_print_mode
+        with patch("duh.cli.runner.Engine", return_value=mock_engine_instance), \
+             patch("duh.cli.runner.AnthropicProvider"), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]):
+            from duh.cli.runner import run_print_mode
             import json
             parser = build_parser()
             args = parser.parse_args(["-p", "test", "--output-format", "json"])
@@ -249,11 +251,11 @@ class TestPrintModeMocked:
         mock_engine_instance = MagicMock()
         mock_engine_instance.run = fake_run
 
-        with patch("duh.cli.main.Engine", return_value=mock_engine_instance), \
-             patch("duh.cli.main.AnthropicProvider"), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]):
-            from duh.cli.main import run_print_mode
+        with patch("duh.cli.runner.Engine", return_value=mock_engine_instance), \
+             patch("duh.cli.runner.AnthropicProvider"), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]):
+            from duh.cli.runner import run_print_mode
             parser = build_parser()
             args = parser.parse_args(["-p", "test"])
             code = await run_print_mode(args)
@@ -283,12 +285,12 @@ class TestPrintModeMocked:
             captured_approver["approve"] = deps.approve
             return deps
 
-        with patch("duh.cli.main.Engine", return_value=mock_engine_instance), \
-             patch("duh.cli.main.AnthropicProvider"), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]), \
-             patch("duh.cli.main.Deps", side_effect=capture_deps):
-            from duh.cli.main import run_print_mode
+        with patch("duh.cli.runner.Engine", return_value=mock_engine_instance), \
+             patch("duh.cli.runner.AnthropicProvider"), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]), \
+             patch("duh.cli.runner.Deps", side_effect=capture_deps):
+            from duh.cli.runner import run_print_mode
             parser = build_parser()
             args = parser.parse_args(["-p", "test", "--dangerously-skip-permissions"])
             await run_print_mode(args)

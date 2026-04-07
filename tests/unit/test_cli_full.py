@@ -1,4 +1,4 @@
-"""Full coverage for duh.cli.main — every event handler, every code path."""
+"""Full coverage for duh.cli — every event handler, every code path."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from duh.cli.main import (
+from duh.cli.runner import (
     _interpret_error,
     _make_serializable,
     _summarize_event,
-    build_parser,
-    main,
     run_print_mode,
 )
+from duh.cli.parser import build_parser
+from duh.cli.main import main
 from duh.kernel.messages import Message
 
 
@@ -151,10 +151,10 @@ class TestPrintModeEventHandlers:
             {"type": "done", "stop_reason": "end_turn"},
         ])
 
-        with patch("duh.cli.main.Engine", return_value=engine), \
-             patch("duh.cli.main.AnthropicProvider"), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]):
+        with patch("duh.cli.runner.Engine", return_value=engine), \
+             patch("duh.cli.runner.AnthropicProvider"), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]):
             parser = build_parser()
             args = parser.parse_args(["-p", "test"])
             code = await run_print_mode(args)
@@ -172,10 +172,10 @@ class TestPrintModeEventHandlers:
             {"type": "done", "stop_reason": "end_turn"},
         ])
 
-        with patch("duh.cli.main.Engine", return_value=engine), \
-             patch("duh.cli.main.AnthropicProvider"), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]):
+        with patch("duh.cli.runner.Engine", return_value=engine), \
+             patch("duh.cli.runner.AnthropicProvider"), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]):
             parser = build_parser()
             args = parser.parse_args(["-p", "test"])
             code = await run_print_mode(args)
@@ -197,10 +197,10 @@ class TestPrintModeEventHandlers:
             {"type": "done", "stop_reason": "end_turn"},
         ])
 
-        with patch("duh.cli.main.Engine", return_value=engine), \
-             patch("duh.cli.main.AnthropicProvider"), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]):
+        with patch("duh.cli.runner.Engine", return_value=engine), \
+             patch("duh.cli.runner.AnthropicProvider"), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]):
             parser = build_parser()
             args = parser.parse_args(["-p", "test"])
             code = await run_print_mode(args)
@@ -219,10 +219,10 @@ class TestPrintModeEventHandlers:
             {"type": "done", "stop_reason": "end_turn"},
         ])
 
-        with patch("duh.cli.main.Engine", return_value=engine), \
-             patch("duh.cli.main.AnthropicProvider"), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]):
+        with patch("duh.cli.runner.Engine", return_value=engine), \
+             patch("duh.cli.runner.AnthropicProvider"), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]):
             parser = build_parser()
             args = parser.parse_args(["-p", "test", "--debug"])
             code = await run_print_mode(args)
@@ -239,10 +239,10 @@ class TestPrintModeEventHandlers:
             {"type": "done", "stop_reason": "end_turn", "turns": 1},
         ])
 
-        with patch("duh.cli.main.Engine", return_value=engine), \
-             patch("duh.cli.main.AnthropicProvider"), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]):
+        with patch("duh.cli.runner.Engine", return_value=engine), \
+             patch("duh.cli.runner.AnthropicProvider"), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]):
             parser = build_parser()
             args = parser.parse_args(["-p", "test", "--debug"])
             code = await run_print_mode(args)
@@ -258,10 +258,10 @@ class TestPrintModeEventHandlers:
             {"type": "done", "stop_reason": "end_turn"},
         ])
 
-        with patch("duh.cli.main.Engine", return_value=engine), \
-             patch("duh.cli.main.AnthropicProvider"), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]):
+        with patch("duh.cli.runner.Engine", return_value=engine), \
+             patch("duh.cli.runner.AnthropicProvider"), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]):
             parser = build_parser()
             args = parser.parse_args(["-p", "test", "--debug"])
             code = await run_print_mode(args)
@@ -286,9 +286,9 @@ class TestProviderResolution:
 
         mock_response = MagicMock()
         mock_response.status_code = 200
-        with patch("duh.cli.main.Engine", return_value=engine), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]), \
+        with patch("duh.cli.runner.Engine", return_value=engine), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]), \
              patch("httpx.get", return_value=mock_response), \
              patch("duh.adapters.ollama.OllamaProvider") as mock_ollama:
             mock_ollama.return_value.stream = AsyncMock()
@@ -306,9 +306,9 @@ class TestProviderResolution:
             {"type": "done", "stop_reason": "end_turn"},
         ])
 
-        with patch("duh.cli.main.Engine", return_value=engine), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]), \
+        with patch("duh.cli.runner.Engine", return_value=engine), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]), \
              patch("duh.adapters.ollama.OllamaProvider") as mock_ollama:
             mock_ollama.return_value.stream = AsyncMock()
             parser = build_parser()
@@ -350,10 +350,10 @@ class TestProviderResolution:
             {"type": "done", "stop_reason": "end_turn"},
         ])
 
-        with patch("duh.cli.main.Engine", return_value=engine), \
-             patch("duh.cli.main.AnthropicProvider"), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]):
+        with patch("duh.cli.runner.Engine", return_value=engine), \
+             patch("duh.cli.runner.AnthropicProvider"), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]):
             parser = build_parser()
             args = parser.parse_args(["-p", "test", "--system-prompt", "Be a pirate"])
             code = await run_print_mode(args)
@@ -368,10 +368,10 @@ class TestProviderResolution:
             {"type": "done", "stop_reason": "end_turn"},
         ])
 
-        with patch("duh.cli.main.Engine", return_value=engine), \
-             patch("duh.cli.main.AnthropicProvider") as mock_provider, \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]):
+        with patch("duh.cli.runner.Engine", return_value=engine), \
+             patch("duh.cli.runner.AnthropicProvider") as mock_provider, \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]):
             parser = build_parser()
             args = parser.parse_args(["-p", "test", "--model", "claude-opus-4-6"])
             code = await run_print_mode(args)
@@ -395,10 +395,10 @@ class TestMainFunction:
             {"type": "done", "stop_reason": "end_turn"},
         ])
 
-        with patch("duh.cli.main.Engine", return_value=engine), \
-             patch("duh.cli.main.AnthropicProvider"), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]):
+        with patch("duh.cli.runner.Engine", return_value=engine), \
+             patch("duh.cli.runner.AnthropicProvider"), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]):
             code = main(["-p", "test"])
 
         assert code == 0
@@ -425,10 +425,10 @@ class TestPrintModeJsonSerialize:
             {"type": "done", "stop_reason": "end_turn"},
         ])
 
-        with patch("duh.cli.main.Engine", return_value=engine), \
-             patch("duh.cli.main.AnthropicProvider"), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]):
+        with patch("duh.cli.runner.Engine", return_value=engine), \
+             patch("duh.cli.runner.AnthropicProvider"), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]):
             parser = build_parser()
             args = parser.parse_args(["-p", "test", "--output-format", "json"])
             code = await run_print_mode(args)
@@ -456,10 +456,10 @@ class TestPrintModeNoOutput:
             {"type": "done", "stop_reason": "end_turn"},
         ])
 
-        with patch("duh.cli.main.Engine", return_value=engine), \
-             patch("duh.cli.main.AnthropicProvider"), \
-             patch("duh.cli.main.NativeExecutor"), \
-             patch("duh.cli.main.get_all_tools", return_value=[]):
+        with patch("duh.cli.runner.Engine", return_value=engine), \
+             patch("duh.cli.runner.AnthropicProvider"), \
+             patch("duh.cli.runner.NativeExecutor"), \
+             patch("duh.cli.runner.get_all_tools", return_value=[]):
             parser = build_parser()
             args = parser.parse_args(["-p", "test"])
             code = await run_print_mode(args)
@@ -476,7 +476,7 @@ class TestPrintModeNoOutput:
 class TestDoctorDetails:
     def test_doctor_with_no_api_key(self, capsys, monkeypatch):
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        from duh.cli.main import run_doctor
+        from duh.cli.doctor import run_doctor
         code = run_doctor()
         captured = capsys.readouterr()
         assert "ANTHROPIC_API_KEY" in captured.out
@@ -485,7 +485,7 @@ class TestDoctorDetails:
 
     def test_doctor_with_api_key(self, capsys, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
-        from duh.cli.main import run_doctor
+        from duh.cli.doctor import run_doctor
         code = run_doctor()
         captured = capsys.readouterr()
         assert "ANTHROPIC_API_KEY" in captured.out
@@ -495,6 +495,6 @@ class TestDoctorDetails:
         import importlib
         # We can't easily uninstall anthropic, but we can verify the output
         # This test mostly confirms doctor runs without crash
-        from duh.cli.main import run_doctor
+        from duh.cli.doctor import run_doctor
         code = run_doctor()
         assert isinstance(code, int)

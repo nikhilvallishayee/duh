@@ -35,10 +35,11 @@ class TestHelpE2E:
         assert "--prompt" in result.stdout
         assert "duh" in result.stdout.lower()
 
-    def test_no_args_shows_help(self):
-        result = run_duh()
+    def test_no_args_enters_repl(self):
+        """No args should start REPL (which reads stdin, gets EOF, exits)."""
+        result = run_duh(timeout=5)
         assert result.returncode == 0
-        assert "--prompt" in result.stdout
+        assert "interactive mode" in result.stdout.lower() or "duh>" in result.stdout
 
 
 class TestDoctorE2E:

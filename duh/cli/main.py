@@ -33,5 +33,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.prompt is not None:
         return asyncio.run(run_print_mode(args))
 
-    parser.print_help()
-    return 0
+    # No prompt and no SDK mode → interactive REPL
+    from duh.cli.repl import run_repl
+    return asyncio.run(run_repl(args))

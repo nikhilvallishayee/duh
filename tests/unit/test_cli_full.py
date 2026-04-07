@@ -403,11 +403,14 @@ class TestMainFunction:
 
         assert code == 0
 
-    def test_main_no_args(self, capsys):
-        code = main([])
+    def test_main_no_args_enters_repl(self, monkeypatch):
+        """main() with no args should route to REPL."""
+        from unittest.mock import AsyncMock
+        with patch("duh.cli.repl.run_repl", new_callable=AsyncMock, return_value=0):
+            with patch("duh.cli.main.asyncio") as mock_asyncio:
+                mock_asyncio.run = MagicMock(return_value=0)
+                code = main([])
         assert code == 0
-        captured = capsys.readouterr()
-        assert "--prompt" in captured.out
 
 
 # ===================================================================

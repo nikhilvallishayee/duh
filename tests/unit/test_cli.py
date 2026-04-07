@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
+
 import pytest
 
 from duh.cli.parser import build_parser
@@ -151,11 +152,14 @@ class TestDoctor:
 # ---------------------------------------------------------------------------
 
 class TestMainNoArgs:
-    def test_no_args_prints_help(self, capsys):
-        code = main([])
+    def test_no_args_enters_repl(self, monkeypatch):
+        """main() with no args should route to REPL."""
+        from unittest.mock import AsyncMock, patch
+        with patch("duh.cli.repl.run_repl", new_callable=AsyncMock, return_value=0):
+            with patch("duh.cli.main.asyncio") as mock_asyncio:
+                mock_asyncio.run = MagicMock(return_value=0)
+                code = main([])
         assert code == 0
-        captured = capsys.readouterr()
-        assert "--prompt" in captured.out
 
 
 # ---------------------------------------------------------------------------

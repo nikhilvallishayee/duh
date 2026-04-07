@@ -211,6 +211,15 @@ class OllamaProvider:
                         yield {"type": "error", "error": f"Stream interrupted: {mid_err}"}
                         return
 
+            # Fallback: some Ollama models output tool calls as JSON text
+            # instead of structured tool_call blocks. Detect and parse.
+            if not tool_calls and full_text.strip():
+                extracted = _extract_tool_calls_from_text(full_text)
+                if extracted:
+                    tool_calls.extend(extracted)
+                    # Remove the JSON text since we extracted the tool calls
+                    full_text = ""
+
             # Build final assistant message
             content_blocks_final: list[dict[str, Any]] = []
             if full_text:
@@ -248,6 +257,40 @@ class OllamaProvider:
                     metadata={"is_error": True, "error": str(e)},
                 ),
             }
+
+
+def _extract_tool_calls_from_text(text: str) -> list[dict[str, Any]]:
+    """Extract tool calls from text that looks like JSON tool invocations.
+
+    Some Ollama models output tool calls as JSON text instead of structured
+    tool_call blocks. This detects patterns like:
+      {"name": "Read", "arguments": {"file_path": "..."}}
+    """
+    import re
+    results: list[dict[str, Any]] = []
+
+    json_pattern = re.compile(
+        r'\{[^{}]*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{[^}]*\}[^}]*\}',
+        re.DOTALL,
+    )
+    matches = json_pattern.findall(text)
+
+    for match in matches:
+        try:
+            obj = json.loads(match)
+            name = obj.get("name", "")
+            arguments = obj.get("arguments", {})
+            if name:
+                results.append({
+                    "type": "tool_use",
+                    "id": f"ollama-extracted-{len(results)}",
+                    "name": name,
+                    "input": arguments,
+                })
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    return results
 
 
 # ---------------------------------------------------------------------------

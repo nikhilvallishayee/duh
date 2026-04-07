@@ -46,6 +46,8 @@ class WriteTool:
             return ToolResult(output="file_path is required", is_error=True)
 
         path = Path(file_path)
+        if not path.is_absolute():
+            path = Path(context.cwd) / path
 
         # Permission checks before attempting write
         parent = path.parent

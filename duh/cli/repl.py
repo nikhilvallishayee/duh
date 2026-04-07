@@ -852,6 +852,12 @@ async def run_repl(args: argparse.Namespace) -> int:
 
     # --- Resolve provider ---
     provider_name = args.provider
+    if not provider_name and getattr(args, "model", None):
+        m = args.model.lower()
+        if any(k in m for k in ("claude", "haiku", "sonnet", "opus")):
+            provider_name = "anthropic"
+        elif any(k in m for k in ("gpt", "o1", "o3", "davinci")):
+            provider_name = "openai"
     if not provider_name:
         if os.environ.get("ANTHROPIC_API_KEY"):
             provider_name = "anthropic"

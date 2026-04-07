@@ -56,6 +56,8 @@ class ReadTool:
             return ToolResult(output="file_path is required", is_error=True)
 
         path = Path(file_path)
+        if not path.is_absolute():
+            path = Path(context.cwd) / path
         if not path.exists():
             return ToolResult(
                 output=f"File not found: {file_path}", is_error=True

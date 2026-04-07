@@ -80,6 +80,8 @@ class EditTool:
             return ToolResult(output="old_string is required", is_error=True)
 
         path = Path(file_path)
+        if not path.is_absolute():
+            path = Path(context.cwd) / path
         if not path.is_file():
             return ToolResult(
                 output=f"File not found: {file_path}", is_error=True

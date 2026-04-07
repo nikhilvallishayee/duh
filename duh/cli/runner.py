@@ -82,8 +82,15 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         logging.basicConfig(level=logging.DEBUG, stream=sys.stderr,
                             format="[%(levelname)s] %(name)s: %(message)s")
 
-    # Resolve provider: explicit flag > env detection > Ollama fallback
+    # Resolve provider: explicit flag > model name hint > env detection > Ollama fallback
     provider_name = args.provider
+    if not provider_name and args.model:
+        # Infer provider from model name
+        m = args.model.lower()
+        if any(k in m for k in ("claude", "haiku", "sonnet", "opus")):
+            provider_name = "anthropic"
+        elif any(k in m for k in ("gpt", "o1", "o3", "davinci")):
+            provider_name = "openai"
     if not provider_name:
         if os.environ.get("ANTHROPIC_API_KEY"):
             provider_name = "anthropic"

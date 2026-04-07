@@ -106,6 +106,8 @@ class MultiEditTool:
                 continue
 
             path = Path(file_path)
+            if not path.is_absolute():
+                path = Path(context.cwd) / path
             if not path.is_file():
                 failures.append(f"edit {i}: file not found: {file_path}")
                 continue

@@ -123,62 +123,106 @@ class OllamaProvider:
                         }
                         return
 
-                    async for line in response.aiter_lines():
-                        if not line.strip():
-                            continue
+                    try:
+                        async for line in response.aiter_lines():
+                            if not line.strip():
+                                continue
 
-                        try:
-                            chunk = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
+                            try:
+                                chunk = json.loads(line)
+                            except json.JSONDecodeError as json_err:
+                                # Malformed NDJSON chunk — yield partial and error
+                                if full_text or tool_calls:
+                                    content_blocks: list[dict[str, Any]] = []
+                                    if full_text:
+                                        content_blocks.append({"type": "text", "text": full_text})
+                                    for tc in tool_calls:
+                                        content_blocks.append(tc)
+                                    yield {
+                                        "type": "assistant",
+                                        "message": Message(
+                                            role="assistant",
+                                            content=content_blocks,
+                                            metadata={
+                                                "partial": True,
+                                                "model": resolved_model,
+                                                "stop_reason": "error",
+                                            },
+                                        ),
+                                    }
+                                yield {"type": "error", "error": f"Malformed JSON chunk: {json_err}"}
+                                return
 
-                        # Check for errors
-                        if "error" in chunk:
+                            # Check for errors
+                            if "error" in chunk:
+                                yield {
+                                    "type": "assistant",
+                                    "message": Message(
+                                        role="assistant",
+                                        content=[{"type": "text", "text": f"Ollama Error: {chunk['error']}"}],
+                                        metadata={"is_error": True, "error": chunk["error"]},
+                                    ),
+                                }
+                                return
+
+                            msg = chunk.get("message", {})
+                            content = msg.get("content", "")
+
+                            # Stream text deltas
+                            if content:
+                                full_text += content
+                                yield {"type": "text_delta", "text": content}
+
+                            # Check for tool calls
+                            if msg.get("tool_calls"):
+                                for tc in msg["tool_calls"]:
+                                    fn = tc.get("function", {})
+                                    tool_calls.append({
+                                        "type": "tool_use",
+                                        "id": f"ollama-{len(tool_calls)}",
+                                        "name": fn.get("name", ""),
+                                        "input": fn.get("arguments", {}),
+                                    })
+
+                            # Check if done
+                            if chunk.get("done"):
+                                break
+
+                    except (httpx.ReadError, ConnectionError) as mid_err:
+                        # Mid-stream disconnect — yield partial content
+                        if full_text or tool_calls:
+                            content_blocks_partial: list[dict[str, Any]] = []
+                            if full_text:
+                                content_blocks_partial.append({"type": "text", "text": full_text})
+                            for tc in tool_calls:
+                                content_blocks_partial.append(tc)
                             yield {
                                 "type": "assistant",
                                 "message": Message(
                                     role="assistant",
-                                    content=[{"type": "text", "text": f"Ollama Error: {chunk['error']}"}],
-                                    metadata={"is_error": True, "error": chunk["error"]},
+                                    content=content_blocks_partial,
+                                    metadata={
+                                        "partial": True,
+                                        "model": resolved_model,
+                                        "stop_reason": "error",
+                                    },
                                 ),
                             }
-                            return
-
-                        msg = chunk.get("message", {})
-                        content = msg.get("content", "")
-
-                        # Stream text deltas
-                        if content:
-                            full_text += content
-                            yield {"type": "text_delta", "text": content}
-
-                        # Check for tool calls
-                        if msg.get("tool_calls"):
-                            for tc in msg["tool_calls"]:
-                                fn = tc.get("function", {})
-                                tool_calls.append({
-                                    "type": "tool_use",
-                                    "id": f"ollama-{len(tool_calls)}",
-                                    "name": fn.get("name", ""),
-                                    "input": fn.get("arguments", {}),
-                                })
-
-                        # Check if done
-                        if chunk.get("done"):
-                            break
+                        yield {"type": "error", "error": f"Stream interrupted: {mid_err}"}
+                        return
 
             # Build final assistant message
-            content_blocks: list[dict[str, Any]] = []
+            content_blocks_final: list[dict[str, Any]] = []
             if full_text:
-                content_blocks.append({"type": "text", "text": full_text})
+                content_blocks_final.append({"type": "text", "text": full_text})
             for tc in tool_calls:
-                content_blocks.append(tc)
+                content_blocks_final.append(tc)
 
             yield {
                 "type": "assistant",
                 "message": Message(
                     role="assistant",
-                    content=content_blocks or full_text,
+                    content=content_blocks_final or full_text,
                     metadata={
                         "model": resolved_model,
                         "stop_reason": "end_turn",

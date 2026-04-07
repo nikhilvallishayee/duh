@@ -21,6 +21,39 @@ from typing import Any, Protocol, runtime_checkable
 
 
 # ---------------------------------------------------------------------------
+# Output size limit
+# ---------------------------------------------------------------------------
+
+MAX_TOOL_OUTPUT = 100_000  # 100 KB — prevents runaway output from eating context
+
+
+# ---------------------------------------------------------------------------
+# Per-tool timeout defaults (seconds)
+# ---------------------------------------------------------------------------
+
+DEFAULT_TIMEOUT = 120  # fallback for unknown tools
+
+TOOL_TIMEOUTS: dict[str, int] = {
+    "Bash": 300,       # 5 min for builds/tests
+    "Read": 30,        # 30s for file reads
+    "Write": 30,
+    "Edit": 30,
+    "MultiEdit": 60,
+    "Glob": 30,
+    "Grep": 60,        # 1 min for large codebases
+    "WebFetch": 30,
+    "WebSearch": 30,
+    "Skill": 120,
+    "Task": 5,
+}
+
+
+def get_tool_timeout(tool_name: str) -> int:
+    """Return the configured timeout for a tool, or DEFAULT_TIMEOUT."""
+    return TOOL_TIMEOUTS.get(tool_name, DEFAULT_TIMEOUT)
+
+
+# ---------------------------------------------------------------------------
 # Tool result
 # ---------------------------------------------------------------------------
 

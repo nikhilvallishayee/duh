@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +68,24 @@ class MultiEditTool:
             return ToolResult(output="edits must be a list", is_error=True)
         if len(edits) == 0:
             return ToolResult(output="edits list is empty — nothing to do", is_error=True)
+
+        # Upfront permission check: validate all files BEFORE applying any edits
+        perm_issues: list[str] = []
+        for i, edit in enumerate(edits, start=1):
+            fp = edit.get("file_path", "")
+            if not fp:
+                continue  # will be caught by the per-edit validation below
+            p = Path(fp)
+            if p.is_file() and not os.access(p, os.R_OK | os.W_OK):
+                perm_issues.append(
+                    f"edit {i}: permission denied: cannot edit {fp} (need read+write)"
+                )
+        if perm_issues:
+            detail = "; ".join(perm_issues)
+            return ToolResult(
+                output=f"Permission check failed before applying edits: {detail}",
+                is_error=True,
+            )
 
         total = len(edits)
         succeeded = 0

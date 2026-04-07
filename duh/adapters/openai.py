@@ -15,10 +15,14 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from typing import Any, AsyncGenerator
 
+import httpx
+
+from duh.kernel.backoff import with_backoff
 from duh.kernel.messages import Message
 
 
@@ -87,8 +91,8 @@ class OpenAIProvider:
             elif isinstance(tool_choice, str):
                 request["tool_choice"] = {"type": "function", "function": {"name": tool_choice}}
 
-        # Stream the response
-        try:
+        # Stream with exponential backoff for transient errors
+        async def _do_stream() -> AsyncGenerator[dict[str, Any], None]:
             response = await self._client.chat.completions.create(**request)
 
             # Accumulate the full message
@@ -158,6 +162,9 @@ class OpenAIProvider:
             )
             yield {"type": "assistant", "message": assistant_msg}
 
+        try:
+            async for event in with_backoff(_do_stream):
+                yield event
         except Exception as e:
             error_msg = Message(
                 role="assistant",

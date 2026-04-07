@@ -127,7 +127,8 @@ class TestOllamaStreamErrorPaths:
         assert events[0]["type"] == "assistant"
         assert "unexpected" in events[0]["message"].text
 
-    async def test_json_decode_error_skipped(self):
+    async def test_json_decode_error_yields_error(self):
+        """Malformed JSON now yields an error event (streaming error handling)."""
         lines = [
             "not valid json",
             json.dumps({"message": {"content": "ok"}, "done": True}),
@@ -140,8 +141,12 @@ class TestOllamaStreamErrorPaths:
             async for evt in provider.stream(messages=[]):
                 events.append(evt)
 
-        text_deltas = [e for e in events if e["type"] == "text_delta"]
-        assert len(text_deltas) == 1  # only the valid line
+        # New behavior: malformed JSON surfaces as error, not silently skipped
+        error_events = [e for e in events if e["type"] == "error"]
+        assert len(error_events) >= 1 or any(
+            e.get("message", {}).metadata.get("partial") if hasattr(e.get("message", {}), "metadata") else False
+            for e in events if e["type"] == "assistant"
+        )
 
     async def test_empty_line_skipped(self):
         lines = [

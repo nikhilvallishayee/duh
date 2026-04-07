@@ -174,10 +174,14 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         system_prompt_parts.append(memory_prompt)
 
     # --- Inject git context ---
-    from duh.kernel.git_context import get_git_context
+    from duh.kernel.git_context import get_git_context, get_git_warnings
     git_ctx = get_git_context(cwd)
     if git_ctx:
         system_prompt_parts.append(git_ctx)
+
+    # --- Print git safety warnings ---
+    for warning in get_git_warnings(cwd):
+        sys.stderr.write(f"\033[33mWARNING: {warning}\033[0m\n")
 
     # --- Inject skill descriptions into system prompt (ADR-017) ---
     if loaded_skills:
@@ -257,12 +261,13 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     )
     engine_config = EngineConfig(
         model=model,
+        fallback_model=getattr(args, "fallback_model", None),
         system_prompt="\n\n".join(system_prompt_parts),
         tools=tools,
         max_turns=args.max_turns,
         tool_choice=args.tool_choice,
     )
-    engine = Engine(deps=deps, config=engine_config)
+    engine = Engine(deps=deps, config=engine_config, session_store=store)
 
     # --- Resume session if --continue or --resume ---
     if getattr(args, "continue_session", False) or args.resume:
@@ -370,15 +375,6 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         sys.stdout.write("\n")
     elif had_output:
         print()  # final newline after streaming
-
-    # --- Save session ---
-    try:
-        await store.save(engine.session_id, engine.messages)
-        if debug:
-            logger.debug("session saved: %s (%d messages)", engine.session_id, len(engine.messages))
-    except Exception as e:
-        if debug:
-            logger.debug("session save failed: %s", e)
 
     # --- Session end hooks ---
     from duh.hooks import HookEvent, execute_hooks

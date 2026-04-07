@@ -24,16 +24,27 @@ from duh.kernel.deps import Deps
 from duh.kernel.loop import query
 from duh.kernel.messages import Message, UserMessage
 from duh.kernel.tokens import count_tokens, estimate_cost, format_cost, get_context_limit
+from duh.ports.store import SessionStore
 
 import logging
 
 logger = logging.getLogger(__name__)
 
 
+_FALLBACK_TRIGGERS = ("overloaded", "rate_limit")
+
+
+def _is_fallback_error(error_text: str) -> bool:
+    """Return True if error_text contains an overload or rate-limit signal."""
+    lower = error_text.lower()
+    return any(trigger in lower for trigger in _FALLBACK_TRIGGERS)
+
+
 @dataclass
 class EngineConfig:
     """Configuration for an Engine session."""
     model: str = ""
+    fallback_model: str | None = None
     system_prompt: str | list[str] = ""
     tools: list[Any] = field(default_factory=list)
     thinking: dict[str, Any] | None = None
@@ -49,7 +60,13 @@ class Engine:
     The engine maintains message history across runs.
     """
 
-    def __init__(self, deps: Deps, config: EngineConfig | None = None, **kwargs: Any):
+    def __init__(
+        self,
+        deps: Deps,
+        config: EngineConfig | None = None,
+        session_store: SessionStore | None = None,
+        **kwargs: Any,
+    ):
         self._deps = deps
         self._config = config or EngineConfig(**kwargs)
         self._messages: list[Message] = []
@@ -57,6 +74,7 @@ class Engine:
         self._turn_count = 0
         self._total_input_tokens = 0
         self._total_output_tokens = 0
+        self._session_store = session_store
 
     @property
     def messages(self) -> list[Message]:
@@ -151,13 +169,17 @@ class Engine:
                 )
 
         # Run the query loop
+        effective_model = model or self._config.model
+        fallback_model = self._config.fallback_model
+        should_fallback = False
+
         async for event in query(
             messages=self._messages,
             system_prompt=self._config.system_prompt,
             deps=self._deps,
             tools=self._config.tools,
             max_turns=max_turns or self._config.max_turns,
-            model=model or self._config.model,
+            model=effective_model,
             thinking=self._config.thinking,
             tool_choice=self._config.tool_choice,
         ):
@@ -170,4 +192,55 @@ class Engine:
                     self._messages.append(msg)
                     self._total_output_tokens += count_tokens(msg.text)
 
+            # Detect fallback-eligible errors
+            if fallback_model and event_type == "error":
+                error_text = event.get("error", "")
+                if _is_fallback_error(error_text):
+                    should_fallback = True
+                    # Don't yield this error — we'll retry with fallback
+                    continue
+
             yield event
+
+            # Auto-save session after each turn completes
+            if event_type == "done" and self._session_store:
+                try:
+                    await self._session_store.save(
+                        self._session_id, self._messages,
+                    )
+                except Exception:
+                    logger.debug("Session auto-save failed", exc_info=True)
+
+        # --- Fallback retry (once only) ---
+        if should_fallback:
+            logger.info(
+                "Primary model overloaded, switching to fallback: %s",
+                fallback_model,
+            )
+            async for event in query(
+                messages=self._messages,
+                system_prompt=self._config.system_prompt,
+                deps=self._deps,
+                tools=self._config.tools,
+                max_turns=max_turns or self._config.max_turns,
+                model=fallback_model,
+                thinking=self._config.thinking,
+                tool_choice=self._config.tool_choice,
+            ):
+                event_type = event.get("type", "")
+
+                if event_type == "assistant":
+                    msg = event.get("message")
+                    if isinstance(msg, Message):
+                        self._messages.append(msg)
+                        self._total_output_tokens += count_tokens(msg.text)
+
+                yield event
+
+                if event_type == "done" and self._session_store:
+                    try:
+                        await self._session_store.save(
+                            self._session_id, self._messages,
+                        )
+                    except Exception:
+                        logger.debug("Session auto-save failed", exc_info=True)

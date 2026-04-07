@@ -6,10 +6,11 @@ JSON Schema, and calls its async `call()` method.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from duh.kernel.file_tracker import FileTracker
-from duh.kernel.tool import Tool, ToolContext, ToolResult
+from duh.kernel.tool import MAX_TOOL_OUTPUT, Tool, ToolContext, ToolResult, get_tool_timeout
 
 # Tools whose execution should be recorded as file operations.
 _FILE_TOOL_OPS: dict[str, str] = {
@@ -81,8 +82,15 @@ class NativeExecutor:
                 reason = perm.get("reason", "Permission denied by tool")
                 raise PermissionError(reason)
 
-        # Execute
-        result = await tool.call(input, ctx)
+        # Execute with per-tool timeout
+        timeout = get_tool_timeout(tool_name)
+        try:
+            result = await asyncio.wait_for(tool.call(input, ctx), timeout=timeout)
+        except asyncio.TimeoutError:
+            return (
+                f"Tool '{tool_name}' timed out after {timeout}s."
+                " Try a simpler command or increase timeout."
+            )
 
         # Record file operations for Read/Write/Edit tools
         op = _FILE_TOOL_OPS.get(tool_name)
@@ -93,8 +101,27 @@ class NativeExecutor:
                 if not is_error:
                     self.file_tracker.track(file_path, op)
 
+        # --- Truncate oversized output ---
         if isinstance(result, ToolResult):
             if result.is_error:
                 raise RuntimeError(result.output)
-            return result.output
-        return str(result)
+            output = result.output
+            if isinstance(output, str) and len(output) > MAX_TOOL_OUTPUT:
+                original_size = len(output)
+                output = (
+                    output[:MAX_TOOL_OUTPUT]
+                    + "\n\n... (output truncated at 100KB."
+                    " Use Read with offset/limit for full content)"
+                )
+                result.metadata["truncated"] = True
+                result.metadata["original_size"] = original_size
+            return output
+
+        raw = str(result)
+        if len(raw) > MAX_TOOL_OUTPUT:
+            raw = (
+                raw[:MAX_TOOL_OUTPUT]
+                + "\n\n... (output truncated at 100KB."
+                " Use Read with offset/limit for full content)"
+            )
+        return raw

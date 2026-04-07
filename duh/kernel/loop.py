@@ -94,6 +94,19 @@ async def query(
                     assistant_message = event.get("message")
                     yield event
 
+                    # Skip tool extraction for partial messages (mid-stream errors)
+                    is_partial = False
+                    if assistant_message and isinstance(assistant_message, Message):
+                        is_partial = assistant_message.metadata.get("partial", False)
+                    elif assistant_message and isinstance(assistant_message, dict):
+                        is_partial = assistant_message.get("metadata", {}).get("partial", False)
+
+                    if is_partial:
+                        # Partial message — don't extract tool_use blocks,
+                        # they may be incomplete. Exit loop with error.
+                        yield {"type": "done", "stop_reason": "error", "turns": turn}
+                        return
+
                     # Extract tool_use blocks
                     if assistant_message:
                         content = (

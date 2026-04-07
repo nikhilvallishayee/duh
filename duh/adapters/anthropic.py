@@ -13,9 +13,13 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any, AsyncGenerator
 
+import httpx
+
+from duh.kernel.backoff import with_backoff
 from duh.kernel.messages import Message
 
 
@@ -105,58 +109,88 @@ class AnthropicProvider:
                 # Assume it's a tool name — force that specific tool
                 params["tool_choice"] = {"type": "tool", "name": tool_choice}
 
-        # Stream
+        # Stream with exponential backoff for transient errors
         content_blocks: list[Any] = []
+        accumulated_text: list[str] = []
         usage: dict[str, int] = {}
 
-        try:
+        async def _do_stream() -> AsyncGenerator[dict[str, Any], None]:
+            nonlocal content_blocks, accumulated_text, usage
+            # Reset accumulators on each retry attempt
+            content_blocks = []
+            accumulated_text = []
+            usage = {}
+
             async with self._client.messages.stream(**params) as stream:
-                async for event in stream:
-                    event_type = getattr(event, "type", "")
+                try:
+                    async for event in stream:
+                        event_type = getattr(event, "type", "")
 
-                    if event_type == "content_block_start":
-                        block = getattr(event, "content_block", None)
-                        if block:
-                            content_blocks.append(block)
+                        if event_type == "content_block_start":
+                            block = getattr(event, "content_block", None)
+                            if block:
+                                content_blocks.append(block)
+                            yield {
+                                "type": "content_block_start",
+                                "index": getattr(event, "index", len(content_blocks) - 1),
+                                "content_block": _block_to_dict(block) if block else {},
+                            }
+
+                        elif event_type == "content_block_delta":
+                            delta = getattr(event, "delta", None)
+                            if delta:
+                                delta_type = getattr(delta, "type", "")
+                                if delta_type == "text_delta":
+                                    text = getattr(delta, "text", "")
+                                    accumulated_text.append(text)
+                                    yield {"type": "text_delta", "text": text}
+                                elif delta_type == "thinking_delta":
+                                    yield {"type": "thinking_delta", "text": getattr(delta, "thinking", "")}
+                                elif delta_type == "input_json_delta":
+                                    yield {"type": "input_json_delta", "partial_json": getattr(delta, "partial_json", "")}
+                                elif delta_type == "signature_delta":
+                                    pass  # Ignore signature deltas
+
+                        elif event_type == "content_block_stop":
+                            yield {
+                                "type": "content_block_stop",
+                                "index": getattr(event, "index", 0),
+                            }
+
+                        elif event_type == "message_start":
+                            msg = getattr(event, "message", None)
+                            if msg:
+                                msg_usage = getattr(msg, "usage", None)
+                                if msg_usage:
+                                    usage = {
+                                        "input_tokens": getattr(msg_usage, "input_tokens", 0),
+                                        "output_tokens": getattr(msg_usage, "output_tokens", 0),
+                                    }
+
+                        elif event_type == "message_delta":
+                            delta_usage = getattr(event, "usage", None)
+                            if delta_usage:
+                                usage["output_tokens"] = getattr(delta_usage, "output_tokens", 0)
+
+                except (ConnectionError, httpx.ReadError, asyncio.TimeoutError) as mid_err:
+                    # Mid-stream error — yield partial content if we have any
+                    partial_text = "".join(accumulated_text)
+                    if partial_text:
                         yield {
-                            "type": "content_block_start",
-                            "index": getattr(event, "index", len(content_blocks) - 1),
-                            "content_block": _block_to_dict(block) if block else {},
+                            "type": "assistant",
+                            "message": Message(
+                                role="assistant",
+                                content=[{"type": "text", "text": partial_text}],
+                                metadata={
+                                    "partial": True,
+                                    "model": resolved_model,
+                                    "stop_reason": "error",
+                                    "usage": usage,
+                                },
+                            ),
                         }
-
-                    elif event_type == "content_block_delta":
-                        delta = getattr(event, "delta", None)
-                        if delta:
-                            delta_type = getattr(delta, "type", "")
-                            if delta_type == "text_delta":
-                                yield {"type": "text_delta", "text": getattr(delta, "text", "")}
-                            elif delta_type == "thinking_delta":
-                                yield {"type": "thinking_delta", "text": getattr(delta, "thinking", "")}
-                            elif delta_type == "input_json_delta":
-                                yield {"type": "input_json_delta", "partial_json": getattr(delta, "partial_json", "")}
-                            elif delta_type == "signature_delta":
-                                pass  # Ignore signature deltas
-
-                    elif event_type == "content_block_stop":
-                        yield {
-                            "type": "content_block_stop",
-                            "index": getattr(event, "index", 0),
-                        }
-
-                    elif event_type == "message_start":
-                        msg = getattr(event, "message", None)
-                        if msg:
-                            msg_usage = getattr(msg, "usage", None)
-                            if msg_usage:
-                                usage = {
-                                    "input_tokens": getattr(msg_usage, "input_tokens", 0),
-                                    "output_tokens": getattr(msg_usage, "output_tokens", 0),
-                                }
-
-                    elif event_type == "message_delta":
-                        delta_usage = getattr(event, "usage", None)
-                        if delta_usage:
-                            usage["output_tokens"] = getattr(delta_usage, "output_tokens", 0)
+                    yield {"type": "error", "error": f"Stream interrupted: {mid_err}"}
+                    return
 
                 # Build final assistant message
                 final = await stream.get_final_message()
@@ -174,6 +208,9 @@ class AnthropicProvider:
                 )
                 yield {"type": "assistant", "message": assistant_msg}
 
+        try:
+            async for event in with_backoff(_do_stream):
+                yield event
         except Exception as e:
             error_text = str(e)
             # Yield error as an assistant message with error content

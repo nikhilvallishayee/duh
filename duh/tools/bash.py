@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from duh.kernel.tool import ToolContext, ToolResult
+from duh.kernel.tool import MAX_TOOL_OUTPUT, TOOL_TIMEOUTS, ToolContext, ToolResult
 from duh.tools.bash_security import classify_command
 
-_DEFAULT_TIMEOUT = 120  # seconds
+_DEFAULT_TIMEOUT = TOOL_TIMEOUTS.get("Bash", 300)  # from central config
 
 
 class BashTool:
@@ -103,6 +103,17 @@ class BashTool:
             output = f"[WARNING: {classification['reason']}]\n{output}"
             metadata["risk"] = "moderate"
             metadata["reason"] = classification["reason"]
+
+        # Truncate oversized output
+        if len(output) > MAX_TOOL_OUTPUT:
+            original_size = len(output)
+            output = (
+                output[:MAX_TOOL_OUTPUT]
+                + "\n\n... Output truncated."
+                " Pipe to a file: command > output.txt"
+            )
+            metadata["truncated"] = True
+            metadata["original_size"] = original_size
 
         return ToolResult(
             output=output,

@@ -442,10 +442,14 @@ async def run_repl(args: argparse.Namespace) -> int:
     # --- Build system prompt with git context ---
     system_prompt_parts = [args.system_prompt or SYSTEM_PROMPT]
 
-    from duh.kernel.git_context import get_git_context
+    from duh.kernel.git_context import get_git_context, get_git_warnings
     git_ctx = get_git_context(cwd)
     if git_ctx:
         system_prompt_parts.append(git_ctx)
+
+    # --- Print git safety warnings ---
+    for warning in get_git_warnings(cwd):
+        sys.stderr.write(f"\033[33mWARNING: {warning}\033[0m\n")
 
     system_prompt = "\n\n".join(system_prompt_parts)
 
@@ -463,6 +467,10 @@ async def run_repl(args: argparse.Namespace) -> int:
     from duh.adapters.simple_compactor import SimpleCompactor
     compactor = SimpleCompactor()
 
+    # --- Wire session store (auto-save after each turn) ---
+    from duh.adapters.file_store import FileStore
+    store = FileStore()
+
     deps = Deps(
         call_model=call_model,
         run_tool=executor.run,
@@ -471,11 +479,12 @@ async def run_repl(args: argparse.Namespace) -> int:
     )
     engine_config = EngineConfig(
         model=model,
+        fallback_model=getattr(args, "fallback_model", None),
         system_prompt=system_prompt,
         tools=tools,
         max_turns=args.max_turns,
     )
-    engine = Engine(deps=deps, config=engine_config)
+    engine = Engine(deps=deps, config=engine_config, session_store=store)
 
     renderer.banner(model)
 

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
+from duh.kernel.git_context import _run_git
 from duh.kernel.tool import ToolContext, ToolResult
 
 
@@ -45,15 +47,31 @@ class WriteTool:
 
         path = Path(file_path)
 
+        # Permission checks before attempting write
+        parent = path.parent
+        if parent.exists() and not os.access(parent, os.W_OK):
+            return ToolResult(
+                output=f"Permission denied: cannot write to {file_path}",
+                is_error=True,
+            )
+        if path.exists() and not os.access(path, os.W_OK):
+            return ToolResult(
+                output=f"Permission denied: cannot write to {file_path}",
+                is_error=True,
+            )
+
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
         except Exception as exc:
             return ToolResult(output=f"Error writing file: {exc}", is_error=True)
 
+        # Check git dirty state for the file's directory
+        git_dirty = bool(_run_git(["status", "--short"], str(path.parent)))
+
         return ToolResult(
             output=f"Wrote {len(content)} bytes to {file_path}",
-            metadata={"bytes_written": len(content)},
+            metadata={"bytes_written": len(content), "git_dirty": git_dirty},
         )
 
     async def check_permissions(

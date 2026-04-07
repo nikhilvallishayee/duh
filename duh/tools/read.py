@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
-from duh.kernel.tool import ToolContext, ToolResult
+from duh.kernel.tool import MAX_TOOL_OUTPUT, ToolContext, ToolResult
 
 
 class ReadTool:
@@ -51,15 +52,54 @@ class ReadTool:
             return ToolResult(output="file_path is required", is_error=True)
 
         path = Path(file_path)
-        if not path.is_file():
+        if not path.exists():
             return ToolResult(
                 output=f"File not found: {file_path}", is_error=True
+            )
+        if not path.is_file():
+            return ToolResult(
+                output=f"Not a file: {file_path}", is_error=True
+            )
+        if not os.access(path, os.R_OK):
+            return ToolResult(
+                output=f"Permission denied: cannot read {file_path}",
+                is_error=True,
             )
 
         try:
             text = path.read_text(encoding="utf-8")
         except Exception as exc:
             return ToolResult(output=f"Error reading file: {exc}", is_error=True)
+
+        # Large-file guard: if no offset/limit and raw text exceeds limit,
+        # truncate early and suggest using offset/limit.
+        file_size = len(text.encode("utf-8"))
+        no_slice = offset == 0 and limit is None
+        if no_slice and file_size > MAX_TOOL_OUTPUT:
+            lines = text.splitlines(keepends=True)
+            # Gather lines until we approach the limit
+            collected: list[str] = []
+            acc = 0
+            for i, line in enumerate(lines):
+                entry = f"{i + 1}\t{line}"
+                acc += len(entry)
+                if acc > MAX_TOOL_OUTPUT:
+                    break
+                collected.append(entry)
+            truncated_output = (
+                "".join(collected)
+                + f"\n\n... File is large ({file_size:,} bytes)."
+                " Use offset and limit parameters to read specific sections."
+            )
+            return ToolResult(
+                output=truncated_output,
+                metadata={
+                    "line_count": len(collected),
+                    "offset": 0,
+                    "truncated": True,
+                    "original_size": file_size,
+                },
+            )
 
         lines = text.splitlines(keepends=True)
 

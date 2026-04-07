@@ -52,6 +52,45 @@ def _detect_main_branch(cwd: str) -> str:
     return "main"  # default assumption
 
 
+def get_git_warnings(cwd: str) -> list[str]:
+    """Return warnings about risky git states.
+
+    Checks for:
+    - Detached HEAD (changes won't be on any branch)
+    - Dirty working tree (uncommitted changes that could conflict)
+    - Working directly on main/master (should use a feature branch)
+
+    Returns an empty list when not inside a git repo, when ``git`` is
+    unavailable, or when there's nothing to warn about.
+    """
+    warnings: list[str] = []
+
+    # Quick check: are we inside a git repo?
+    inside = _run_git(["rev-parse", "--is-inside-work-tree"], cwd)
+    if inside != "true":
+        return warnings
+
+    # Detached HEAD?
+    branch = _run_git(["branch", "--show-current"], cwd)
+    if not branch:
+        warnings.append("Detached HEAD \u2014 changes won't be on any branch")
+
+    # Dirty working tree?
+    status = _run_git(["status", "--short"], cwd)
+    if status:
+        warnings.append("Uncommitted changes in working tree")
+
+    # On main/master?
+    if branch:
+        main_branch = _detect_main_branch(cwd)
+        if branch == main_branch:
+            warnings.append(
+                f"On {main_branch} branch \u2014 consider creating a feature branch"
+            )
+
+    return warnings
+
+
 def get_git_context(cwd: str) -> Optional[str]:
     """Return a formatted git context string, or None if not in a git repo.
 

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
+from duh.kernel.git_context import _run_git
 from duh.kernel.tool import ToolContext, ToolResult
 
 
@@ -64,6 +66,11 @@ class EditTool:
             return ToolResult(
                 output=f"File not found: {file_path}", is_error=True
             )
+        if not os.access(path, os.R_OK | os.W_OK):
+            return ToolResult(
+                output=f"Permission denied: cannot edit {file_path} (need read+write)",
+                is_error=True,
+            )
 
         try:
             content = path.read_text(encoding="utf-8")
@@ -96,9 +103,13 @@ class EditTool:
             return ToolResult(output=f"Error writing file: {exc}", is_error=True)
 
         replacements = count if replace_all else 1
+
+        # Check git dirty state for the file's directory
+        git_dirty = bool(_run_git(["status", "--short"], str(path.parent)))
+
         return ToolResult(
             output=f"Replaced {replacements} occurrence(s) in {file_path}",
-            metadata={"replacements": replacements},
+            metadata={"replacements": replacements, "git_dirty": git_dirty},
         )
 
     async def check_permissions(

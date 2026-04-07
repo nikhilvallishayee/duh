@@ -1,155 +1,199 @@
-# D.U.H. Launch Posts — Draft
+# D.U.H. Launch Posts — Final Drafts
 
-## Twitter/X Thread
+## Twitter/X Thread (6 tweets)
 
 **Tweet 1 (hook):**
-Everyone's talking about claw-code (119K stars in 24 hours) and the Claude Code leak.
+Anthropic blocked OpenCode, Cline, and RooCode from their API overnight. Zero warning. 147+ reactions on GitHub.
 
-But the real question isn't "can we clone Claude Code?"
+Then accidentally leaked 512K lines of Claude Code source via npm.
 
-It's: "Why are we locked into one vendor's CLI for AI coding?"
+claw-code hit 100K stars in 24 hours.
 
-I built D.U.H. to answer that differently. Thread:
+The lesson isn't about the leak. It's about vendor lock-in. Here's what I built instead:
 
 **Tweet 2 (what):**
-D.U.H. (D.U.H. is a Universal Harness) — provider-agnostic AI coding harness.
+D.U.H. — D.U.H. is a Universal Harness.
 
-Same model? Use Claude, GPT-4o, or Ollama local models.
-Same tools? Read, Write, Edit, Bash, Glob, Grep, MCP.
-Same skills? Loads from .claude/skills/ natively.
-Same protocol? Claude Agent SDK compatible.
+Provider-agnostic AI coding harness. Not a clone. Not a leak derivative. Clean-room, Apache 2.0.
 
-Different: open, multi-provider, yours.
+- Claude, GPT-4o, or Ollama local models through ONE interface
+- Loads skills from .claude/skills/ natively
+- Claude Agent SDK compatible (verified e2e)
+- 954 tests, hexagonal architecture
 
-**Tweet 3 (proof):**
-Not vaporware. Numbers:
+The harness is yours. The model is your choice.
 
-- 954 tests passing
-- 3 providers (Anthropic, OpenAI, Ollama)
-- Full stream-json NDJSON protocol
-- Skills load from .claude/ AND .duh/
-- Claude Agent SDK e2e verified
-- Interactive REPL with /slash commands
-- Hooks system for automation
+**Tweet 3 (the numbers):**
+@geaborel calculated Claude Code's real cost: $130-260/developer/month, not the advertised $20.
 
-All in ~6K lines of Python.
+Cache bugs silently costing users 10-20x more in tokens (Theo Browne's analysis).
 
-**Tweet 4 (SDK compat):**
-The killer feature: SDK compatibility.
+If the code were on GitHub, "issues like these would be trivial to identify and fix."
 
-Any app using the Claude Agent SDK can swap to D.U.H. with ONE env var:
+D.U.H. IS on GitHub. All 6K lines.
+
+**Tweet 4 (SDK compat — the killer feature):**
+The killer feature nobody else has: SDK drop-in.
+
+Any app using the Claude Agent SDK switches to D.U.H. with ONE env var:
 
 ```
 export DUH_CLI_PATH=/path/to/duh-sdk-shim
 ```
 
-We tested this with a production FastAPI app (Universal Companion API). Server starts, chat works. Drop-in.
+Tested on a production FastAPI app. Server starts, chat works, skills load. One line change.
+
+No other open-source CLI tool does this.
 
 **Tweet 5 (philosophy):**
-George Hotz said it well about Anthropic blocking opencode:
+@georgehotz said it best:
 
 "You will not convert people back to Claude Code — you will convert people to other model providers."
 
-D.U.H. isn't anti-Anthropic. Claude is great. But your coding harness shouldn't be married to one vendor.
+@dhh called the blocking "very customer hostile."
+
+@GergelyOrosz: Anthropic is "happy to have pretty much no ecosystem around Claude."
+
+The moat is model quality. Not the CLI wrapper. Let the harness be open.
 
 **Tweet 6 (CTA):**
 D.U.H. is evolving. Not done. Not claiming to replace Claude Code.
 
-But if you believe AI coding tools should be:
-- Open source
-- Provider agnostic
-- SDK compatible
-- Your infrastructure, not theirs
+But if you believe your AI coding infrastructure should be:
+- Open source (Apache 2.0)
+- Provider agnostic (3 today, more coming)
+- SDK compatible (drop-in for Claude Agent SDK)
+- Yours to control
 
-Try it: github.com/nikhilvallishayee/duh
+github.com/nikhilvallishayee/duh
 
-PRs welcome. Especially from people who've been burned by vendor lock-in.
+PRs welcome. What features matter most to you?
 
 ---
 
 ## LinkedIn Post
 
-**Title: Why I Built an Open Alternative to Claude Code (And Why It Matters)**
+**Why I Built an Open Alternative to Claude Code — And What the Leak Revealed About Our Industry**
 
-The Claude Code source leak last week spawned claw-code — 119K GitHub stars in 24 hours. The fastest-growing repo in GitHub history.
+In January, Anthropic silently deployed server-side checks blocking OpenCode, Cline, and RooCode from authenticating with Claude. Zero warning. DHH called it "very customer hostile." George Hotz wrote that it would "convert people to other model providers."
 
-But cloning isn't the answer. Clean-room reimplementation still leaves you dependent on one vendor's architecture, one vendor's protocol, one vendor's decisions about what you can and can't do with your own tooling.
+Then in March, Anthropic accidentally shipped 512,000 lines of Claude Code source in an npm package. Within 24 hours, clean-room rewrites hit 100K GitHub stars.
 
-I've been building D.U.H. (D.U.H. is a Universal Harness) — a provider-agnostic AI coding harness that takes a fundamentally different approach:
+But cloning isn't the answer.
+
+I've been building D.U.H. (D.U.H. is a Universal Harness) — a provider-agnostic AI coding harness built on a different thesis:
 
 **The harness should be yours. The model should be your choice.**
 
-What D.U.H. does:
-- Runs Claude, GPT-4o, or local Ollama models through one interface
-- Speaks the same NDJSON protocol as Claude Code (verified with the Claude Agent SDK)
-- Loads skills from .claude/skills/ (your existing Claude skills work as-is)
-- Has 954 tests, 19 architecture decision records, and hexagonal architecture
-- Can be used as a drop-in Claude Code replacement in any Agent SDK app
+Here's what that means in practice:
 
-What it doesn't do:
-- It doesn't claim to be "better" than Claude Code
-- It doesn't copy anyone's source code
-- It doesn't lock you into another vendor
+**3 providers, one interface.** Claude, GPT-4o, or Ollama local models. Set an env var, switch providers. No code changes.
 
-The engineering insight: AI coding tools are becoming infrastructure. And infrastructure should be open, interoperable, and under your control.
+**Claude Agent SDK compatible.** Any app using the SDK can swap to D.U.H. with `DUH_CLI_PATH=/path/to/duh-sdk-shim`. We tested this on a production FastAPI app serving 590+ coaching skills. Server starts, chat works.
 
-George Hotz recently pointed out that Anthropic blocking alternative clients from their API will "convert people to other model providers." He's right. The moat for AI companies isn't the CLI wrapper — it's the model quality. Let the tools be open.
+**Skill format parity.** D.U.H. loads from `.claude/skills/` directories natively. Skills you've built for Claude Code work without changes. `.duh/skills/` overrides by name if you need to diverge.
 
-D.U.H. is evolving. It's not done. But 954 passing tests and verified SDK compatibility means it's real.
+**954 tests.** Hexagonal architecture. 19 ADRs. Hooks system. MCP support. Interactive REPL. Not a weekend hack.
 
-If you've been thinking about vendor lock-in in your AI coding toolchain, or if you want a harness that works with ANY model, check it out:
+Netanel Eliav (CTO, Jam 7) calculated Claude Code's real cost at $130-260/developer/month. That's before the cache bugs Theo Browne identified, where users were silently paying 10-20x more in tokens.
+
+The Pragmatic Engineer's 2026 survey found 70% of developers use 2-4 AI tools simultaneously. 95% use AI tools weekly. The industry is moving toward multi-tool, multi-provider workflows.
+
+**Your AI coding harness is becoming infrastructure.** And infrastructure should be open, interoperable, and under your control.
+
+D.U.H. is evolving — not done. But 954 tests and verified SDK compatibility means it's real.
 
 github.com/nikhilvallishayee/duh
 
-I'd especially value feedback from engineering leaders who've thought about this at the organizational level. What would it take for you to move your team off a proprietary AI coding tool?
+I'd value feedback from engineering leaders: what would it take for you to move your team off a proprietary AI coding tool?
 
-#AIEngineering #OpenSource #DeveloperTools #ClaudeCode #AICoding
+#OpenSource #AIEngineering #DeveloperTools #AICoding #VendorLockin
 
 ---
 
-## Reddit Post (r/programming or r/LocalLLaMA)
+## Reddit Post (r/programming, r/LocalLLaMA, or r/ClaudeCode)
 
-**Title: D.U.H. — an open, provider-agnostic alternative to Claude Code with 954 tests and SDK compatibility**
+**Title: I built a provider-agnostic alternative to Claude Code — 954 tests, SDK compatible, loads .claude/skills/ natively**
 
-With the Claude Code leak and claw-code going viral (119K stars), there's a lot of energy around open-source AI coding tools. I've been working on something different.
+With the Claude Code leak and claw-code hitting 172K stars, there's massive energy around open-source AI coding tools. But most alternatives are either clones (legally grey) or don't interoperate with the existing ecosystem.
 
-**D.U.H. (D.U.H. is a Universal Harness)** is a provider-agnostic AI coding harness. Not a clone of Claude Code — a clean-room harness that speaks the same protocol.
+I built **D.U.H. (D.U.H. is a Universal Harness)** — a provider-agnostic AI coding harness. Not a clone. Clean-room Python, Apache 2.0.
 
-**What makes it different from claw-code, OpenCode, Aider, etc.:**
+**What makes it different:**
 
-1. **Provider agnostic** — Claude, GPT-4o, and Ollama (local models) through one interface. Set an env var, switch providers.
+1. **Provider agnostic** — Claude, GPT-4o, Ollama (local models) through one interface. `duh -p "fix the bug" --provider openai` or `--provider ollama`. Auto-detects from env vars.
 
-2. **SDK compatible** — The Claude Agent SDK can use D.U.H. as a drop-in backend. We tested this with a production FastAPI app. One env var: `DUH_CLI_PATH=/path/to/duh-sdk-shim`.
+2. **SDK compatible (the killer feature)** — The Claude Agent SDK can use D.U.H. as a drop-in backend. One env var: `export DUH_CLI_PATH=/path/to/duh-sdk-shim`. Tested on a production FastAPI app with 590+ skills. Server starts, chat works, skills load.
 
-3. **Skill parity** — Loads skills from `.claude/skills/` directories. If you've built skills for Claude Code, they work in D.U.H. without changes.
+3. **Skill format parity** — Loads skills from `.claude/skills/` AND `.duh/skills/`. Both flat (`skill.md`) and directory (`skill-name/SKILL.md`) layouts. All Claude Code frontmatter fields supported. Your existing Claude skills work as-is.
 
-4. **Actually tested** — 954 tests, hexagonal architecture (ports & adapters), 19 ADRs. Not a weekend hack.
+4. **Actually tested** — 954 tests, hexagonal architecture (ports & adapters), 19 ADRs, hooks system, MCP support, interactive REPL with /slash commands.
 
-5. **Interactive REPL** — `duh` enters a readline REPL with `/help`, `/model`, `/status`, `/clear`, `/exit`.
+5. **Interactive REPL** — `duh` enters readline mode with `/help`, `/model`, `/status`, `/clear`, `/exit`.
 
-**Quick comparison:**
+**Comparison:**
 
 | | D.U.H. | Claude Code | claw-code | OpenCode | Aider |
 |---|---|---|---|---|---|
-| Open source | Yes | No | Yes (grey) | Yes | Yes |
-| Multi-provider | 3 built-in | Anthropic | Multi | 75+ | Multi |
-| SDK compat | Yes | N/A | Partial | No | No |
-| Skills from .claude/ | Yes | Yes | Unknown | No | No |
+| Open source | Yes (Apache 2.0) | No | Yes (grey) | Yes | Yes |
+| Multi-provider | 3 built-in | Anthropic only | Multi | 75+ | Multi |
+| SDK drop-in | **Yes** | N/A | Partial | No | No |
+| .claude/skills/ | **Yes** | Yes | Unknown | No | No |
 | Tests | 954 | Internal | Minimal | Unknown | Yes |
+| Legal status | Clean | Proprietary | Grey area | Clean | Clean |
+
+**Context on why this matters:**
+
+Anthropic blocked OpenCode, Cline, and RooCode from their API in January — zero warning. George Hotz wrote they'd "convert people to other model providers." Then the March 31 npm leak happened.
+
+The real lesson: your coding harness shouldn't be married to one vendor. The moat is model quality, not the CLI wrapper.
 
 **What it's NOT:**
-- Not production-hardened yet (it's evolving)
-- Not a full Claude Code replacement (no TUI, no native agent subprocesses yet)
-- Not a copy of anyone's code (clean-room, Apache 2.0)
+- Not a full Claude Code replacement (no TUI, no native subagents yet)
+- Not production-hardened for enterprise (it's evolving)
+- Not a copy of anyone's code
 
 **Try it:**
-```
-pip install anthropic openai  # or just use Ollama
+```bash
 git clone https://github.com/nikhilvallishayee/duh
-cd duh && pip install -e .
+cd duh && pip install -e ".[dev]"
 duh -p "what files are here?" --provider ollama
+duh  # interactive REPL
 ```
 
-Feedback and PRs welcome. Especially interested in: what features matter most to you in an AI coding harness?
+Feedback welcome. What features matter most to you in an AI coding harness?
 
 github.com/nikhilvallishayee/duh
+
+---
+
+## Suggested Engineering Leaders to Tag/Engage
+
+**Twitter/X:**
+- @georgehotz — Already outspoken on Anthropic blocking OpenCode
+- @dhh — Called Anthropic "customer hostile"
+- @GergelyOrosz — Covered the leak extensively, pragmatic engineering audience
+- @swyx — AI engineering thought leader, latent.space
+- @simonw — Django co-creator, AI tools analyst
+- @wesbos — Found the 187 spinner verbs, massive dev audience
+- @t3dotgg (Theo Browne) — Analyzed cache bugs, cost analysis
+
+**LinkedIn:**
+- Gergely Orosz (The Pragmatic Engineer)
+- DHH (David Heinemeier Hansson)
+- Netanel Eliav (CTO, Jam 7) — wrote the $130-260/dev cost analysis
+- Sanchit Vir Gogia (Greyhound Research) — enterprise AI security angle
+
+**Reddit:**
+- Post to r/programming (broadest reach), r/LocalLLaMA (local model angle), r/ClaudeCode (most relevant community — 4,200+ weekly contributors)
+
+---
+
+## Key Sources for Credibility
+
+When people ask "is this real?":
+- 954 tests: `cd duh && python -m pytest -q` (3 seconds)
+- SDK verified: `tests/e2e_sdk_smoke.py` (Assistant + Result messages)
+- UC API verified: `tests/e2e_uc_chat_smoke.py` (full chat pipeline)
+- claude-flow patch: `claude-flow-fork` branch `feat/duh-backend-support`
+- GitHub: github.com/nikhilvallishayee/duh (39 commits, public)

@@ -6,6 +6,7 @@ Usage:
     duh doctor                         # diagnostics
     duh -p "prompt" --debug            # full event tracing
     duh -p "prompt" --model opus       # specify model
+    duh --output-format stream-json --input-format stream-json  # SDK mode
 """
 
 from __future__ import annotations
@@ -23,6 +24,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "doctor":
         return run_doctor()
+
+    # SDK mode: stream-json on both input and output
+    if getattr(args, "input_format", "text") == "stream-json":
+        from duh.cli.sdk_runner import run_stream_json_mode
+        return asyncio.run(run_stream_json_mode(args))
 
     if args.prompt is not None:
         return asyncio.run(run_print_mode(args))

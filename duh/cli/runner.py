@@ -274,6 +274,17 @@ async def run_print_mode(args: argparse.Namespace) -> int:
 
         if args.output_format == "json":
             json_events.append(_make_serializable(event))
+        elif args.output_format == "stream-json":
+            from duh.cli.ndjson import ndjson_write
+            ndjson_write(_make_serializable(event))
+            if event_type == "text_delta":
+                had_output = True
+            elif event_type == "error":
+                had_error = True
+            elif event_type == "assistant":
+                msg = event.get("message")
+                if isinstance(msg, Message) and msg.metadata.get("is_error"):
+                    had_error = True
         else:
             if event_type == "text_delta":
                 sys.stdout.write(event.get("text", ""))

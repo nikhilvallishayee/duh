@@ -17,6 +17,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Run in print mode: execute a single prompt and exit.")
     parser.add_argument("--model", type=str, default=None,
                         help="Model to use (default: auto-detect from provider).")
+    parser.add_argument("--fallback-model", type=str, default=None,
+                        help="Fallback model if primary is overloaded.")
     parser.add_argument("--provider", type=str, choices=["anthropic", "ollama", "openai"],
                         default=None,
                         help="LLM provider (default: auto-detect from API keys or Ollama).")

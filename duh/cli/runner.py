@@ -82,6 +82,8 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     if not provider_name:
         if os.environ.get("ANTHROPIC_API_KEY"):
             provider_name = "anthropic"
+        elif os.environ.get("OPENAI_API_KEY"):
+            provider_name = "openai"
         else:
             # Try Ollama as fallback
             try:
@@ -96,8 +98,9 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         sys.stderr.write(
             "Error: No provider available.\n"
             "  Option 1: export ANTHROPIC_API_KEY=sk-ant-...\n"
-            "  Option 2: start Ollama (ollama serve)\n"
-            "  Option 3: duh --provider ollama --model qwen2.5-coder:1.5b\n"
+            "  Option 2: export OPENAI_API_KEY=sk-...\n"
+            "  Option 3: start Ollama (ollama serve)\n"
+            "  Option 4: duh --provider ollama --model qwen2.5-coder:1.5b\n"
         )
         return 1
 
@@ -109,6 +112,14 @@ async def run_print_mode(args: argparse.Namespace) -> int:
             return 1
         model = args.model or "claude-sonnet-4-6"
         call_model = AnthropicProvider(api_key=api_key, model=model).stream
+    elif provider_name == "openai":
+        from duh.adapters.openai import OpenAIProvider
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            sys.stderr.write("Error: OPENAI_API_KEY not set.\n")
+            return 1
+        model = args.model or "gpt-4o"
+        call_model = OpenAIProvider(api_key=api_key, model=model).stream
     elif provider_name == "ollama":
         from duh.adapters.ollama import OllamaProvider
         model = args.model or "qwen2.5-coder:1.5b"

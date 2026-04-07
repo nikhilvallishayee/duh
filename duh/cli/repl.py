@@ -838,6 +838,7 @@ async def run_repl(args: argparse.Namespace) -> int:
         max_turns=args.max_turns,
     )
     engine = Engine(deps=deps, config=engine_config, session_store=store)
+    _plan_mode = PlanMode(engine)
 
     # --- Load readline history & set up tab completion ---
     _load_history()
@@ -858,9 +859,90 @@ async def run_repl(args: argparse.Namespace) -> int:
 
         # Slash commands
         if user_input.startswith("/"):
-            keep_going, model = _handle_slash(user_input, engine, model, deps, executor=executor, task_manager=_task_manager, template_state=_template_state)
+            keep_going, model = _handle_slash(
+                user_input, engine, model, deps,
+                executor=executor,
+                task_manager=_task_manager,
+                template_state=_template_state,
+                plan_mode=_plan_mode,
+            )
             if not keep_going:
                 break
+
+            # Check for plan request signal from _handle_slash
+            if model.startswith("\x00plan\x00"):
+                plan_desc = model[len("\x00plan\x00"):]
+                model = engine.model or model  # restore actual model
+
+                sys.stdout.write(f"  Planning: {plan_desc}\n")
+                renderer.status_bar(model, engine.turn_count + 1)
+
+                async for event in _plan_mode.plan(plan_desc):
+                    event_type = event.get("type", "")
+                    if event_type == "text_delta":
+                        renderer.text_delta(event.get("text", ""))
+                    elif event_type == "error":
+                        hint = _interpret_error(event.get("error", "unknown"))
+                        renderer.error(hint)
+
+                renderer.flush_response()
+                renderer.turn_end()
+
+                if _plan_mode.steps:
+                    sys.stdout.write(f"  {_plan_mode.format_plan()}\n\n")
+                    sys.stdout.write(
+                        "  [a]pprove  [r]eject  [m]odify > "
+                    )
+                    sys.stdout.flush()
+                    try:
+                        choice = input().strip().lower()
+                    except (EOFError, KeyboardInterrupt):
+                        sys.stdout.write("\n")
+                        _plan_mode.clear()
+                        continue
+
+                    if choice in ("a", "approve"):
+                        sys.stdout.write("  Executing plan...\n")
+                        renderer.status_bar(model, engine.turn_count + 1)
+
+                        async for event in _plan_mode.execute():
+                            event_type = event.get("type", "")
+                            if event_type == "text_delta":
+                                renderer.text_delta(event.get("text", ""))
+                            elif event_type == "thinking_delta":
+                                renderer.thinking_delta(event.get("text", ""))
+                            elif event_type == "tool_use":
+                                renderer.tool_use(
+                                    event.get("name", "?"),
+                                    event.get("input", {}),
+                                )
+                            elif event_type == "tool_result":
+                                renderer.tool_result(
+                                    str(event.get("output", "")),
+                                    bool(event.get("is_error")),
+                                )
+                            elif event_type == "error":
+                                hint = _interpret_error(
+                                    event.get("error", "unknown")
+                                )
+                                renderer.error(hint)
+
+                        renderer.flush_response()
+                        renderer.turn_end()
+                    elif choice in ("m", "modify"):
+                        sys.stdout.write(
+                            "  Edit the plan with /plan show, then "
+                            "/plan <new description> to re-plan.\n"
+                        )
+                    else:
+                        _plan_mode.clear()
+                        sys.stdout.write("  Plan rejected.\n")
+                else:
+                    sys.stdout.write(
+                        "  Could not parse a plan from the response.\n"
+                    )
+                    _plan_mode.clear()
+
             continue
 
         # Apply active template to user input

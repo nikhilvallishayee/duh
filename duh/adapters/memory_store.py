@@ -5,16 +5,29 @@ See ADR-016 for the full rationale.
 Stores memory at ~/.config/duh/projects/<sanitized-cwd>/memory/.
 Each project gets its own namespace based on a sanitized cwd path.
 
+Persistent cross-session facts are stored in:
+    ~/.config/duh/memory/<project-hash>/facts.jsonl
+
+Each fact entry: {"key": str, "value": str, "timestamp": str, "tags": [str]}
+
     store = FileMemoryStore(cwd="/Users/alice/Code/my-project")
     store.write_file("project_setup.md", "---\\nname: Setup\\n...")
     headers = store.list_files()
+
+    # Persistent facts
+    store.store_fact("auth-pattern", "Uses JWT with refresh tokens", ["auth"])
+    results = store.recall_facts("auth")
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from duh.config import config_dir
 from duh.ports.memory import MemoryHeader
@@ -23,6 +36,21 @@ logger = logging.getLogger(__name__)
 
 INDEX_FILENAME = "MEMORY.md"
 INDEX_LINE_CAP = 200
+FACTS_FILENAME = "facts.jsonl"
+FACTS_LINE_CAP = 500  # max entries before oldest are pruned
+
+
+def _project_hash(cwd: str) -> str:
+    """Compute a stable hash for the project root.
+
+    Uses the git root if available, otherwise the resolved *cwd*.
+    Returns the first 12 hex chars of the SHA-256.
+    """
+    from duh.config import _find_git_root
+
+    root = _find_git_root(cwd)
+    key = str(root) if root else str(Path(cwd).resolve())
+    return hashlib.sha256(key.encode()).hexdigest()[:12]
 
 
 def _sanitize_cwd(cwd: str) -> str:
@@ -101,6 +129,9 @@ class FileMemoryStore:
         self._memory_dir = (
             config_dir() / "projects" / _sanitize_cwd(cwd) / "memory"
         )
+        self._facts_dir = (
+            config_dir() / "memory" / _project_hash(cwd)
+        )
 
     # ------------------------------------------------------------------
     # MemoryStore protocol
@@ -174,6 +205,114 @@ class FileMemoryStore:
         file_path = self._memory_dir / name
         if file_path.exists():
             file_path.unlink()
+
+    # ------------------------------------------------------------------
+    # Persistent cross-session facts
+    # ------------------------------------------------------------------
+
+    def get_facts_dir(self) -> Path:
+        """Return the facts directory path."""
+        return self._facts_dir
+
+    def _facts_path(self) -> Path:
+        return self._facts_dir / FACTS_FILENAME
+
+    def _ensure_facts_dir(self) -> None:
+        self._facts_dir.mkdir(parents=True, exist_ok=True)
+
+    def store_fact(
+        self,
+        key: str,
+        value: str,
+        tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Append a fact to facts.jsonl. Returns the stored entry.
+
+        If a fact with the same key already exists, it is replaced
+        (the old entry is removed).
+        """
+        self._ensure_facts_dir()
+        entry: dict[str, Any] = {
+            "key": key,
+            "value": value,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "tags": tags or [],
+        }
+
+        # Remove any existing entry with the same key, then append
+        existing = self._read_all_facts()
+        existing = [e for e in existing if e.get("key") != key]
+        existing.append(entry)
+
+        # Prune oldest if over cap
+        if len(existing) > FACTS_LINE_CAP:
+            existing = existing[-FACTS_LINE_CAP:]
+
+        self._write_all_facts(existing)
+        return entry
+
+    def recall_facts(
+        self,
+        query: str,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Search facts by keyword. Matches against key, value, and tags.
+
+        Returns up to *limit* results, newest first.
+        """
+        all_facts = self._read_all_facts()
+        query_lower = query.lower()
+        matched: list[dict[str, Any]] = []
+        for fact in reversed(all_facts):  # newest first
+            haystack = " ".join([
+                fact.get("key", ""),
+                fact.get("value", ""),
+                " ".join(fact.get("tags", [])),
+            ]).lower()
+            if query_lower in haystack:
+                matched.append(fact)
+                if len(matched) >= limit:
+                    break
+        return matched
+
+    def list_facts(self) -> list[dict[str, Any]]:
+        """Return all stored facts, oldest first."""
+        return self._read_all_facts()
+
+    def delete_fact(self, key: str) -> bool:
+        """Delete a fact by key. Returns True if found and deleted."""
+        existing = self._read_all_facts()
+        filtered = [e for e in existing if e.get("key") != key]
+        if len(filtered) == len(existing):
+            return False
+        self._write_all_facts(filtered)
+        return True
+
+    def _read_all_facts(self) -> list[dict[str, Any]]:
+        """Read all facts from facts.jsonl."""
+        path = self._facts_path()
+        if not path.exists():
+            return []
+        entries: list[dict[str, Any]] = []
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    logger.warning("Skipping malformed facts.jsonl line: %s", line[:80])
+        except Exception as exc:
+            logger.warning("Failed to read %s: %s", path, exc)
+        return entries
+
+    def _write_all_facts(self, entries: list[dict[str, Any]]) -> None:
+        """Write all facts to facts.jsonl (overwrite)."""
+        self._ensure_facts_dir()
+        path = self._facts_path()
+        lines = [json.dumps(e, ensure_ascii=False) for e in entries]
+        path.write_text("\n".join(lines) + "\n" if lines else "", encoding="utf-8")
 
     # ------------------------------------------------------------------
     # Internal

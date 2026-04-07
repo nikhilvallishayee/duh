@@ -21,7 +21,9 @@ Slash commands:
     /context  — show context window token breakdown
     /changes  — show files touched in this session
     /tasks    — show task checklist
+    /jobs     — list background jobs (/jobs <id> for result)
     /search   — search messages in the current session
+    /plan     — plan mode (/plan <desc>, /plan show, /plan clear)
     /undo     — undo the last file modification (Write or Edit)
     /clear    — clear conversation history
     /compact  — compact conversation (summarize older messages)
@@ -44,6 +46,7 @@ from duh.cli.runner import BRIEF_INSTRUCTION, SYSTEM_PROMPT, _interpret_error
 from duh.kernel.deps import Deps
 from duh.kernel.engine import Engine, EngineConfig
 from duh.kernel.messages import Message
+from duh.kernel.plan_mode import PlanMode
 from duh.tools.registry import get_all_tools
 
 logger = logging.getLogger("duh")
@@ -261,7 +264,9 @@ SLASH_COMMANDS = {
     "/brief": "Toggle brief mode (/brief on, /brief off, /brief)",
     "/search": "Search session messages (/search <query>)",
     "/template": "Prompt templates (/template list | use <name> | <name> <prompt>)",
+    "/plan": "Plan mode (/plan <desc>, /plan show, /plan clear)",
     "/undo": "Undo the last file modification (Write or Edit)",
+    "/jobs": "Background jobs (/jobs to list, /jobs <id> for result)",
     "/clear": "Clear conversation history",
     "/compact": "Compact older messages",
     "/exit": "Exit the REPL",
@@ -282,15 +287,18 @@ def _load_history() -> None:
     os.makedirs(HISTORY_DIR, exist_ok=True)
     try:
         readline.read_history_file(HISTORY_FILE)
-    except FileNotFoundError:
-        pass  # first run — no history yet
+    except (FileNotFoundError, PermissionError, OSError):
+        pass  # first run, permission issue, or other OS error
 
 
 def _save_history() -> None:
     """Save readline history to disk, truncating to MAX_HISTORY entries."""
-    os.makedirs(HISTORY_DIR, exist_ok=True)
-    readline.set_history_length(MAX_HISTORY)
-    readline.write_history_file(HISTORY_FILE)
+    try:
+        os.makedirs(HISTORY_DIR, exist_ok=True)
+        readline.set_history_length(MAX_HISTORY)
+        readline.write_history_file(HISTORY_FILE)
+    except (PermissionError, OSError):
+        pass  # can't save — not critical
 
 
 class _SlashCompleter:
@@ -449,6 +457,7 @@ def _handle_slash(
     executor: NativeExecutor | None = None,
     task_manager: Any | None = None,
     template_state: dict[str, Any] | None = None,
+    plan_mode: PlanMode | None = None,
 ) -> tuple[bool, str]:
     """Handle a slash command. Returns (should_continue, new_model).
 
@@ -550,6 +559,31 @@ def _handle_slash(
             sys.stdout.write("  No tasks.\n")
         return True, model
 
+    if name == "/jobs":
+        from duh.tools.bash import get_job_queue
+        queue = get_job_queue()
+        if arg:
+            # /jobs <id> — show result of a specific job
+            try:
+                result = queue.results(arg.strip())
+                sys.stdout.write(f"  {result}\n")
+            except KeyError:
+                sys.stdout.write(f"  Unknown job id: {arg.strip()}\n")
+            except ValueError as exc:
+                sys.stdout.write(f"  {exc}\n")
+        else:
+            # /jobs — list all jobs
+            jobs = queue.list_jobs()
+            if not jobs:
+                sys.stdout.write("  No background jobs.\n")
+            else:
+                for j in jobs:
+                    elapsed = f" ({j['elapsed_s']}s)" if j.get("elapsed_s") is not None else ""
+                    sys.stdout.write(
+                        f"  [{j['id']}] {j['state']:10s} {j['name']}{elapsed}\n"
+                    )
+        return True, model
+
     if name == "/search":
         if not arg:
             sys.stdout.write("  Usage: /search <query>\n")
@@ -560,6 +594,29 @@ def _handle_slash(
     if name == "/template":
         _handle_template_command(arg, template_state or {})
         return True, model
+
+    if name == "/plan":
+        if plan_mode is None:
+            sys.stdout.write("  Plan mode not available.\n")
+            return True, model
+        sub = arg.strip().lower()
+        if sub == "show":
+            sys.stdout.write(f"  {plan_mode.format_plan()}\n")
+            return True, model
+        if sub == "clear":
+            plan_mode.clear()
+            sys.stdout.write("  Plan cleared.\n")
+            return True, model
+        if not arg.strip():
+            sys.stdout.write(
+                "  Usage: /plan <description>  — propose a plan\n"
+                "         /plan show           — display current plan\n"
+                "         /plan clear          — clear current plan\n"
+            )
+            return True, model
+        # /plan <description> — signal handled by REPL loop (see run_repl)
+        # Return a sentinel: model prefixed with \x00 signals plan request
+        return True, f"\x00plan\x00{arg.strip()}"
 
     if name == "/undo":
         if executor is None:
@@ -801,16 +858,22 @@ async def run_repl(args: argparse.Namespace) -> int:
 
         # Slash commands
         if user_input.startswith("/"):
-            keep_going, model = _handle_slash(user_input, engine, model, deps, executor=executor, task_manager=_task_manager)
+            keep_going, model = _handle_slash(user_input, engine, model, deps, executor=executor, task_manager=_task_manager, template_state=_template_state)
             if not keep_going:
                 break
             continue
+
+        # Apply active template to user input
+        effective_input = user_input
+        _active_tmpl_name = _template_state.get("active")
+        if _active_tmpl_name and _active_tmpl_name in _template_state["templates"]:
+            effective_input = _template_state["templates"][_active_tmpl_name].render(user_input)
 
         # Show status bar before each turn (model + turn count)
         renderer.status_bar(model, engine.turn_count + 1)
 
         # Run the prompt through the engine
-        async for event in engine.run(user_input):
+        async for event in engine.run(effective_input):
             event_type = event.get("type", "")
 
             if event_type == "text_delta":

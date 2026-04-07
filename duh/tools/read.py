@@ -1,4 +1,8 @@
-"""ReadTool — read a file from disk, return contents with line numbers."""
+"""ReadTool — read a file from disk, return contents with line numbers.
+
+For .ipynb (Jupyter notebook) files, renders cells in a human-readable format
+instead of raw JSON.
+"""
 
 from __future__ import annotations
 
@@ -66,6 +70,10 @@ class ReadTool:
                 is_error=True,
             )
 
+        # --- Jupyter notebook rendering ---
+        if path.suffix == ".ipynb":
+            return await self._read_notebook(path, offset, limit)
+
         try:
             text = path.read_text(encoding="utf-8")
         except Exception as exc:
@@ -126,6 +134,42 @@ class ReadTool:
         return ToolResult(
             output=numbered,
             metadata={"line_count": len(lines), "offset": offset},
+        )
+
+    async def _read_notebook(
+        self, path: Path, offset: int, limit: int | None
+    ) -> ToolResult:
+        """Render a .ipynb notebook in human-readable cell format."""
+        try:
+            from duh.tools.notebook_edit import render_notebook, _read_notebook
+            nb = _read_notebook(path)
+        except Exception as exc:
+            return ToolResult(
+                output=f"Error reading notebook: {exc}", is_error=True
+            )
+
+        rendered = render_notebook(nb)
+        lines = rendered.splitlines(keepends=True)
+
+        # Apply offset/limit
+        if offset > 0:
+            lines = lines[offset:]
+        if limit is not None:
+            lines = lines[:limit]
+
+        start = offset + 1
+        numbered = "".join(
+            f"{start + i}\t{line}" for i, line in enumerate(lines)
+        )
+        if not numbered:
+            if not nb.get("cells"):
+                return ToolResult(output="(empty notebook — no cells)")
+            return ToolResult(output="(no lines in requested range)")
+
+        cell_count = len(nb.get("cells", []))
+        return ToolResult(
+            output=numbered,
+            metadata={"cell_count": cell_count, "offset": offset, "line_count": len(lines)},
         )
 
     async def check_permissions(

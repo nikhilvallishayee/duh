@@ -14,9 +14,12 @@ from duh.tools.task_tool import TaskTool
 from duh.tools.tool_search import ToolSearchTool
 from duh.tools.web_fetch import WebFetchTool
 from duh.tools.web_search import WebSearchTool
+from duh.tools.memory_tool import MemoryRecallTool, MemoryStoreTool
+from duh.tools.notebook_edit import NotebookEditTool
+from duh.tools.worktree import EnterWorktreeTool, ExitWorktreeTool
 from duh.tools.write import WriteTool
 
-ALL_TOOLS = [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GlobTool, GrepTool, SkillTool, ToolSearchTool, WebFetchTool, WebSearchTool, TaskTool]
+ALL_TOOLS = [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GlobTool, GrepTool, SkillTool, ToolSearchTool, WebFetchTool, WebSearchTool, TaskTool, EnterWorktreeTool, ExitWorktreeTool, NotebookEditTool, MemoryStoreTool, MemoryRecallTool]
 
 __all__ = [
     "ReadTool",
@@ -26,10 +29,15 @@ __all__ = [
     "BashTool",
     "GlobTool",
     "GrepTool",
+    "MemoryRecallTool",
+    "MemoryStoreTool",
+    "NotebookEditTool",
     "SkillTool",
     "TaskTool",
     "ToolSearchTool",
     "WebFetchTool",
     "WebSearchTool",
+    "EnterWorktreeTool",
+    "ExitWorktreeTool",
     "ALL_TOOLS",
 ]

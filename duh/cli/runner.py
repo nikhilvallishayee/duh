@@ -200,6 +200,15 @@ async def run_print_mode(args: argparse.Namespace) -> int:
             skill_lines.append(f"- {s.name}: {s.description}{hint}")
         system_prompt_parts.append("\n".join(skill_lines))
 
+    # --- Inject template descriptions into system prompt ---
+    from duh.kernel.templates import load_all_templates
+    loaded_templates = load_all_templates(cwd)
+    if loaded_templates:
+        tmpl_lines = ["\nAvailable prompt templates (invoke via /template):"]
+        for t in loaded_templates:
+            tmpl_lines.append(f"- {t.name}: {t.description}")
+        system_prompt_parts.append("\n".join(tmpl_lines))
+
     # --- Inject deferred tools into system prompt (ADR-018) ---
     if deferred_tools:
         dt_lines = [

@@ -112,4 +112,66 @@ def get_all_tools(
     except ImportError:
         pass
 
+    # EnterWorktree
+    try:
+        from duh.tools.worktree import EnterWorktreeTool
+        tools.append(EnterWorktreeTool())
+    except ImportError:
+        pass
+
+    # ExitWorktree
+    try:
+        from duh.tools.worktree import ExitWorktreeTool
+        tools.append(ExitWorktreeTool())
+    except ImportError:
+        pass
+
+    # NotebookEdit (Jupyter .ipynb cell editing)
+    try:
+        from duh.tools.notebook_edit import NotebookEditTool
+        tools.append(NotebookEditTool())
+    except ImportError:
+        pass
+
+    # TestImpact (test impact analysis)
+    try:
+        from duh.tools.test_impact import TestImpactTool
+        tools.append(TestImpactTool())
+    except ImportError:
+        pass
+
+    # MemoryStore (persistent cross-session facts)
+    try:
+        from duh.tools.memory_tool import MemoryStoreTool
+        tools.append(MemoryStoreTool())
+    except ImportError:
+        pass
+
+    # MemoryRecall (search saved facts)
+    try:
+        from duh.tools.memory_tool import MemoryRecallTool
+        tools.append(MemoryRecallTool())
+    except ImportError:
+        pass
+
+    # LSP (deferred — registered via ToolSearch, not loaded eagerly)
+    try:
+        from duh.tools.lsp_tool import LSPTool
+        from duh.tools.tool_search import DeferredTool
+
+        lsp = LSPTool()
+        lsp_deferred = DeferredTool(
+            name=lsp.name,
+            description=lsp.description,
+            input_schema=lsp.input_schema,
+            source="builtin",
+        )
+        # Attach to ToolSearchTool if present
+        for t in tools:
+            if hasattr(t, "add_tool") and getattr(t, "name", "") == "ToolSearch":
+                t.add_tool(lsp_deferred)
+                break
+    except ImportError:
+        pass
+
     return tools

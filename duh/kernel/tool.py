@@ -45,6 +45,9 @@ TOOL_TIMEOUTS: dict[str, int] = {
     "WebSearch": 30,
     "Skill": 120,
     "Task": 5,
+    "NotebookEdit": 30,
+    "MemoryStore": 10,
+    "MemoryRecall": 10,
 }
 
 

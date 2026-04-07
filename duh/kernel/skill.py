@@ -6,9 +6,15 @@ A skill is a markdown file with YAML frontmatter containing
 structured metadata (name, description, when-to-use, etc.)
 and a prompt template body with ``$ARGUMENTS`` substitution.
 
-Skills are loaded from:
-1. ``~/.config/duh/skills/*.md`` (user-global)
-2. ``.duh/skills/*.md`` (project-local, overrides by name)
+Skills are loaded from (in precedence order, last wins by name):
+1. ``~/.claude/skills/`` (Claude Code user-global — compat)
+2. ``~/.config/duh/skills/`` (D.U.H. user-global)
+3. ``.claude/skills/`` (Claude Code project-local — compat)
+4. ``.duh/skills/`` (D.U.H. project-local, highest priority)
+
+Supports two layouts:
+- Flat: ``skills/my-skill.md``
+- Directory: ``skills/my-skill/SKILL.md`` (Claude Code convention)
 """
 
 from __future__ import annotations
@@ -39,6 +45,11 @@ class SkillDef:
         content: The prompt template body (after frontmatter).
         argument_hint: Hint about what arguments the skill accepts.
         source_path: Filesystem path the skill was loaded from.
+        user_invocable: Whether users can invoke this skill via /name.
+        context: Execution context — 'inline' or 'fork'.
+        agent: Agent type when context is 'fork'.
+        effort: Thinking effort level for model.
+        paths: File path triggers (glob patterns).
     """
 
     name: str
@@ -49,6 +60,11 @@ class SkillDef:
     content: str = ""
     argument_hint: str = ""
     source_path: str = ""
+    user_invocable: bool = True
+    context: str = "inline"
+    agent: str = ""
+    effort: str = ""
+    paths: list[str] = field(default_factory=list)
 
     def render(self, arguments: str = "") -> str:
         """Render the skill content, substituting ``$ARGUMENTS``.
@@ -67,9 +83,11 @@ class SkillDef:
 # ---------------------------------------------------------------------------
 
 _FRONTMATTER_RE = re.compile(
-    r"\A---[ \t]*\n(.*?\n)---[ \t]*\n",
+    r"\A---[ \t]*\n(.*?\n)---[ \t]*\n?",
     re.DOTALL,
 )
+
+_H1_RE = re.compile(r"^#\s+(.+)", re.MULTILINE)
 
 
 def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
@@ -133,8 +151,24 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
 
 
 # ---------------------------------------------------------------------------
-# Skill loading
+# Skill loading from a single file
 # ---------------------------------------------------------------------------
+
+def _parse_list_field(raw: Any) -> list[str]:
+    """Parse a field that can be a comma-separated string or a list."""
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, str):
+        return [t.strip() for t in raw.split(",") if t.strip()]
+    return []
+
+
+def _parse_bool_field(raw: Any) -> bool:
+    """Parse a boolean field (YAML true/false or string 'true'/'false')."""
+    if raw is True or raw == "true":
+        return True
+    return False
+
 
 def _skill_from_file(path: Path) -> SkillDef | None:
     """Load a single skill from a markdown file.
@@ -153,36 +187,62 @@ def _skill_from_file(path: Path) -> SkillDef | None:
     description = meta.get("description", "")
 
     if not name:
-        # Fall back to filename stem
-        name = path.stem
+        # Fall back to parent directory name (for SKILL.md in dir) or filename stem
+        if path.name.upper() == "SKILL.MD" and path.parent.name != "skills":
+            name = path.parent.name
+        else:
+            name = path.stem
+
+    if not description:
+        # Fall back to first H1 in markdown body
+        h1_match = _H1_RE.search(body)
+        if h1_match:
+            description = h1_match.group(1).strip()
 
     if not description:
         logger.warning("Skill %r in %s has no description, skipping.", name, path)
         return None
 
-    # Parse allowed-tools list
-    allowed_tools_raw = meta.get("allowed-tools", [])
-    if isinstance(allowed_tools_raw, str):
-        allowed_tools = [t.strip() for t in allowed_tools_raw.split(",") if t.strip()]
-    elif isinstance(allowed_tools_raw, list):
-        allowed_tools = allowed_tools_raw
-    else:
-        allowed_tools = []
+    # Parse optional fields — support both hyphenated (Claude Code) keys
+    allowed_tools = _parse_list_field(meta.get("allowed-tools", []))
+    paths = _parse_list_field(meta.get("paths", []))
+
+    # user-invocable: default True
+    user_invocable_raw = meta.get("user-invocable", "true")
+    user_invocable = _parse_bool_field(user_invocable_raw) if user_invocable_raw != "true" else True
+
+    # Model: 'inherit' means empty (use parent)
+    model = meta.get("model", "")
+    if model == "inherit":
+        model = ""
 
     return SkillDef(
         name=name,
         description=description,
         when_to_use=meta.get("when-to-use", ""),
         allowed_tools=allowed_tools,
-        model=meta.get("model", ""),
+        model=model,
         content=body.strip(),
         argument_hint=meta.get("argument-hint", ""),
         source_path=str(path),
+        user_invocable=user_invocable,
+        context=meta.get("context", "inline"),
+        agent=meta.get("agent", ""),
+        effort=meta.get("effort", ""),
+        paths=paths,
     )
 
 
+# ---------------------------------------------------------------------------
+# Directory scanning
+# ---------------------------------------------------------------------------
+
 def load_skills_dir(path: str | Path) -> list[SkillDef]:
-    """Load all ``.md`` skill files from a directory.
+    """Load all skill files from a directory.
+
+    Supports two layouts:
+    - Flat: ``path/my-skill.md``
+    - Directory: ``path/my-skill/SKILL.md`` (Claude Code convention)
 
     Args:
         path: Directory to scan for skill files.
@@ -195,10 +255,21 @@ def load_skills_dir(path: str | Path) -> list[SkillDef]:
         return []
 
     skills: list[SkillDef] = []
-    for md_file in sorted(path.glob("*.md")):
-        skill = _skill_from_file(md_file)
-        if skill is not None:
-            skills.append(skill)
+
+    for entry in sorted(path.iterdir()):
+        # Flat .md file
+        if entry.is_file() and entry.suffix == ".md":
+            skill = _skill_from_file(entry)
+            if skill is not None:
+                skills.append(skill)
+
+        # Directory with SKILL.md inside
+        elif entry.is_dir():
+            skill_md = entry / "SKILL.md"
+            if skill_md.is_file():
+                skill = _skill_from_file(skill_md)
+                if skill is not None:
+                    skills.append(skill)
 
     return skills
 
@@ -206,11 +277,11 @@ def load_skills_dir(path: str | Path) -> list[SkillDef]:
 def load_all_skills(cwd: str = ".") -> list[SkillDef]:
     """Load skills from all standard locations.
 
-    Locations (loaded in order):
-    1. ``~/.config/duh/skills/`` (user-global)
-    2. ``.duh/skills/`` relative to *cwd* (project-local)
-
-    Project-local skills override user-global skills with the same name.
+    Locations (loaded in precedence order, last wins by name):
+    1. ``~/.claude/skills/`` (Claude Code user-global — compat)
+    2. ``~/.config/duh/skills/`` (D.U.H. user-global)
+    3. ``.claude/skills/`` relative to cwd (Claude Code project — compat)
+    4. ``.duh/skills/`` relative to cwd (D.U.H. project, highest priority)
 
     Args:
         cwd: Current working directory (for project-local skills).
@@ -220,14 +291,24 @@ def load_all_skills(cwd: str = ".") -> list[SkillDef]:
     """
     seen: dict[str, SkillDef] = {}
 
-    # 1. User-global skills
-    user_dir = Path("~/.config/duh/skills").expanduser()
-    for skill in load_skills_dir(user_dir):
+    # 1. Claude Code user-global skills
+    claude_user_dir = Path("~/.claude/skills").expanduser()
+    for skill in load_skills_dir(claude_user_dir):
         seen[skill.name] = skill
 
-    # 2. Project-local skills (override user-global)
-    project_dir = Path(cwd) / ".duh" / "skills"
-    for skill in load_skills_dir(project_dir):
+    # 2. D.U.H. user-global skills
+    duh_user_dir = Path("~/.config/duh/skills").expanduser()
+    for skill in load_skills_dir(duh_user_dir):
+        seen[skill.name] = skill
+
+    # 3. Claude Code project-local skills
+    claude_project_dir = Path(cwd) / ".claude" / "skills"
+    for skill in load_skills_dir(claude_project_dir):
+        seen[skill.name] = skill
+
+    # 4. D.U.H. project-local skills (highest priority)
+    duh_project_dir = Path(cwd) / ".duh" / "skills"
+    for skill in load_skills_dir(duh_project_dir):
         seen[skill.name] = skill
 
     return list(seen.values())

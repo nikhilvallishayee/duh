@@ -460,3 +460,226 @@ class TestSkillTool:
         result = await tool.call({"skill": "  commit  "}, ctx())
         assert result.is_error is False
         assert "Do commit" in result.output
+
+
+# ===========================================================================
+# Claude Code compatibility — directory layout + SKILL.md
+# ===========================================================================
+
+
+class TestDirectorySkillLayout:
+    """Skills stored as skill-name/SKILL.md (Claude Code convention)."""
+
+    def test_loads_skill_md_from_dir(self, tmp_path: Path):
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: my-skill\ndescription: A dir skill\n---\nDir content"
+        )
+        skills = load_skills_dir(tmp_path)
+        assert len(skills) == 1
+        assert skills[0].name == "my-skill"
+        assert skills[0].content == "Dir content"
+
+    def test_name_falls_back_to_dir_name(self, tmp_path: Path):
+        skill_dir = tmp_path / "auto-named"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\ndescription: No explicit name\n---\nbody"
+        )
+        skills = load_skills_dir(tmp_path)
+        assert len(skills) == 1
+        assert skills[0].name == "auto-named"
+
+    def test_mixes_flat_and_dir(self, tmp_path: Path):
+        (tmp_path / "flat.md").write_text(
+            "---\nname: flat\ndescription: Flat skill\n---\nflat"
+        )
+        dir_skill = tmp_path / "nested"
+        dir_skill.mkdir()
+        (dir_skill / "SKILL.md").write_text(
+            "---\nname: nested\ndescription: Nested skill\n---\nnested"
+        )
+        skills = load_skills_dir(tmp_path)
+        assert len(skills) == 2
+        names = {s.name for s in skills}
+        assert names == {"flat", "nested"}
+
+    def test_ignores_dirs_without_skill_md(self, tmp_path: Path):
+        empty_dir = tmp_path / "no-skill"
+        empty_dir.mkdir()
+        (empty_dir / "README.md").write_text("Not a skill")
+        skills = load_skills_dir(tmp_path)
+        assert len(skills) == 0
+
+
+class TestDescriptionFallback:
+    """Description falls back to first H1 in body."""
+
+    def test_h1_fallback(self, tmp_path: Path):
+        f = tmp_path / "headlined.md"
+        f.write_text("---\nname: headlined\n---\n# My Great Skill\n\nContent here.")
+        skill = _skill_from_file(f)
+        assert skill is not None
+        assert skill.description == "My Great Skill"
+
+    def test_no_description_no_h1_skips(self, tmp_path: Path):
+        f = tmp_path / "empty.md"
+        f.write_text("---\nname: empty\n---\nNo heading, no description.")
+        skill = _skill_from_file(f)
+        assert skill is None
+
+
+class TestModelInherit:
+    """model: inherit should resolve to empty string."""
+
+    def test_inherit_becomes_empty(self, tmp_path: Path):
+        f = tmp_path / "inherit.md"
+        f.write_text("---\nname: inherit-test\ndescription: Test\nmodel: inherit\n---\nbody")
+        skill = _skill_from_file(f)
+        assert skill is not None
+        assert skill.model == ""
+
+
+class TestNewFields:
+    """New fields: user-invocable, context, agent, effort, paths."""
+
+    def test_user_invocable_default_true(self):
+        s = SkillDef(name="x", description="x")
+        assert s.user_invocable is True
+
+    def test_context_default_inline(self):
+        s = SkillDef(name="x", description="x")
+        assert s.context == "inline"
+
+    def test_all_new_fields_parsed(self, tmp_path: Path):
+        f = tmp_path / "full.md"
+        f.write_text(
+            "---\n"
+            "name: full\n"
+            "description: Full fields\n"
+            "user-invocable: false\n"
+            "context: fork\n"
+            "agent: general-purpose\n"
+            "effort: high\n"
+            "paths: src/**/*.py, tests/**/*.py\n"
+            "---\nbody"
+        )
+        skill = _skill_from_file(f)
+        assert skill is not None
+        assert skill.user_invocable is False
+        assert skill.context == "fork"
+        assert skill.agent == "general-purpose"
+        assert skill.effort == "high"
+        assert skill.paths == ["src/**/*.py", "tests/**/*.py"]
+
+
+class TestExtraFrontmatterFields:
+    """Claude skills may have extra fields (version, category, tags, author).
+    These should not break parsing."""
+
+    def test_extra_fields_ignored(self, tmp_path: Path):
+        f = tmp_path / "extra.md"
+        f.write_text(
+            "---\n"
+            "name: extra\n"
+            "description: Has extra fields\n"
+            "version: 2.7.0\n"
+            "category: development\n"
+            "author: Claude Flow\n"
+            "tags:\n"
+            "  - sparc\n"
+            "  - tdd\n"
+            "---\nbody"
+        )
+        skill = _skill_from_file(f)
+        assert skill is not None
+        assert skill.name == "extra"
+        assert skill.description == "Has extra fields"
+
+
+class TestClaudeSkillsDir:
+    """load_all_skills picks up .claude/skills/ alongside .duh/skills/."""
+
+    def test_loads_from_claude_project_dir(self, tmp_path: Path, monkeypatch):
+        # Claude Code project skill
+        claude_dir = tmp_path / ".claude" / "skills" / "my-tool"
+        claude_dir.mkdir(parents=True)
+        (claude_dir / "SKILL.md").write_text(
+            "---\nname: my-tool\ndescription: From Claude\n---\nclaude body"
+        )
+
+        fake_home = tmp_path / "fake_home"
+        fake_home.mkdir()
+        original_expanduser = Path.expanduser
+        def fake_expanduser(self):
+            s = str(self)
+            if s.startswith("~"):
+                return Path(str(fake_home)) / s[2:].lstrip("/")
+            return original_expanduser(self)
+        monkeypatch.setattr(Path, "expanduser", fake_expanduser)
+
+        skills = load_all_skills(str(tmp_path))
+        assert len(skills) == 1
+        assert skills[0].name == "my-tool"
+        assert skills[0].description == "From Claude"
+
+    def test_duh_overrides_claude(self, tmp_path: Path, monkeypatch):
+        # Claude Code skill
+        claude_dir = tmp_path / ".claude" / "skills"
+        claude_dir.mkdir(parents=True)
+        (claude_dir / "commit.md").write_text(
+            "---\nname: commit\ndescription: Claude version\n---\nclaude"
+        )
+
+        # D.U.H. skill with same name
+        duh_dir = tmp_path / ".duh" / "skills"
+        duh_dir.mkdir(parents=True)
+        (duh_dir / "commit.md").write_text(
+            "---\nname: commit\ndescription: D.U.H. version\n---\nduh"
+        )
+
+        fake_home = tmp_path / "fake_home"
+        fake_home.mkdir()
+        original_expanduser = Path.expanduser
+        def fake_expanduser(self):
+            s = str(self)
+            if s.startswith("~"):
+                return Path(str(fake_home)) / s[2:].lstrip("/")
+            return original_expanduser(self)
+        monkeypatch.setattr(Path, "expanduser", fake_expanduser)
+
+        skills = load_all_skills(str(tmp_path))
+        commits = [s for s in skills if s.name == "commit"]
+        assert len(commits) == 1
+        assert commits[0].description == "D.U.H. version"
+
+    def test_both_sources_coexist(self, tmp_path: Path, monkeypatch):
+        # Claude skill
+        claude_dir = tmp_path / ".claude" / "skills"
+        claude_dir.mkdir(parents=True)
+        (claude_dir / "claude-only.md").write_text(
+            "---\nname: claude-only\ndescription: Only in Claude\n---\n"
+        )
+
+        # D.U.H. skill
+        duh_dir = tmp_path / ".duh" / "skills"
+        duh_dir.mkdir(parents=True)
+        (duh_dir / "duh-only.md").write_text(
+            "---\nname: duh-only\ndescription: Only in D.U.H.\n---\n"
+        )
+
+        fake_home = tmp_path / "fake_home"
+        fake_home.mkdir()
+        original_expanduser = Path.expanduser
+        def fake_expanduser(self):
+            s = str(self)
+            if s.startswith("~"):
+                return Path(str(fake_home)) / s[2:].lstrip("/")
+            return original_expanduser(self)
+        monkeypatch.setattr(Path, "expanduser", fake_expanduser)
+
+        skills = load_all_skills(str(tmp_path))
+        names = {s.name for s in skills}
+        assert "claude-only" in names
+        assert "duh-only" in names

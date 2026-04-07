@@ -1,6 +1,6 @@
 # ADR-020: 5-Wave Feature Roadmap
 
-**Status**: Active
+**Status**: Complete
 **Date**: 2026-04-07
 
 ## Context

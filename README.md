@@ -1,7 +1,8 @@
 # D.U.H. — D.U.H. is a Universal Harness
 
 [![CI](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml/badge.svg)](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-2309%20passing-brightgreen)]()
+[![PyPI](https://img.shields.io/pypi/v/duh-cli?color=blue)](https://pypi.org/project/duh-cli/)
+[![Tests](https://img.shields.io/badge/tests-2346%20passing-brightgreen)]()
 [![Coverage](https://img.shields.io/badge/coverage-90%25-green)]()
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)]()
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
@@ -265,6 +266,24 @@ export DUH_CLI_PATH=~/.local/bin/duh-sdk-shim
 export CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK=1
 # Start your UC API server — it now uses D.U.H. as the backend
 ```
+
+## Architecture Decisions (26 ADRs)
+
+Every design choice is documented:
+
+| # | Decision | Status |
+|---|----------|--------|
+| 001-010 | Vision, kernel, ports, tools, safety, context, sessions, CLI, providers, MCP | Implemented |
+| 011-018 | TUI, multi-agent, hooks, plugins, config, memory, skills, progressive disclosure | Implemented |
+| 019-020 | Phase plan, 5-wave roadmap | Complete |
+| 021 | NDJSON SDK protocol | Implemented |
+| 022 | Token counting, cost control, auto-compaction | Implemented |
+| 023 | Safety hardening (69 bash patterns, permissions, output limits) | Implemented |
+| 024 | Developer experience (REPL, TUI, undo, templates) | Implemented |
+| 025 | Ecosystem tools (GitHub, Docker, HTTP, DB, LSP) | Implemented |
+| 026 | Production readiness (logging, health, CI, PyPI) | Implemented |
+
+Full ADRs: [docs/adrs/](docs/adrs/)
 
 ## Development
 

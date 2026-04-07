@@ -30,5 +30,8 @@ dev = ["pytest", "pytest-asyncio"]
 [project.scripts]
 duh = "duh.cli:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["duh"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

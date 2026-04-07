@@ -122,9 +122,12 @@ class TestCompact:
             _msg(content="c" * 50),  # 50 tokens
         ]
         # Limit 80 → only the last message fits (50) before second would push to 100
+        # Dropped messages become a summary system message
         result = await c.compact(msgs, token_limit=80)
-        assert len(result) == 1
-        assert result[0].content == "c" * 50
+        assert len(result) == 2  # summary + kept
+        assert result[0].role == "system"
+        assert "Previous conversation summary" in result[0].content
+        assert result[1].content == "c" * 50
 
     async def test_keeps_system_messages(self):
         c = SimpleCompactor(bytes_per_token=1, min_keep=1)
@@ -134,11 +137,13 @@ class TestCompact:
             _msg(content="b" * 50),   # 50 tokens
         ]
         # Limit 65: system uses 10, budget=55, last msg uses 50 → fits.
-        # Second-to-last would push to 100 > 55 and we already have min_keep.
+        # Dropped "a" message becomes a summary system message.
         result = await c.compact(msgs, token_limit=65)
-        assert len(result) == 2
-        assert result[0].role == "system"
-        assert result[1].content == "b" * 50
+        assert len(result) == 3  # original system + summary + kept
+        assert result[0].role == "system"  # original
+        assert result[1].role == "system"  # summary
+        assert "Previous conversation summary" in result[1].content
+        assert result[2].content == "b" * 50
 
     async def test_system_messages_always_first(self):
         c = SimpleCompactor()
@@ -163,9 +168,11 @@ class TestCompact:
     async def test_min_keep_zero(self):
         c = SimpleCompactor(bytes_per_token=1, min_keep=0)
         msgs = [_msg(content="a" * 100)]
-        # Limit 10 → message doesn't fit, min_keep=0 → empty
+        # Limit 10 → message doesn't fit, min_keep=0 → only summary
         result = await c.compact(msgs, token_limit=10)
-        assert len(result) == 0
+        assert len(result) == 1  # summary of dropped message
+        assert result[0].role == "system"
+        assert "Previous conversation summary" in result[0].content
 
     async def test_uses_default_limit(self):
         c = SimpleCompactor(default_limit=50_000)
@@ -195,8 +202,9 @@ class TestCompact:
             {"role": "assistant", "content": "b" * 50},
         ]
         result = await c.compact(msgs, token_limit=60)
-        assert len(result) == 1
-        assert result[0]["content"] == "b" * 50
+        assert len(result) == 2  # summary + kept
+        assert result[0].role == "system"  # summary is a Message
+        assert result[1]["content"] == "b" * 50
 
     async def test_mixed_message_types(self):
         c = SimpleCompactor()
@@ -215,9 +223,12 @@ class TestCompact:
             _msg(content="a" * 20),   # 20 tokens
         ]
         # Limit 100: system=90, budget=10, conversation msg=20 > 10
+        # Dropped conversation msg becomes summary
         result = await c.compact(msgs, token_limit=100)
-        assert len(result) == 1  # Only system
-        assert result[0].role == "system"
+        assert len(result) == 2  # original system + summary
+        assert result[0].role == "system"  # original
+        assert result[1].role == "system"  # summary
+        assert "Previous conversation summary" in result[1].content
 
 
 # ---------------------------------------------------------------------------

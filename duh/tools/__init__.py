@@ -10,9 +10,11 @@ from duh.tools.grep import GrepTool
 from duh.tools.read import ReadTool
 from duh.tools.skill_tool import SkillTool
 from duh.tools.tool_search import ToolSearchTool
+from duh.tools.web_fetch import WebFetchTool
+from duh.tools.web_search import WebSearchTool
 from duh.tools.write import WriteTool
 
-ALL_TOOLS = [ReadTool, WriteTool, EditTool, BashTool, GlobTool, GrepTool, SkillTool, ToolSearchTool]
+ALL_TOOLS = [ReadTool, WriteTool, EditTool, BashTool, GlobTool, GrepTool, SkillTool, ToolSearchTool, WebFetchTool, WebSearchTool]
 
 __all__ = [
     "ReadTool",
@@ -23,5 +25,7 @@ __all__ = [
     "GrepTool",
     "SkillTool",
     "ToolSearchTool",
+    "WebFetchTool",
+    "WebSearchTool",
     "ALL_TOOLS",
 ]

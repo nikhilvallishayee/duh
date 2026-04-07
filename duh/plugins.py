@@ -3,16 +3,39 @@
 See ADR-014 for the full rationale.
 
 A plugin is a Python package that provides tools, hooks, or both.
-Discovery uses Python's standard ``entry_points`` mechanism.
 
-Install a plugin:
-    pip install duh-plugin-foo
+Two discovery mechanisms:
 
-The plugin declares an entry point in its pyproject.toml:
-    [project.entry-points."duh.plugins"]
-    foo = "duh_plugin_foo:plugin"
+1. **Entry points** (pip-installed plugins):
+       pip install duh-plugin-foo
+   The plugin declares an entry point in its pyproject.toml:
+       [project.entry-points."duh.plugins"]
+       foo = "duh_plugin_foo:plugin"
+   The entry point must be a PluginSpec instance.
 
-The entry point must be a PluginSpec instance.
+2. **Directory plugins** (``.duh/plugins/`` or ``--plugin-dir``):
+   Each subdirectory with a ``plugin.json`` manifest is loaded.
+   Tools declared in the manifest become DeferredTool objects
+   available via ToolSearch.
+
+   Example ``plugin.json``::
+
+       {
+           "name": "my-plugin",
+           "version": "1.0.0",
+           "description": "Does useful things",
+           "tools": [
+               {
+                   "name": "my_tool",
+                   "description": "A useful tool",
+                   "input_schema": {
+                       "type": "object",
+                       "properties": {"arg": {"type": "string"}},
+                       "required": ["arg"]
+                   }
+               }
+           ]
+       }
 """
 
 from __future__ import annotations
@@ -86,15 +109,65 @@ def discover_entry_point_plugins() -> list[PluginSpec]:
     return specs
 
 
+def _parse_manifest_tools(
+    manifest: dict[str, Any], plugin_name: str
+) -> list[Any]:
+    """Parse tool definitions from a plugin manifest into DeferredTool objects.
+
+    Each tool entry must have at least ``name`` and ``description``.
+    ``input_schema`` is optional (defaults to empty object schema).
+
+    Args:
+        manifest: Parsed plugin.json dict.
+        plugin_name: Name of the owning plugin (used as source prefix).
+
+    Returns:
+        List of DeferredTool instances.
+    """
+    from duh.tools.tool_search import DeferredTool
+
+    raw_tools = manifest.get("tools", [])
+    if not isinstance(raw_tools, list):
+        logger.warning(
+            "Plugin %r: 'tools' must be a list, got %s. Skipping tools.",
+            plugin_name,
+            type(raw_tools).__name__,
+        )
+        return []
+
+    result: list[DeferredTool] = []
+    for i, entry in enumerate(raw_tools):
+        if not isinstance(entry, dict):
+            logger.warning(
+                "Plugin %r: tools[%d] is not a dict, skipping.", plugin_name, i
+            )
+            continue
+        tool_name = entry.get("name")
+        if not tool_name:
+            logger.warning(
+                "Plugin %r: tools[%d] missing 'name', skipping.", plugin_name, i
+            )
+            continue
+        result.append(
+            DeferredTool(
+                name=tool_name,
+                description=entry.get("description", ""),
+                input_schema=entry.get("input_schema", {"type": "object", "properties": {}}),
+                source=f"plugin:{plugin_name}",
+            )
+        )
+    return result
+
+
 def discover_directory_plugins(plugin_dir: str | Path) -> list[PluginSpec]:
     """Discover plugins from a local directory.
 
     Each subdirectory with a ``plugin.json`` manifest is loaded.
     The manifest must contain at least ``name`` and ``version``.
 
-    Optionally, the directory can contain:
-    - ``tools.py`` with tool classes
-    - ``hooks.json`` with hook configurations
+    Tools declared in the manifest's ``tools`` array are parsed into
+    :class:`~duh.tools.tool_search.DeferredTool` objects and attached
+    to the resulting :class:`PluginSpec`.
 
     Args:
         plugin_dir: Path to the plugin directory.
@@ -118,12 +191,13 @@ def discover_directory_plugins(plugin_dir: str | Path) -> list[PluginSpec]:
             name = manifest.get("name", child.name)
             version = manifest.get("version", "0.0.0")
             description = manifest.get("description", "")
+            tools = _parse_manifest_tools(manifest, name)
             spec = PluginSpec(
                 name=name,
                 version=version,
                 description=description,
+                tools=tools,
             )
-            # Future: load tools.py and hooks.json from the directory
             specs.append(spec)
         except Exception as exc:
             logger.warning(

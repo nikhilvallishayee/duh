@@ -23,6 +23,7 @@ from typing import Any, AsyncGenerator
 from duh.kernel.deps import Deps
 from duh.kernel.loop import query
 from duh.kernel.messages import Message, UserMessage
+from duh.kernel.tokens import count_tokens, estimate_cost, format_cost
 
 
 @dataclass
@@ -65,6 +66,33 @@ class Engine:
     def turn_count(self) -> int:
         return self._turn_count
 
+    @property
+    def total_input_tokens(self) -> int:
+        return self._total_input_tokens
+
+    @property
+    def total_output_tokens(self) -> int:
+        return self._total_output_tokens
+
+    @property
+    def model(self) -> str:
+        return self._config.model
+
+    def estimated_cost(self, model: str | None = None) -> float:
+        """Return estimated session cost in USD."""
+        m = model or self._config.model
+        return estimate_cost(m, self._total_input_tokens, self._total_output_tokens)
+
+    def cost_summary(self, model: str | None = None) -> str:
+        """Return a human-readable cost summary string."""
+        m = model or self._config.model
+        cost = self.estimated_cost(m)
+        return (
+            f"Input tokens:  ~{self._total_input_tokens:,}\n"
+            f"Output tokens: ~{self._total_output_tokens:,}\n"
+            f"Estimated cost: {format_cost(cost)} ({m})"
+        )
+
     async def run(
         self,
         prompt: str | list[Any],
@@ -81,6 +109,21 @@ class Engine:
         user_msg = Message(role="user", content=prompt if isinstance(prompt, str) else prompt)
         self._messages.append(user_msg)
         self._turn_count += 1
+
+        # Estimate input tokens (all messages + system prompt sent to model)
+        prompt_text = prompt if isinstance(prompt, str) else str(prompt)
+        sys_text = (
+            self._config.system_prompt
+            if isinstance(self._config.system_prompt, str)
+            else " ".join(self._config.system_prompt)
+        )
+        input_estimate = count_tokens(prompt_text) + count_tokens(sys_text)
+        # Include prior message context sent with this turn
+        for m in self._messages[:-1]:
+            input_estimate += count_tokens(
+                m.text if isinstance(m, Message) else str(m)
+            )
+        self._total_input_tokens += input_estimate
 
         yield {
             "type": "session",
@@ -101,10 +144,11 @@ class Engine:
         ):
             event_type = event.get("type", "")
 
-            # Track assistant messages in history
+            # Track assistant messages in history and count output tokens
             if event_type == "assistant":
                 msg = event.get("message")
                 if isinstance(msg, Message):
                     self._messages.append(msg)
+                    self._total_output_tokens += count_tokens(msg.text)
 
             yield event

@@ -1,6 +1,6 @@
 """FileStore adapter — JSONL-based session persistence.
 
-Stores each session as a .jsonl file under ~/.duh/sessions/.
+Stores each session as a .jsonl file under ~/.config/duh/sessions/.
 One JSON object per line = one message. Atomic writes via
 temp-file-then-rename for thread safety.
 
@@ -23,7 +23,7 @@ from duh.kernel.messages import Message
 
 
 def _default_base_dir() -> Path:
-    return Path.home() / ".duh" / "sessions"
+    return Path.home() / ".config" / "duh" / "sessions"
 
 
 class FileStore:

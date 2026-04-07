@@ -8,7 +8,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from duh.kernel.file_tracker import FileTracker
 from duh.kernel.tool import Tool, ToolContext, ToolResult
+
+# Tools whose execution should be recorded as file operations.
+_FILE_TOOL_OPS: dict[str, str] = {
+    "Read": "read",
+    "Write": "write",
+    "Edit": "edit",
+}
 
 
 class NativeExecutor:
@@ -20,6 +28,7 @@ class NativeExecutor:
     def __init__(self, tools: list[Any] | None = None, *, cwd: str = "."):
         self._tools: dict[str, Any] = {}
         self._cwd = cwd
+        self.file_tracker = FileTracker()
         if tools:
             for tool in tools:
                 name = getattr(tool, "name", None)
@@ -74,6 +83,15 @@ class NativeExecutor:
 
         # Execute
         result = await tool.call(input, ctx)
+
+        # Record file operations for Read/Write/Edit tools
+        op = _FILE_TOOL_OPS.get(tool_name)
+        if op:
+            file_path = input.get("file_path", "")
+            if file_path:
+                is_error = isinstance(result, ToolResult) and result.is_error
+                if not is_error:
+                    self.file_tracker.track(file_path, op)
 
         if isinstance(result, ToolResult):
             if result.is_error:

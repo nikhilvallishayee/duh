@@ -342,11 +342,11 @@ class TestConcurrency:
 class TestDefaultBaseDir:
     def test_default_base_dir_returns_home_duh_sessions(self):
         result = _default_base_dir()
-        assert result == Path.home() / ".duh" / "sessions"
+        assert result == Path.home() / ".config" / "duh" / "sessions"
 
     def test_constructor_uses_default_when_none(self):
         store = FileStore()
-        assert store._base_dir == Path.home() / ".duh" / "sessions"
+        assert store._base_dir == Path.home() / ".config" / "duh" / "sessions"
 
 
 # ---------------------------------------------------------------------------

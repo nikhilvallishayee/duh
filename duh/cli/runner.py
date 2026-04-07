@@ -211,6 +211,25 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     except Exception:
         logger.debug("Config loading failed, using defaults", exc_info=True)
 
+    # --- Connect to MCP servers and wrap tools ---
+    if mcp_executor:
+        try:
+            discovered = await mcp_executor.connect_all()
+            from duh.tools.mcp_tool import MCPToolWrapper
+            for server_name, mcp_tools in discovered.items():
+                for info in mcp_tools:
+                    wrapper = MCPToolWrapper(info=info, executor=mcp_executor)
+                    tools.append(wrapper)
+                    if debug:
+                        logger.debug("MCP tool registered: %s", wrapper.name)
+            total_mcp = sum(len(t) for t in discovered.values())
+            if total_mcp:
+                logger.info("Loaded %d MCP tools from %d servers",
+                            total_mcp, len(discovered))
+        except Exception:
+            logger.debug("MCP connection failed, continuing without MCP tools",
+                         exc_info=True)
+
     # --- Wire compactor ---
     from duh.adapters.simple_compactor import SimpleCompactor
     compactor = SimpleCompactor()

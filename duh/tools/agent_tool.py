@@ -26,9 +26,9 @@ class AgentTool:
             result = await run_agent(
                 prompt=input.get("prompt", ""),
                 agent_type=input.get("agent_type", "general"),
-                parent_deps=self._parent_deps,
+                deps=self._parent_deps,
             )
-            return ToolResult(output=result.text if hasattr(result, 'text') else str(result))
+            return ToolResult(output=result.result_text if hasattr(result, 'result_text') else str(result))
         except Exception as e:
             return ToolResult(output=f"Agent error: {e}", is_error=True)
 

@@ -84,4 +84,18 @@ def get_all_tools(
     except ImportError:
         pass
 
+    # WebFetch
+    try:
+        from duh.tools.web_fetch import WebFetchTool
+        tools.append(WebFetchTool())
+    except ImportError:
+        pass
+
+    # WebSearch
+    try:
+        from duh.tools.web_search import WebSearchTool
+        tools.append(WebSearchTool())
+    except ImportError:
+        pass
+
     return tools

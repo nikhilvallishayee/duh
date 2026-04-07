@@ -3,11 +3,21 @@
 Provides a readline-based interactive session with slash commands,
 streaming text output, and tool use indicators.
 
+When the ``rich`` package is installed, output is rendered with Rich:
+- Markdown responses get proper formatting (headers, code blocks, etc.)
+- Tool calls, results, and errors use Rich Panels / styled text
+- Thinking blocks are shown in dim italic
+- A status bar shows model name and turn count
+
+If ``rich`` is not installed the REPL falls back to plain ANSI escapes
+(the original behaviour).
+
 Slash commands:
     /help     — show available commands
     /model    — show or change the current model
     /cost     — show session cost estimate
     /status   — show session status (turns, messages, model)
+    /changes  — show files touched in this session
     /clear    — clear conversation history
     /compact  — compact conversation (summarize older messages)
     /exit     — exit the REPL (also Ctrl-D)
@@ -35,6 +45,200 @@ logger = logging.getLogger("duh")
 
 PROMPT = "\033[1;36mduh>\033[0m "  # bold cyan
 
+# ---------------------------------------------------------------------------
+# Rich-aware renderer (graceful fallback when rich is absent)
+# ---------------------------------------------------------------------------
+
+_HAS_RICH = False
+try:
+    from rich.console import Console
+    from rich.markdown import Markdown as RichMarkdown
+    from rich.panel import Panel
+    from rich.text import Text
+    from rich.theme import Theme
+    _HAS_RICH = True
+except ImportError:
+    pass
+
+
+class _PlainRenderer:
+    """Fallback renderer that uses raw ANSI escape codes."""
+
+    def __init__(self, debug: bool = False):
+        self.debug = debug
+        self._buf: list[str] = []  # accumulates text_delta chunks
+
+    # -- prompt --------------------------------------------------------
+    @staticmethod
+    def prompt() -> str:
+        return PROMPT
+
+    # -- streaming text ------------------------------------------------
+    def text_delta(self, text: str) -> None:
+        sys.stdout.write(text)
+        sys.stdout.flush()
+        self._buf.append(text)
+
+    # -- markdown flush (no-op for plain) ------------------------------
+    def flush_response(self) -> None:
+        self._buf.clear()
+
+    # -- thinking ------------------------------------------------------
+    def thinking_delta(self, text: str) -> None:
+        if self.debug:
+            sys.stderr.write(f"\033[2;3m{text}\033[0m")
+            sys.stderr.flush()
+
+    # -- tool use & results --------------------------------------------
+    def tool_use(self, name: str, inp: dict[str, Any]) -> None:
+        summary = ", ".join(f"{k}={v!r}" for k, v in list(inp.items())[:2])
+        sys.stderr.write(f"  \033[33m> {name}\033[0m({summary})\n")
+        sys.stderr.flush()
+
+    def tool_result(self, output: str, is_error: bool) -> None:
+        if is_error:
+            sys.stderr.write(f"  \033[31m! {output[:200]}\033[0m\n")
+        elif self.debug:
+            sys.stderr.write(f"  \033[32m< {output[:100]}\033[0m\n")
+
+    # -- errors --------------------------------------------------------
+    def error(self, hint: str) -> None:
+        sys.stderr.write(f"\n\033[31mError: {hint}\033[0m\n")
+
+    # -- end of turn separator -----------------------------------------
+    def turn_end(self) -> None:
+        sys.stdout.write("\n\n")
+
+    # -- banner --------------------------------------------------------
+    def banner(self, model: str) -> None:
+        sys.stdout.write(
+            f"D.U.H. interactive mode ({model}). "
+            "Type /help for commands, /exit or Ctrl-D to quit.\n\n"
+        )
+
+    # -- status bar (no-op for plain) ----------------------------------
+    def status_bar(self, model: str, turns: int) -> None:
+        pass
+
+
+class _RichRenderer:
+    """Renderer that uses the Rich library for styled terminal output."""
+
+    def __init__(self, debug: bool = False):
+        self.debug = debug
+        self._buf: list[str] = []
+        theme = Theme({
+            "tool": "bold yellow",
+            "tool.ok": "green",
+            "tool.err": "bold red",
+            "thinking": "dim italic",
+            "err": "bold red",
+            "status": "dim",
+        })
+        self._console = Console(theme=theme, stderr=False)
+        self._err_console = Console(theme=theme, stderr=True)
+
+    # -- prompt --------------------------------------------------------
+    @staticmethod
+    def prompt() -> str:
+        # Rich can style prompts, but readline integration is tricky.
+        # We keep the ANSI prompt so readline calculates width correctly.
+        return PROMPT
+
+    # -- streaming text ------------------------------------------------
+    def text_delta(self, text: str) -> None:
+        # Stream tokens to stdout immediately so the user sees them live.
+        sys.stdout.write(text)
+        sys.stdout.flush()
+        self._buf.append(text)
+
+    # -- markdown flush ------------------------------------------------
+    def flush_response(self) -> None:
+        """Re-render the full response as Rich Markdown after streaming."""
+        full = "".join(self._buf)
+        self._buf.clear()
+        if not full.strip():
+            return
+        # Heuristic: only use Markdown renderer when content looks like it
+        # has markdown constructs (headers, code fences, lists, bold, etc.)
+        md_indicators = ("```", "##", "**", "* ", "- ", "1. ", "> ", "| ")
+        if any(ind in full for ind in md_indicators):
+            # Move cursor up and overwrite the raw streamed text.
+            # Count how many lines were streamed.
+            lines = full.count("\n") + 1
+            # Clear those lines
+            sys.stdout.write(f"\033[{lines}A\033[J")
+            sys.stdout.flush()
+            self._console.print(RichMarkdown(full))
+
+    # -- thinking ------------------------------------------------------
+    def thinking_delta(self, text: str) -> None:
+        if self.debug:
+            self._err_console.print(Text(text, style="thinking"), end="")
+
+    # -- tool use & results --------------------------------------------
+    def tool_use(self, name: str, inp: dict[str, Any]) -> None:
+        summary = ", ".join(f"{k}={v!r}" for k, v in list(inp.items())[:2])
+        self._err_console.print(
+            Text.assemble(
+                ("  > ", "tool"),
+                (name, "bold yellow"),
+                (f"({summary})", ""),
+            )
+        )
+
+    def tool_result(self, output: str, is_error: bool) -> None:
+        if is_error:
+            self._err_console.print(
+                Panel(
+                    output[:300],
+                    title="tool error",
+                    border_style="tool.err",
+                    expand=False,
+                )
+            )
+        elif self.debug:
+            self._err_console.print(
+                Text(f"  < {output[:100]}", style="tool.ok")
+            )
+
+    # -- errors --------------------------------------------------------
+    def error(self, hint: str) -> None:
+        self._err_console.print(
+            Panel(hint, title="Error", border_style="err", expand=False)
+        )
+
+    # -- end of turn separator -----------------------------------------
+    def turn_end(self) -> None:
+        sys.stdout.write("\n\n")
+
+    # -- banner --------------------------------------------------------
+    def banner(self, model: str) -> None:
+        self._console.print(
+            Panel(
+                f"[bold cyan]D.U.H.[/bold cyan] interactive mode\n"
+                f"Model: [bold]{model}[/bold]  |  "
+                "Type [bold]/help[/bold] for commands, "
+                "[bold]/exit[/bold] or [bold]Ctrl-D[/bold] to quit.",
+                border_style="cyan",
+                expand=False,
+            )
+        )
+        self._console.print()
+
+    # -- status bar ----------------------------------------------------
+    def status_bar(self, model: str, turns: int) -> None:
+        self._err_console.print(
+            Text(f"  [{model}] turn {turns}", style="status")
+        )
+
+
+def _make_renderer(debug: bool = False) -> _PlainRenderer | Any:
+    """Return a Rich renderer if available, else a plain one."""
+    if _HAS_RICH:
+        return _RichRenderer(debug=debug)
+    return _PlainRenderer(debug=debug)
+
 
 # ---------------------------------------------------------------------------
 # Slash commands
@@ -45,6 +249,7 @@ SLASH_COMMANDS = {
     "/model": "Show or set model (/model <name>)",
     "/cost": "Show estimated session cost",
     "/status": "Show session status",
+    "/changes": "Show files touched in this session",
     "/clear": "Clear conversation history",
     "/compact": "Compact older messages",
     "/exit": "Exit the REPL",
@@ -56,6 +261,8 @@ def _handle_slash(
     engine: Engine,
     model: str,
     deps: Deps,
+    *,
+    executor: NativeExecutor | None = None,
 ) -> tuple[bool, str]:
     """Handle a slash command. Returns (should_continue, new_model)."""
     parts = cmd.strip().split(None, 1)
@@ -75,7 +282,7 @@ def _handle_slash(
         return True, model
 
     if name == "/cost":
-        sys.stdout.write(f"  Estimated cost: $0.00 (local tracking not implemented)\n")
+        sys.stdout.write(f"  {engine.cost_summary(model)}\n")
         return True, model
 
     if name == "/status":
@@ -85,6 +292,14 @@ def _handle_slash(
             f"  Messages: {len(engine.messages)}\n"
             f"  Model:   {model}\n"
         )
+        return True, model
+
+    if name == "/changes":
+        if executor is not None:
+            text = executor.file_tracker.summary()
+        else:
+            text = "No file tracker available."
+        sys.stdout.write(f"  {text}\n")
         return True, model
 
     if name == "/clear":
@@ -174,6 +389,25 @@ async def run_repl(args: argparse.Namespace) -> int:
     cwd = os.getcwd()
     tools = list(get_all_tools())
 
+    # --- Load config and connect MCP servers ---
+    mcp_executor = None
+    try:
+        from duh.config import load_config
+        app_config = load_config(cwd=cwd)
+        if app_config.mcp_servers:
+            from duh.adapters.mcp_executor import MCPExecutor
+            mcp_executor = MCPExecutor.from_config(app_config.mcp_servers)
+            discovered = await mcp_executor.connect_all()
+            from duh.tools.mcp_tool import MCPToolWrapper
+            for _server_name, mcp_tools in discovered.items():
+                for info in mcp_tools:
+                    wrapper = MCPToolWrapper(info=info, executor=mcp_executor)
+                    tools.append(wrapper)
+                    if debug:
+                        logger.debug("MCP tool registered: %s", wrapper.name)
+    except Exception:
+        logger.debug("MCP loading failed in REPL, continuing without MCP", exc_info=True)
+
     system_prompt = args.system_prompt or SYSTEM_PROMPT
 
     executor = NativeExecutor(tools=tools, cwd=cwd)
@@ -212,7 +446,7 @@ async def run_repl(args: argparse.Namespace) -> int:
 
         # Slash commands
         if user_input.startswith("/"):
-            keep_going, model = _handle_slash(user_input, engine, model, deps)
+            keep_going, model = _handle_slash(user_input, engine, model, deps, executor=executor)
             if not keep_going:
                 break
             continue
@@ -254,5 +488,12 @@ async def run_repl(args: argparse.Namespace) -> int:
                 sys.stderr.write(f"\n\033[31mError: {hint}\033[0m\n")
 
         sys.stdout.write("\n\n")  # blank line after response
+
+    # --- Disconnect MCP ---
+    if mcp_executor:
+        try:
+            await mcp_executor.disconnect_all()
+        except Exception:
+            logger.debug("MCP disconnect failed in REPL", exc_info=True)
 
     return 0

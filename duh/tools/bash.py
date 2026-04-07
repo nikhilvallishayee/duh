@@ -6,6 +6,7 @@ import asyncio
 from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.tools.bash_security import classify_command
 
 _DEFAULT_TIMEOUT = 120  # seconds
 
@@ -46,6 +47,20 @@ class BashTool:
         if not command:
             return ToolResult(output="command is required", is_error=True)
 
+        # --- Security check (bypassed in skip-permissions mode) ---
+        skip_permissions = context.metadata.get("skip_permissions", False)
+        if not skip_permissions:
+            classification = classify_command(command)
+            if classification["risk"] == "dangerous":
+                return ToolResult(
+                    output=f"Command blocked: {classification['reason']}",
+                    is_error=True,
+                    metadata={"blocked": True, "risk": "dangerous",
+                              "reason": classification["reason"]},
+                )
+        else:
+            classification = classify_command(command)
+
         cwd = context.cwd if context.cwd and context.cwd != "." else None
 
         try:
@@ -81,10 +96,18 @@ class BashTool:
 
         output = "\n".join(output_parts) if output_parts else ""
 
+        metadata: dict[str, Any] = {"returncode": returncode}
+
+        # Attach warning for moderate-risk commands
+        if classification["risk"] == "moderate":
+            output = f"[WARNING: {classification['reason']}]\n{output}"
+            metadata["risk"] = "moderate"
+            metadata["reason"] = classification["reason"]
+
         return ToolResult(
             output=output,
             is_error=returncode != 0,
-            metadata={"returncode": returncode},
+            metadata=metadata,
         )
 
     async def check_permissions(

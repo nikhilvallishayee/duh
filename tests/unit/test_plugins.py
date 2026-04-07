@@ -11,10 +11,12 @@ import pytest
 from duh.plugins import (
     PluginSpec,
     PluginRegistry,
+    _parse_manifest_tools,
     discover_directory_plugins,
     discover_entry_point_plugins,
     discover_plugins,
 )
+from duh.tools.tool_search import DeferredTool
 
 
 # ---------------------------------------------------------------------------
@@ -235,3 +237,194 @@ class TestDiscoverPlugins:
         with patch("duh.plugins.entry_points", return_value=[]):
             specs = discover_plugins()
         assert specs == []
+
+
+# ---------------------------------------------------------------------------
+# Manifest tool parsing
+# ---------------------------------------------------------------------------
+
+
+class TestParseManifestTools:
+    def test_parses_tools_from_manifest(self):
+        manifest = {
+            "name": "test-plugin",
+            "tools": [
+                {
+                    "name": "my_tool",
+                    "description": "Does a thing",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"arg": {"type": "string"}},
+                        "required": ["arg"],
+                    },
+                }
+            ],
+        }
+        tools = _parse_manifest_tools(manifest, "test-plugin")
+        assert len(tools) == 1
+        assert isinstance(tools[0], DeferredTool)
+        assert tools[0].name == "my_tool"
+        assert tools[0].description == "Does a thing"
+        assert tools[0].input_schema["properties"]["arg"]["type"] == "string"
+        assert tools[0].source == "plugin:test-plugin"
+
+    def test_multiple_tools(self):
+        manifest = {
+            "tools": [
+                {"name": "tool_a", "description": "A"},
+                {"name": "tool_b", "description": "B"},
+            ]
+        }
+        tools = _parse_manifest_tools(manifest, "multi")
+        assert len(tools) == 2
+        assert tools[0].name == "tool_a"
+        assert tools[1].name == "tool_b"
+
+    def test_no_tools_key(self):
+        tools = _parse_manifest_tools({"name": "bare"}, "bare")
+        assert tools == []
+
+    def test_tools_not_a_list(self):
+        tools = _parse_manifest_tools({"tools": "not-a-list"}, "bad")
+        assert tools == []
+
+    def test_skips_non_dict_entry(self):
+        tools = _parse_manifest_tools({"tools": ["not-a-dict"]}, "bad")
+        assert tools == []
+
+    def test_skips_entry_without_name(self):
+        tools = _parse_manifest_tools(
+            {"tools": [{"description": "no name"}]}, "bad"
+        )
+        assert tools == []
+
+    def test_defaults_schema_when_missing(self):
+        tools = _parse_manifest_tools(
+            {"tools": [{"name": "minimal"}]}, "p"
+        )
+        assert len(tools) == 1
+        assert tools[0].input_schema == {"type": "object", "properties": {}}
+        assert tools[0].description == ""
+
+    def test_defaults_description_when_missing(self):
+        tools = _parse_manifest_tools(
+            {"tools": [{"name": "nodesc", "input_schema": {"type": "object"}}]},
+            "p",
+        )
+        assert tools[0].description == ""
+
+
+# ---------------------------------------------------------------------------
+# Directory discovery with tools
+# ---------------------------------------------------------------------------
+
+
+class TestDiscoverDirectoryPluginsWithTools:
+    def _make_plugin(self, tmp_path: Path, name: str, manifest: dict) -> Path:
+        """Helper to create a plugin directory with a manifest."""
+        plugin_dir = tmp_path / name
+        plugin_dir.mkdir()
+        (plugin_dir / "plugin.json").write_text(json.dumps(manifest))
+        return plugin_dir
+
+    def test_loads_tools_from_manifest(self, tmp_path: Path):
+        self._make_plugin(tmp_path, "with-tools", {
+            "name": "with-tools",
+            "version": "1.0.0",
+            "description": "Has tools",
+            "tools": [
+                {
+                    "name": "fetch_data",
+                    "description": "Fetches data from API",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"url": {"type": "string"}},
+                        "required": ["url"],
+                    },
+                },
+                {
+                    "name": "transform",
+                    "description": "Transforms data",
+                },
+            ],
+        })
+
+        specs = discover_directory_plugins(tmp_path)
+        assert len(specs) == 1
+        spec = specs[0]
+        assert spec.name == "with-tools"
+        assert len(spec.tools) == 2
+
+        tool0 = spec.tools[0]
+        assert isinstance(tool0, DeferredTool)
+        assert tool0.name == "fetch_data"
+        assert tool0.description == "Fetches data from API"
+        assert tool0.source == "plugin:with-tools"
+        assert "url" in tool0.input_schema["properties"]
+
+        tool1 = spec.tools[1]
+        assert tool1.name == "transform"
+        assert tool1.input_schema == {"type": "object", "properties": {}}
+
+    def test_no_tools_in_manifest(self, tmp_path: Path):
+        self._make_plugin(tmp_path, "no-tools", {
+            "name": "no-tools",
+            "version": "0.1.0",
+        })
+        specs = discover_directory_plugins(tmp_path)
+        assert len(specs) == 1
+        assert specs[0].tools == []
+
+    def test_registry_aggregates_plugin_tools(self, tmp_path: Path):
+        """End-to-end: discover + load into registry, then check plugin_tools."""
+        self._make_plugin(tmp_path, "alpha", {
+            "name": "alpha",
+            "version": "1.0",
+            "tools": [{"name": "alpha_tool", "description": "Alpha"}],
+        })
+        self._make_plugin(tmp_path, "beta", {
+            "name": "beta",
+            "version": "2.0",
+            "tools": [
+                {"name": "beta_one", "description": "B1"},
+                {"name": "beta_two", "description": "B2"},
+            ],
+        })
+
+        specs = discover_directory_plugins(tmp_path)
+        reg = PluginRegistry()
+        reg.load_all(specs)
+
+        all_tools = reg.plugin_tools
+        assert len(all_tools) == 3
+        names = {t.name for t in all_tools}
+        assert names == {"alpha_tool", "beta_one", "beta_two"}
+
+    def test_discover_plugins_includes_dir_tools(self, tmp_path: Path):
+        """discover_plugins() with extra_dirs picks up manifest tools."""
+        self._make_plugin(tmp_path, "dir-plugin", {
+            "name": "dir-plugin",
+            "version": "0.5.0",
+            "tools": [{"name": "dp_tool", "description": "From dir"}],
+        })
+        with patch("duh.plugins.entry_points", return_value=[]):
+            specs = discover_plugins(extra_dirs=[tmp_path])
+        assert len(specs) == 1
+        assert len(specs[0].tools) == 1
+        assert specs[0].tools[0].name == "dp_tool"
+
+    def test_bad_tools_dont_break_plugin(self, tmp_path: Path):
+        """Malformed tool entries are skipped; valid ones still load."""
+        self._make_plugin(tmp_path, "mixed", {
+            "name": "mixed",
+            "version": "1.0",
+            "tools": [
+                "not-a-dict",
+                {"description": "no name"},
+                {"name": "good_tool", "description": "Works"},
+            ],
+        })
+        specs = discover_directory_plugins(tmp_path)
+        assert len(specs) == 1
+        assert len(specs[0].tools) == 1
+        assert specs[0].tools[0].name == "good_tool"

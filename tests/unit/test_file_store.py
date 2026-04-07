@@ -2,10 +2,14 @@
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from dataclasses import asdict
+from unittest.mock import patch
 
-from duh.adapters.file_store import FileStore
+import pytest
+
+from duh.adapters.file_store import FileStore, _default_base_dir
 from duh.kernel.messages import Message, TextBlock, ToolUseBlock
 
 
@@ -329,3 +333,72 @@ class TestConcurrency:
         lines = _read_lines(tmp_path / "s1.jsonl")
         for line in lines:
             json.loads(line)  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# Default base directory
+# ---------------------------------------------------------------------------
+
+class TestDefaultBaseDir:
+    def test_default_base_dir_returns_home_duh_sessions(self):
+        result = _default_base_dir()
+        assert result == Path.home() / ".duh" / "sessions"
+
+    def test_constructor_uses_default_when_none(self):
+        store = FileStore()
+        assert store._base_dir == Path.home() / ".duh" / "sessions"
+
+
+# ---------------------------------------------------------------------------
+# Error handling in save (atomic write cleanup)
+# ---------------------------------------------------------------------------
+
+class TestSaveErrorHandling:
+    async def test_save_error_cleans_up_temp_file(self, tmp_path: Path):
+        """When os.replace fails, the temp file should be cleaned up."""
+        store = FileStore(base_dir=tmp_path)
+        msg = Message(role="user", content="test", id="m1", timestamp="t1")
+
+        with patch("os.replace", side_effect=OSError("disk full")):
+            with pytest.raises(OSError, match="disk full"):
+                await store.save("s1", [msg])
+
+        # Temp file should be cleaned up
+        tmp_files = list(tmp_path.glob("*.tmp"))
+        assert len(tmp_files) == 0
+
+    async def test_save_error_preserves_existing_data(self, tmp_path: Path):
+        """A failed second save should not corrupt the first save's data."""
+        store = FileStore(base_dir=tmp_path)
+        m1 = Message(role="user", content="original", id="m1", timestamp="t1")
+        await store.save("s1", [m1])
+
+        m2 = Message(role="assistant", content="new", id="m2", timestamp="t2")
+        with patch("os.replace", side_effect=OSError("disk full")):
+            with pytest.raises(OSError):
+                await store.save("s1", [m1, m2])
+
+        # Original data should be intact
+        loaded = await store.load("s1")
+        assert loaded is not None
+        assert len(loaded) == 1
+        assert loaded[0]["content"] == "original"
+
+    async def test_save_error_cleanup_handles_missing_temp(self, tmp_path: Path):
+        """When unlink also fails (temp already gone), error still propagates."""
+        store = FileStore(base_dir=tmp_path)
+        msg = Message(role="user", content="test", id="m1", timestamp="t1")
+
+        original_replace = os.replace
+
+        def fail_replace_and_delete_temp(src, dst):
+            # Delete the temp file before the cleanup can
+            try:
+                os.unlink(src)
+            except OSError:
+                pass
+            raise RuntimeError("replace failed")
+
+        with patch("os.replace", side_effect=fail_replace_and_delete_temp):
+            with pytest.raises(RuntimeError, match="replace failed"):
+                await store.save("s1", [msg])

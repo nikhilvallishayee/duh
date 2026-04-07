@@ -170,10 +170,26 @@ async def run_print_mode(args: argparse.Namespace) -> int:
 
     tools = list(get_all_tools(skills=loaded_skills, deferred_tools=deferred_tools))
 
-    # --- Wire DUH.md / AGENTS.md instructions ---
+    # --- Filter tools by --allowedTools / --disallowedTools ---
+    allowed = getattr(args, "allowedTools", None)
+    disallowed = getattr(args, "disallowedTools", None)
+    if allowed:
+        allowed_set = {t.strip() for t in allowed.split(",")}
+        tools = [t for t in tools if getattr(t, "name", "") in allowed_set]
+    if disallowed:
+        disallowed_set = {t.strip() for t in disallowed.split(",")}
+        tools = [t for t in tools if getattr(t, "name", "") not in disallowed_set]
+
+    # --- Resolve system prompt (string > file > default) ---
     from duh.config import load_instructions
     instruction_list = load_instructions(cwd)
-    system_prompt_parts = [args.system_prompt or SYSTEM_PROMPT]
+    base_prompt = args.system_prompt or SYSTEM_PROMPT
+    if not args.system_prompt and getattr(args, "system_prompt_file", None):
+        try:
+            base_prompt = open(args.system_prompt_file, encoding="utf-8").read()
+        except Exception as e:
+            sys.stderr.write(f"Warning: Could not read system prompt file: {e}\n")
+    system_prompt_parts = [base_prompt]
     if getattr(args, "brief", False):
         system_prompt_parts.append(BRIEF_INSTRUCTION)
     if instruction_list:
@@ -236,6 +252,18 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     hook_registry = HookRegistry()
     try:
         app_config = load_config(cwd=cwd)
+        # --mcp-config CLI flag overrides project config
+        cli_mcp = getattr(args, "mcp_config", None)
+        if cli_mcp:
+            import json as _json
+            try:
+                if cli_mcp.strip().startswith("{"):
+                    mcp_data = _json.loads(cli_mcp)
+                else:
+                    mcp_data = _json.loads(open(cli_mcp).read())
+                app_config.mcp_servers = mcp_data
+            except Exception:
+                logger.debug("Failed to parse --mcp-config", exc_info=True)
         if app_config.mcp_servers:
             from duh.adapters.mcp_executor import MCPExecutor
             mcp_executor = MCPExecutor.from_config(app_config.mcp_servers)
@@ -292,6 +320,12 @@ async def run_print_mode(args: argparse.Namespace) -> int:
             except (ValueError, TypeError):
                 pass
 
+    # Build thinking config from --max-thinking-tokens
+    thinking = None
+    mtt = getattr(args, "max_thinking_tokens", None)
+    if mtt is not None:
+        thinking = {"type": "enabled", "budget_tokens": mtt} if mtt > 0 else {"type": "disabled"}
+
     engine_config = EngineConfig(
         model=model,
         fallback_model=getattr(args, "fallback_model", None),
@@ -300,6 +334,7 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         max_turns=args.max_turns,
         max_cost=max_cost,
         tool_choice=args.tool_choice,
+        thinking=thinking,
     )
     # --- Wire structured JSON logger ---
     structured_logger = None
@@ -310,11 +345,18 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     engine = Engine(deps=deps, config=engine_config, session_store=store,
                     structured_logger=structured_logger)
 
-    # --- Resume session if --continue or --resume ---
-    if getattr(args, "continue_session", False) or args.resume:
+    # --- Override session ID if --session-id provided ---
+    session_id = getattr(args, "session_id", None)
+    if session_id:
+        engine._session_id = session_id
+
+    # --- Resume session if --continue, --resume, or --session-id ---
+    should_resume = getattr(args, "continue_session", False) or args.resume or session_id
+    if should_resume:
         try:
-            if args.resume:
-                prev = await store.load(args.resume)
+            resume_id = args.resume or session_id
+            if resume_id:
+                prev = await store.load(resume_id)
             else:
                 sessions = await store.list_sessions()
                 if sessions:

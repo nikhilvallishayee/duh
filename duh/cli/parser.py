@@ -26,6 +26,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Maximum agentic turns (default: 10).")
     parser.add_argument("--max-cost", type=float, default=None,
                         help="Maximum cost in USD for this session.")
+    parser.add_argument("--max-tokens", type=int, default=None,
+                        help="Maximum response tokens per turn.")
+    parser.add_argument("--max-thinking-tokens", type=int, default=None,
+                        help="Budget for extended thinking tokens.")
+    parser.add_argument("--temperature", type=float, default=None,
+                        help="Sampling temperature (0.0-1.0).")
     parser.add_argument("--output-format", type=str, choices=["text", "json", "stream-json"],
                         default="text", help="Output format (default: text).")
     parser.add_argument("--input-format", type=str, choices=["text", "stream-json"],
@@ -37,12 +43,26 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Permission mode (SDK compat). bypassPermissions = auto-approve.")
     parser.add_argument("--system-prompt", type=str, default=None,
                         help="Override the default system prompt.")
+    parser.add_argument("--system-prompt-file", type=str, default=None,
+                        help="Load system prompt from a file.")
     parser.add_argument("--tool-choice", type=str, default=None,
                         help="Control tool use: auto (default), none (text only), any (force tool), or a tool name.")
+    parser.add_argument("--allowedTools", type=str, default=None,
+                        help="Comma-separated list of allowed tools.")
+    parser.add_argument("--disallowedTools", type=str, default=None,
+                        help="Comma-separated list of disallowed tools.")
+    parser.add_argument("--add-dir", action="append", default=None,
+                        help="Additional directories to include in context (can be repeated).")
+    parser.add_argument("--mcp-config", type=str, default=None,
+                        help="MCP server config (JSON string or file path).")
     parser.add_argument("-c", "--continue", action="store_true", dest="continue_session",
                         default=False, help="Continue the most recent session.")
     parser.add_argument("--resume", type=str, default=None,
                         help="Resume a specific session by ID.")
+    parser.add_argument("--session-id", type=str, default=None,
+                        help="Use a specific session ID.")
+    parser.add_argument("--fork-session", action="store_true", default=False,
+                        help="Fork from the resumed session into a new session.")
     parser.add_argument("--debug", "-d", action="store_true", default=False,
                         help="Enable debug output (full event tracing to stderr).")
     parser.add_argument("--verbose", action="store_true", default=False,
@@ -52,29 +72,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-json", action="store_true", default=False,
                         help="Enable structured JSON logging to ~/.config/duh/logs/duh.jsonl.")
 
-    # SDK compat: accept (and ignore) unknown flags the SDK may pass
+    # SDK compat: accept flags the SDK may pass that we don't use
     parser.add_argument("--print", action="store_true", default=False,
-                        help=argparse.SUPPRESS)  # SDK compat
-    parser.add_argument("--allowedTools", type=str, default=None,
-                        help=argparse.SUPPRESS)  # SDK compat
-    parser.add_argument("--disallowedTools", type=str, default=None,
-                        help=argparse.SUPPRESS)  # SDK compat
-    parser.add_argument("--max-thinking-tokens", type=int, default=None,
-                        help=argparse.SUPPRESS)  # SDK compat
+                        help=argparse.SUPPRESS)
     parser.add_argument("--include-partial-messages", action="store_true", default=False,
-                        help=argparse.SUPPRESS)  # SDK compat
+                        help=argparse.SUPPRESS)
     parser.add_argument("--tools", type=str, default=None,
-                        help=argparse.SUPPRESS)  # SDK compat
-    parser.add_argument("--session-id", type=str, default=None,
-                        help=argparse.SUPPRESS)  # SDK compat
+                        help=argparse.SUPPRESS)
     parser.add_argument("--settings", type=str, default=None,
-                        help=argparse.SUPPRESS)  # SDK compat
+                        help=argparse.SUPPRESS)
     parser.add_argument("--setting-sources", type=str, default=None,
-                        help=argparse.SUPPRESS)  # SDK compat
+                        help=argparse.SUPPRESS)
     parser.add_argument("--permission-prompt-tool", type=str, default=None,
-                        help=argparse.SUPPRESS)  # SDK compat
-    parser.add_argument("--mcp-config", type=str, default=None,
-                        help=argparse.SUPPRESS)  # SDK compat
+                        help=argparse.SUPPRESS)
 
     subparsers = parser.add_subparsers(dest="command", required=False)
     subparsers.add_parser("doctor", help="Run diagnostics and health checks.")

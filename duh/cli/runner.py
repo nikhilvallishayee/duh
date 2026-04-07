@@ -173,6 +173,12 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     if memory_prompt:
         system_prompt_parts.append(memory_prompt)
 
+    # --- Inject git context ---
+    from duh.kernel.git_context import get_git_context
+    git_ctx = get_git_context(cwd)
+    if git_ctx:
+        system_prompt_parts.append(git_ctx)
+
     # --- Inject skill descriptions into system prompt (ADR-017) ---
     if loaded_skills:
         skill_lines = [

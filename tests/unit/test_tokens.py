@@ -6,9 +6,12 @@ from duh.kernel.tokens import (
     count_tokens,
     estimate_cost,
     format_cost,
+    get_context_limit,
     _resolve_pricing,
     _CHARS_PER_TOKEN,
+    _DEFAULT_CONTEXT_LIMIT,
     _MODEL_PRICING,
+    MODEL_CONTEXT_LIMITS,
 )
 
 
@@ -316,3 +319,201 @@ class TestModelPricingTable:
         for model, (inp, out) in _MODEL_PRICING.items():
             if inp > 0:
                 assert out >= inp, f"{model}: output should cost >= input"
+
+
+# ---------------------------------------------------------------------------
+# get_context_limit
+# ---------------------------------------------------------------------------
+
+class TestGetContextLimit:
+    def test_known_claude_model(self):
+        assert get_context_limit("claude-sonnet-4-6") == 200_000
+
+    def test_known_opus(self):
+        assert get_context_limit("claude-opus-4-6") == 200_000
+
+    def test_known_gpt4o(self):
+        assert get_context_limit("gpt-4o") == 128_000
+
+    def test_known_gpt4o_mini(self):
+        assert get_context_limit("gpt-4o-mini") == 128_000
+
+    def test_known_o1(self):
+        assert get_context_limit("o1") == 200_000
+
+    def test_unknown_model_returns_default(self):
+        assert get_context_limit("totally-unknown-xyz") == _DEFAULT_CONTEXT_LIMIT
+
+    def test_pattern_match_claude_variant(self):
+        assert get_context_limit("claude-sonnet-99") == 200_000
+
+    def test_pattern_match_gpt4o_variant(self):
+        assert get_context_limit("gpt-4o-2099-01-01") == 128_000
+
+    def test_all_table_entries_are_positive(self):
+        for model, limit in MODEL_CONTEXT_LIMITS.items():
+            assert limit > 0, f"{model} has non-positive context limit"
+
+    def test_default_is_safe(self):
+        assert _DEFAULT_CONTEXT_LIMIT == 100_000
+
+
+# ---------------------------------------------------------------------------
+# Auto-compaction in Engine
+# ---------------------------------------------------------------------------
+
+class TestAutoCompaction:
+    """Test that Engine.run() auto-compacts when nearing context limit."""
+
+    async def test_compaction_triggers_when_over_threshold(self):
+        """Messages exceeding 80% of context limit trigger compaction."""
+        from typing import Any, AsyncGenerator
+        from duh.kernel.deps import Deps
+        from duh.kernel.engine import Engine, EngineConfig
+        from duh.kernel.messages import Message
+
+        compact_called_with: list[tuple] = []
+
+        async def fake_model(**kwargs) -> AsyncGenerator[dict, None]:
+            yield {"type": "assistant", "message": Message(
+                role="assistant", content="ok",
+            )}
+
+        async def fake_compact(messages, token_limit=0):
+            compact_called_with.append((len(messages), token_limit))
+            # Return last 2 messages only (simulating compaction)
+            return messages[-2:]
+
+        deps = Deps(call_model=fake_model, compact=fake_compact)
+        # gpt-4o-mini has 128K limit, 80% = 102,400 tokens
+        engine = Engine(deps=deps, config=EngineConfig(model="gpt-4o-mini"))
+
+        # Stuff history with enough messages to exceed 80% of 128K
+        # 128K * 0.8 = 102,400 tokens. At ~4 chars/token = 409,600 chars
+        big_text = "x" * 420_000  # ~105K tokens, over threshold
+        engine._messages.append(Message(role="user", content=big_text))
+        engine._messages.append(Message(role="assistant", content="got it"))
+
+        # This run should trigger compaction
+        async for _ in engine.run("new question"):
+            pass
+
+        assert len(compact_called_with) == 1
+        assert compact_called_with[0][1] == int(128_000 * 0.80)
+
+    async def test_no_compaction_when_under_threshold(self):
+        """Messages under 80% threshold should NOT trigger compaction."""
+        from typing import Any, AsyncGenerator
+        from duh.kernel.deps import Deps
+        from duh.kernel.engine import Engine, EngineConfig
+        from duh.kernel.messages import Message
+
+        compact_called = False
+
+        async def fake_model(**kwargs) -> AsyncGenerator[dict, None]:
+            yield {"type": "assistant", "message": Message(
+                role="assistant", content="ok",
+            )}
+
+        async def fake_compact(messages, token_limit=0):
+            nonlocal compact_called
+            compact_called = True
+            return messages
+
+        deps = Deps(call_model=fake_model, compact=fake_compact)
+        engine = Engine(deps=deps, config=EngineConfig(model="claude-sonnet-4-6"))
+
+        # Small conversation — well under 80% of 200K
+        async for _ in engine.run("hello"):
+            pass
+
+        assert not compact_called
+
+    async def test_no_compaction_when_no_compactor(self):
+        """If deps.compact is None, no compaction should happen (no crash)."""
+        from typing import AsyncGenerator
+        from duh.kernel.deps import Deps
+        from duh.kernel.engine import Engine, EngineConfig
+        from duh.kernel.messages import Message
+
+        async def fake_model(**kwargs) -> AsyncGenerator[dict, None]:
+            yield {"type": "assistant", "message": Message(
+                role="assistant", content="ok",
+            )}
+
+        deps = Deps(call_model=fake_model, compact=None)
+        engine = Engine(deps=deps, config=EngineConfig(model="claude-sonnet-4-6"))
+
+        # Stuff history to exceed threshold
+        big_text = "x" * 820_000  # ~205K tokens, way over 200K limit
+        engine._messages.append(Message(role="user", content=big_text))
+
+        # Should not crash — just skips compaction
+        async for _ in engine.run("hi"):
+            pass
+
+    async def test_compaction_with_unknown_model_uses_default(self):
+        """Unknown model falls back to 100K limit for compaction threshold."""
+        from typing import AsyncGenerator
+        from duh.kernel.deps import Deps
+        from duh.kernel.engine import Engine, EngineConfig
+        from duh.kernel.messages import Message
+
+        compact_called_with: list[tuple] = []
+
+        async def fake_model(**kwargs) -> AsyncGenerator[dict, None]:
+            yield {"type": "assistant", "message": Message(
+                role="assistant", content="ok",
+            )}
+
+        async def fake_compact(messages, token_limit=0):
+            compact_called_with.append((len(messages), token_limit))
+            return messages[-2:]
+
+        deps = Deps(call_model=fake_model, compact=fake_compact)
+        engine = Engine(deps=deps, config=EngineConfig(model="unknown-model-xyz"))
+
+        # 100K default, 80% = 80K tokens. Need > 320K chars
+        big_text = "x" * 330_000  # ~82.5K tokens
+        engine._messages.append(Message(role="user", content=big_text))
+
+        async for _ in engine.run("hi"):
+            pass
+
+        assert len(compact_called_with) == 1
+        # Default 100K * 0.80 = 80,000
+        assert compact_called_with[0][1] == int(100_000 * 0.80)
+
+    async def test_compaction_with_model_override(self):
+        """Model passed to run() should be used for context limit, not config model."""
+        from typing import AsyncGenerator
+        from duh.kernel.deps import Deps
+        from duh.kernel.engine import Engine, EngineConfig
+        from duh.kernel.messages import Message
+
+        compact_called_with: list[tuple] = []
+
+        async def fake_model(**kwargs) -> AsyncGenerator[dict, None]:
+            yield {"type": "assistant", "message": Message(
+                role="assistant", content="ok",
+            )}
+
+        async def fake_compact(messages, token_limit=0):
+            compact_called_with.append((len(messages), token_limit))
+            return messages[-2:]
+
+        deps = Deps(call_model=fake_model, compact=fake_compact)
+        # Config says opus (200K) but we'll override to gpt-4o-mini (128K)
+        engine = Engine(deps=deps, config=EngineConfig(model="claude-opus-4-6"))
+
+        # 128K * 0.8 = 102,400 tokens, need > ~410K chars to exceed
+        # But 200K * 0.8 = 160K tokens = 640K chars — so pick something in between
+        # that exceeds gpt-4o-mini threshold but not opus threshold
+        big_text = "x" * 420_000  # ~105K tokens
+        engine._messages.append(Message(role="user", content=big_text))
+
+        async for _ in engine.run("hi", model="gpt-4o-mini"):
+            pass
+
+        assert len(compact_called_with) == 1
+        assert compact_called_with[0][1] == int(128_000 * 0.80)

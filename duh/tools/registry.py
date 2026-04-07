@@ -49,6 +49,13 @@ def get_all_tools(
     except ImportError:
         pass
 
+    # MultiEdit
+    try:
+        from duh.tools.multi_edit import MultiEditTool
+        tools.append(MultiEditTool())
+    except ImportError:
+        pass
+
     # Bash
     try:
         from duh.tools.bash import BashTool
@@ -95,6 +102,13 @@ def get_all_tools(
     try:
         from duh.tools.web_search import WebSearchTool
         tools.append(WebSearchTool())
+    except ImportError:
+        pass
+
+    # Task (in-session task/todo tracking)
+    try:
+        from duh.tools.task_tool import TaskTool
+        tools.append(TaskTool())
     except ImportError:
         pass
 

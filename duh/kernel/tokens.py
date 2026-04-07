@@ -105,6 +105,53 @@ def estimate_cost(
     return (input_tokens * input_price + output_tokens * output_price) / 1_000_000
 
 
+# ---------------------------------------------------------------------------
+# Model context limits (max tokens the model can accept)
+# ---------------------------------------------------------------------------
+
+MODEL_CONTEXT_LIMITS: dict[str, int] = {
+    # Anthropic
+    "claude-sonnet-4-6": 200_000,
+    "claude-sonnet-4-5-20250514": 200_000,
+    "claude-sonnet-4-20250514": 200_000,
+    "claude-3-5-sonnet-20241022": 200_000,
+    "claude-3-5-sonnet": 200_000,
+    "claude-opus-4-6": 200_000,
+    "claude-opus-4-20250514": 200_000,
+    "claude-3-opus": 200_000,
+    "claude-haiku-3-5": 200_000,
+    "claude-3-5-haiku-20241022": 200_000,
+    "claude-3-haiku": 200_000,
+    # OpenAI
+    "gpt-4o": 128_000,
+    "gpt-4o-2024-08-06": 128_000,
+    "gpt-4o-mini": 128_000,
+    "o1": 200_000,
+}
+
+_DEFAULT_CONTEXT_LIMIT = 100_000
+
+
+def get_context_limit(model: str) -> int:
+    """Return the context window size (in tokens) for a model.
+
+    Falls back to a safe default (100K) for unknown models.
+    """
+    if model in MODEL_CONTEXT_LIMITS:
+        return MODEL_CONTEXT_LIMITS[model]
+
+    # Pattern matching for common families
+    lower = model.lower()
+    if any(k in lower for k in ("claude", "sonnet", "opus", "haiku")):
+        return 200_000
+    if "gpt-4o" in lower:
+        return 128_000
+    if "o1" in lower:
+        return 200_000
+
+    return _DEFAULT_CONTEXT_LIMIT
+
+
 def format_cost(cost: float) -> str:
     """Format a cost value for display.
 

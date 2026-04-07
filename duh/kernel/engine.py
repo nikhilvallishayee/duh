@@ -23,7 +23,11 @@ from typing import Any, AsyncGenerator
 from duh.kernel.deps import Deps
 from duh.kernel.loop import query
 from duh.kernel.messages import Message, UserMessage
-from duh.kernel.tokens import count_tokens, estimate_cost, format_cost
+from duh.kernel.tokens import count_tokens, estimate_cost, format_cost, get_context_limit
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -130,6 +134,21 @@ class Engine:
             "session_id": self._session_id,
             "turn": self._turn_count,
         }
+
+        # --- Auto-compact if approaching context limit ---
+        if self._deps.compact:
+            effective_model = model or self._config.model
+            context_limit = get_context_limit(effective_model)
+            threshold = int(context_limit * 0.80)
+            if input_estimate > threshold:
+                logger.info(
+                    "Auto-compacting: ~%d tokens exceeds 80%% threshold (%d) "
+                    "for %s (limit %d)",
+                    input_estimate, threshold, effective_model, context_limit,
+                )
+                self._messages = await self._deps.compact(
+                    self._messages, token_limit=threshold,
+                )
 
         # Run the query loop
         async for event in query(

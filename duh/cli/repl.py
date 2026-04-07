@@ -18,6 +18,7 @@ Slash commands:
     /cost     — show session cost estimate
     /status   — show session status (turns, messages, model)
     /changes  — show files touched in this session
+    /tasks    — show task checklist
     /clear    — clear conversation history
     /compact  — compact conversation (summarize older messages)
     /exit     — exit the REPL (also Ctrl-D)
@@ -249,7 +250,9 @@ SLASH_COMMANDS = {
     "/model": "Show or set model (/model <name>)",
     "/cost": "Show estimated session cost",
     "/status": "Show session status",
-    "/changes": "Show files touched in this session",
+    "/changes": "Show files touched in this session (+ git diff --stat)",
+    "/git": "Show git branch, status, and recent commits",
+    "/tasks": "Show task checklist",
     "/clear": "Clear conversation history",
     "/compact": "Compact older messages",
     "/exit": "Exit the REPL",
@@ -263,6 +266,7 @@ def _handle_slash(
     deps: Deps,
     *,
     executor: NativeExecutor | None = None,
+    task_manager: Any | None = None,
 ) -> tuple[bool, str]:
     """Handle a slash command. Returns (should_continue, new_model)."""
     parts = cmd.strip().split(None, 1)
@@ -297,9 +301,33 @@ def _handle_slash(
     if name == "/changes":
         if executor is not None:
             text = executor.file_tracker.summary()
+            # Also show git diff --stat when available
+            diff_stat = executor.file_tracker.diff_summary(cwd=executor._cwd)
+            if diff_stat and diff_stat != "No files modified.":
+                text += f"\n\n  Git diff:\n{diff_stat}"
         else:
             text = "No file tracker available."
         sys.stdout.write(f"  {text}\n")
+        return True, model
+
+    if name == "/git":
+        from duh.kernel.git_context import get_git_context
+        import os
+        cwd = os.getcwd()
+        ctx = get_git_context(cwd)
+        if ctx:
+            # Strip the XML-like tags for display
+            display = ctx.replace("<git-context>", "").replace("</git-context>", "").strip()
+            sys.stdout.write(f"  {display}\n")
+        else:
+            sys.stdout.write("  Not in a git repository.\n")
+        return True, model
+
+    if name == "/tasks":
+        if task_manager is not None:
+            sys.stdout.write(f"  {task_manager.summary()}\n")
+        else:
+            sys.stdout.write("  No tasks.\n")
         return True, model
 
     if name == "/clear":
@@ -411,7 +439,22 @@ async def run_repl(args: argparse.Namespace) -> int:
     except Exception:
         logger.debug("MCP loading failed in REPL, continuing without MCP", exc_info=True)
 
-    system_prompt = args.system_prompt or SYSTEM_PROMPT
+    # --- Build system prompt with git context ---
+    system_prompt_parts = [args.system_prompt or SYSTEM_PROMPT]
+
+    from duh.kernel.git_context import get_git_context
+    git_ctx = get_git_context(cwd)
+    if git_ctx:
+        system_prompt_parts.append(git_ctx)
+
+    system_prompt = "\n\n".join(system_prompt_parts)
+
+    # --- Locate TaskTool's manager for /tasks slash command ---
+    _task_manager = None
+    for _t in tools:
+        if getattr(_t, "name", None) == "Task" and hasattr(_t, "task_manager"):
+            _task_manager = _t.task_manager
+            break
 
     executor = NativeExecutor(tools=tools, cwd=cwd)
     approver: Any = AutoApprover() if args.dangerously_skip_permissions else InteractiveApprover()
@@ -449,7 +492,7 @@ async def run_repl(args: argparse.Namespace) -> int:
 
         # Slash commands
         if user_input.startswith("/"):
-            keep_going, model = _handle_slash(user_input, engine, model, deps, executor=executor)
+            keep_going, model = _handle_slash(user_input, engine, model, deps, executor=executor, task_manager=_task_manager)
             if not keep_going:
                 break
             continue

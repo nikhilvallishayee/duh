@@ -24,9 +24,11 @@ class InteractiveApprover:
     def __init__(self, *, default_allow: bool = False):
         self._default_allow = default_allow
 
-    async def check(self, tool_name: str, input: dict[str, Any]) -> dict[str, Any]:
+    async def check(self, tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
+        import builtins
+
         # Format input summary
-        summary = ", ".join(f"{k}={v!r}" for k, v in list(input.items())[:3])
+        summary = ", ".join(f"{k}={v!r}" for k, v in list(tool_input.items())[:3])
         if len(summary) > 120:
             summary = summary[:117] + "..."
 
@@ -38,9 +40,6 @@ class InteractiveApprover:
         sys.stderr.flush()
 
         try:
-            response = input("").strip().lower() if not hasattr(input, '__call__') else ""
-            # If input is a dict (parameter shadowing), use builtins
-            import builtins
             response = builtins.input("").strip().lower()
         except (EOFError, KeyboardInterrupt):
             return {"allowed": False, "reason": "User cancelled"}

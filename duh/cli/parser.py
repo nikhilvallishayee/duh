@@ -46,6 +46,30 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verbose", action="store_true", default=False,
                         help="Enable verbose output (used by SDK mode).")
 
-    subparsers = parser.add_subparsers(dest="command")
+    # SDK compat: accept (and ignore) unknown flags the SDK may pass
+    parser.add_argument("--print", action="store_true", default=False,
+                        help=argparse.SUPPRESS)  # SDK compat
+    parser.add_argument("--allowedTools", type=str, default=None,
+                        help=argparse.SUPPRESS)  # SDK compat
+    parser.add_argument("--disallowedTools", type=str, default=None,
+                        help=argparse.SUPPRESS)  # SDK compat
+    parser.add_argument("--max-thinking-tokens", type=int, default=None,
+                        help=argparse.SUPPRESS)  # SDK compat
+    parser.add_argument("--include-partial-messages", action="store_true", default=False,
+                        help=argparse.SUPPRESS)  # SDK compat
+    parser.add_argument("--tools", type=str, default=None,
+                        help=argparse.SUPPRESS)  # SDK compat
+    parser.add_argument("--session-id", type=str, default=None,
+                        help=argparse.SUPPRESS)  # SDK compat
+    parser.add_argument("--settings", type=str, default=None,
+                        help=argparse.SUPPRESS)  # SDK compat
+    parser.add_argument("--setting-sources", type=str, default=None,
+                        help=argparse.SUPPRESS)  # SDK compat
+    parser.add_argument("--permission-prompt-tool", type=str, default=None,
+                        help=argparse.SUPPRESS)  # SDK compat
+    parser.add_argument("--mcp-config", type=str, default=None,
+                        help=argparse.SUPPRESS)  # SDK compat
+
+    subparsers = parser.add_subparsers(dest="command", required=False)
     subparsers.add_parser("doctor", help="Run diagnostics and health checks.")
     return parser

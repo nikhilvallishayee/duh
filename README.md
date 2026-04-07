@@ -197,6 +197,75 @@ duh doctor                                   # diagnostics + connectivity
 duh --version
 ```
 
+## Install from PyPI
+
+```bash
+pip install duh-cli                    # core (Anthropic + Ollama)
+pip install 'duh-cli[all]'             # includes OpenAI + Rich TUI
+pip install 'duh-cli[openai]'          # just OpenAI provider
+pip install 'duh-cli[rich]'            # just Rich TUI rendering
+```
+
+After install:
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...    # or OPENAI_API_KEY, or just Ollama
+duh -p "hello world"                   # verify it works
+duh doctor                             # check everything
+```
+
+## For claude-flow / RuFlow Users
+
+D.U.H. works as a drop-in backend for [claude-flow](https://github.com/ruvnet/claude-flow) by @ruvnet.
+
+**Quick setup:**
+
+```bash
+# 1. Install D.U.H.
+pip install 'duh-cli[all]'
+
+# 2. Create the SDK shim (one-time setup)
+mkdir -p ~/.local/bin
+cat > ~/.local/bin/duh-sdk-shim << 'SHIM'
+#!/bin/bash
+exec python3 -m duh "$@"
+SHIM
+chmod +x ~/.local/bin/duh-sdk-shim
+
+# 3. Configure claude-flow to use D.U.H.
+# In your claude-flow.config.json:
+```
+
+```json
+{
+  "swarm": {
+    "claudeExecutablePath": "~/.local/bin/duh-sdk-shim"
+  }
+}
+```
+
+```bash
+# 4. Alias claude → duh (optional, for full replacement)
+alias claude='python3 -m duh'
+
+# 5. Verify
+duh doctor
+npx @claude-flow/cli agent spawn -t coder --name test
+```
+
+**What you get:**
+- **Multi-provider**: Switch between Claude, GPT-4o, and local Ollama models without changing claude-flow config
+- **Cost control**: `--max-cost 5.00` prevents runaway sessions
+- **25+ tools**: Docker, GitHub PRs, HTTP testing, database queries — all available to your agents
+- **SDK compatible**: D.U.H. speaks the same NDJSON protocol as Claude Code
+
+**For the Universal Companion API:**
+```bash
+# Replace Claude Code with D.U.H. in UC API
+export DUH_CLI_PATH=~/.local/bin/duh-sdk-shim
+export CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK=1
+# Start your UC API server — it now uses D.U.H. as the backend
+```
+
 ## Development
 
 ```bash
@@ -204,7 +273,7 @@ git clone https://github.com/nikhilvallishayee/duh
 cd duh
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest -q --tb=short                   # 2309 tests, ~23s
+pytest -q --tb=short                   # 2346 tests, ~23s
 pytest --cov=duh --cov-report=term     # 90% coverage
 ```
 

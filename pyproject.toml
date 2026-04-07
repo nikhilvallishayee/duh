@@ -12,7 +12,7 @@ requires-python = ">=3.12"
 authors = [
     { name = "Nikhil Vallishayee" },
 ]
-keywords = ["ai", "coding", "agent", "harness", "mcp", "cli"]
+keywords = ["ai", "coding", "agent", "harness", "mcp", "cli", "claude", "openai", "ollama"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -27,9 +27,15 @@ dependencies = [
     "pydantic>=2.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/nikhilvallishayee/duh"
+Repository = "https://github.com/nikhilvallishayee/duh"
+Issues = "https://github.com/nikhilvallishayee/duh/issues"
+
 [project.optional-dependencies]
 openai = ["openai>=1.0"]
 rich = ["rich>=13.0"]
+all = ["openai>=1.0", "rich>=13.0"]
 dev = ["pytest", "pytest-asyncio", "pytest-cov", "openai>=1.0", "rich>=13.0"]
 
 [project.scripts]

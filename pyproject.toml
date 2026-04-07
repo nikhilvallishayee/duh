@@ -30,7 +30,7 @@ dependencies = [
 [project.optional-dependencies]
 openai = ["openai>=1.0"]
 rich = ["rich>=13.0"]
-dev = ["pytest", "pytest-asyncio"]
+dev = ["pytest", "pytest-asyncio", "pytest-cov", "openai>=1.0", "rich>=13.0"]
 
 [project.scripts]
 duh = "duh.cli.main:main"

@@ -339,6 +339,9 @@ async def run_repl(args: argparse.Namespace) -> int:
         logging.basicConfig(level=logging.DEBUG, stream=sys.stderr,
                             format="[%(levelname)s] %(name)s: %(message)s")
 
+    # --- Build renderer (Rich when available, plain ANSI otherwise) ---
+    renderer = _make_renderer(debug=debug)
+
     # --- Resolve provider ---
     provider_name = args.provider
     if not provider_name:
@@ -431,11 +434,11 @@ async def run_repl(args: argparse.Namespace) -> int:
     )
     engine = Engine(deps=deps, config=engine_config)
 
-    sys.stdout.write(f"D.U.H. interactive mode ({model}). Type /help for commands, /exit or Ctrl-D to quit.\n\n")
+    renderer.banner(model)
 
     while True:
         try:
-            user_input = input(PROMPT)
+            user_input = input(renderer.prompt())
         except (EOFError, KeyboardInterrupt):
             sys.stdout.write("\n")
             break
@@ -451,43 +454,43 @@ async def run_repl(args: argparse.Namespace) -> int:
                 break
             continue
 
+        # Show status bar before each turn (model + turn count)
+        renderer.status_bar(model, engine.turn_count + 1)
+
         # Run the prompt through the engine
         async for event in engine.run(user_input):
             event_type = event.get("type", "")
 
             if event_type == "text_delta":
-                sys.stdout.write(event.get("text", ""))
-                sys.stdout.flush()
+                renderer.text_delta(event.get("text", ""))
 
             elif event_type == "thinking_delta":
-                if debug:
-                    sys.stderr.write(f"\033[2;3m{event.get('text', '')}\033[0m")
-                    sys.stderr.flush()
+                renderer.thinking_delta(event.get("text", ""))
 
             elif event_type == "tool_use":
                 name = event.get("name", "?")
                 inp = event.get("input", {})
-                summary = ", ".join(f"{k}={v!r}" for k, v in list(inp.items())[:2])
-                sys.stderr.write(f"  \033[33m> {name}\033[0m({summary})\n")
-                sys.stderr.flush()
+                renderer.tool_use(name, inp)
 
             elif event_type == "tool_result":
-                if event.get("is_error"):
-                    sys.stderr.write(f"  \033[31m! {event.get('output', '')[:200]}\033[0m\n")
-                elif debug:
-                    sys.stderr.write(f"  \033[32m< {str(event.get('output', ''))[:100]}\033[0m\n")
+                renderer.tool_result(
+                    str(event.get("output", "")),
+                    bool(event.get("is_error")),
+                )
 
             elif event_type == "assistant":
                 msg = event.get("message")
                 if isinstance(msg, Message) and msg.metadata.get("is_error"):
                     hint = _interpret_error(msg.text)
-                    sys.stderr.write(f"\n\033[31mError: {hint}\033[0m\n")
+                    renderer.error(hint)
 
             elif event_type == "error":
                 hint = _interpret_error(event.get("error", "unknown"))
-                sys.stderr.write(f"\n\033[31mError: {hint}\033[0m\n")
+                renderer.error(hint)
 
-        sys.stdout.write("\n\n")  # blank line after response
+        # Re-render accumulated text as Rich Markdown (no-op for plain)
+        renderer.flush_response()
+        renderer.turn_end()
 
     # --- Disconnect MCP ---
     if mcp_executor:

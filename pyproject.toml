@@ -25,6 +25,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+rich = ["rich>=13.0"]
 dev = ["pytest", "pytest-asyncio"]
 
 [project.scripts]

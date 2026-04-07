@@ -100,7 +100,7 @@ DANGEROUS_PATTERNS: list[_DangerousPattern] = [
     # -- Network exfiltration --
     (re.compile(r"\bnc\s+.*-[a-zA-Z]*e\s"),
      "Netcat with command execution flag (-e)"),
-    (re.compile(r"\b/dev/tcp/"),
+    (re.compile(r"/dev/tcp/"),
      "Raw TCP connection via /dev/tcp"),
 
     # -- Python/Perl/Ruby one-liner execution --

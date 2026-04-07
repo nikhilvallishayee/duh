@@ -85,3 +85,10 @@ def get_all_tools(
         pass
 
     return tools
+
+def _get_agent_tool():
+    try:
+        from duh.tools.agent_tool import AgentTool
+        return AgentTool()
+    except Exception:
+        return None

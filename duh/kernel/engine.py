@@ -32,7 +32,8 @@ class EngineConfig:
     system_prompt: str | list[str] = ""
     tools: list[Any] = field(default_factory=list)
     thinking: dict[str, Any] | None = None
-    max_turns: int = 100
+    tool_choice: str | dict[str, Any] | None = None
+    max_turns: int = 1000
     cwd: str = "."
 
 
@@ -96,6 +97,7 @@ class Engine:
             max_turns=max_turns or self._config.max_turns,
             model=model or self._config.model,
             thinking=self._config.thinking,
+            tool_choice=self._config.tool_choice,
         ):
             event_type = event.get("type", "")
 

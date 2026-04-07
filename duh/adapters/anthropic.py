@@ -52,19 +52,10 @@ class AnthropicProvider:
         tools: list[Any] | None = None,
         thinking: dict[str, Any] | None = None,
         max_tokens: int | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> AsyncGenerator[dict[str, Any], None]:
-        """Stream model responses, yielding D.U.H. uniform events.
-
-        Translates Anthropic SDK events → D.U.H. events:
-        - message_start → (internal)
-        - content_block_start → content_block_start
-        - content_block_delta → text_delta / thinking_delta / input_json_delta
-        - content_block_stop → content_block_stop
-        - message_delta → (internal)
-        - message_stop → (internal)
-        - Final message → assistant event with complete Message
-        """
+        """Stream model responses, yielding D.U.H. uniform events."""
         resolved_model = model or self._default_model
         resolved_max_tokens = max_tokens or _default_max_tokens(resolved_model)
 
@@ -98,6 +89,21 @@ class AnthropicProvider:
                 elif thinking_type == "enabled":
                     budget = thinking.get("budget_tokens", resolved_max_tokens - 1)
                     params["thinking"] = {"type": "enabled", "budget_tokens": budget}
+
+        # Tool choice — Anthropic supports natively
+        if tool_choice and tools:
+            if isinstance(tool_choice, dict):
+                params["tool_choice"] = tool_choice
+            elif tool_choice == "none":
+                # Don't send tools at all — simplest way to prevent tool use
+                del params["tools"]
+            elif tool_choice == "auto":
+                params["tool_choice"] = {"type": "auto"}
+            elif tool_choice == "any":
+                params["tool_choice"] = {"type": "any"}
+            else:
+                # Assume it's a tool name — force that specific tool
+                params["tool_choice"] = {"type": "tool", "name": tool_choice}
 
         # Stream
         content_blocks: list[Any] = []

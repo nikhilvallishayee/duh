@@ -48,13 +48,40 @@ class OllamaProvider:
         tools: list[Any] | None = None,
         thinking: dict[str, Any] | None = None,
         max_tokens: int | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream model responses from Ollama, yielding D.U.H. events."""
         resolved_model = model or self._default_model
 
+        # Tool choice emulation — Ollama doesn't support tool_choice natively
+        effective_tools = tools
+        effective_system = system_prompt
+        if tool_choice == "none":
+            # Simply don't send tools — guaranteed no tool calls
+            effective_tools = None
+        elif tool_choice == "any" and tools:
+            # Inject system prompt hint (best effort for Ollama)
+            hint = "You MUST call one of the available tools before responding with text."
+            if isinstance(effective_system, list):
+                effective_system = list(effective_system) + [hint]
+            elif effective_system:
+                effective_system = effective_system + "\n\n" + hint
+            else:
+                effective_system = hint
+        # "auto" is default — no modification needed
+        # Specific tool name — inject hint
+        elif isinstance(tool_choice, str) and tool_choice not in ("auto", "none", "any") and tools:
+            hint = f"You MUST call the '{tool_choice}' tool. Do not respond with plain text."
+            if isinstance(effective_system, list):
+                effective_system = list(effective_system) + [hint]
+            elif effective_system:
+                effective_system = effective_system + "\n\n" + hint
+            else:
+                effective_system = hint
+
         # Build Ollama messages
-        api_messages = _to_ollama_messages(messages, system_prompt)
+        api_messages = _to_ollama_messages(messages, effective_system)
 
         # Build request
         payload: dict[str, Any] = {
@@ -63,9 +90,9 @@ class OllamaProvider:
             "stream": True,
         }
 
-        # Add tools if supported (Ollama supports tool calling for some models)
-        if tools:
-            ollama_tools = _to_ollama_tools(tools)
+        # Add tools if supported (and not suppressed by tool_choice="none")
+        if effective_tools:
+            ollama_tools = _to_ollama_tools(effective_tools)
             if ollama_tools:
                 payload["tools"] = ollama_tools
 

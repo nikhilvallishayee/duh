@@ -44,9 +44,10 @@ async def query(
     system_prompt: str | list[str] = "",
     deps: Deps,
     tools: list[Any] | None = None,
-    max_turns: int = 100,
+    max_turns: int = 1000,
     model: str = "",
     thinking: dict[str, Any] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """The core agentic loop.
 
@@ -80,6 +81,7 @@ async def query(
                 model=model,
                 tools=tools,
                 thinking=thinking,
+                tool_choice=tool_choice,
             ):
                 # Pass through stream events
                 event_type = event.get("type", "") if isinstance(event, dict) else ""

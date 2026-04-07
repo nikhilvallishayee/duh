@@ -102,6 +102,8 @@ def build_parser() -> argparse.ArgumentParser:
                         default=False, help="Auto-approve all tool calls.")
     parser.add_argument("--system-prompt", type=str, default=None,
                         help="Override the default system prompt.")
+    parser.add_argument("--tool-choice", type=str, default=None,
+                        help="Control tool use: auto (default), none (text only), any (force tool), or a tool name.")
     parser.add_argument("--debug", "-d", action="store_true", default=False,
                         help="Enable debug output (full event tracing to stderr).")
 
@@ -217,6 +219,7 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         system_prompt=args.system_prompt or SYSTEM_PROMPT,
         tools=tools,
         max_turns=args.max_turns,
+        tool_choice=args.tool_choice,
     )
     engine = Engine(deps=deps, config=config)
 

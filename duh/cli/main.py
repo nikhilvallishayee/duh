@@ -274,23 +274,16 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         dt_lines.append("</deferred-tools>")
         system_prompt_parts.append("\n".join(dt_lines))
 
-    # --- Wire MCP (connect servers, merge tools) ---
-    mcp_executor = None
+    # --- Load config once (MCP + hooks + settings) ---
     from duh.config import Config
+    mcp_executor = None
+    from duh.hooks import HookRegistry
+    hook_registry = HookRegistry()
     try:
         config = Config.load(cwd)
         if config.mcp_servers:
             from duh.adapters.mcp_executor import MCPExecutor
             mcp_executor = MCPExecutor.from_config(config.mcp_servers)
-            # MCP tools will be discovered after connect
-    except Exception:
-        pass  # MCP is optional
-
-    # --- Wire hooks ---
-    from duh.hooks import HookRegistry
-    hook_registry = HookRegistry()
-    try:
-        config = Config.load(cwd)
         if config.hooks:
             hook_registry = HookRegistry.from_config(config.hooks)
     except Exception:

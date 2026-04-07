@@ -110,6 +110,30 @@ DANGEROUS_PATTERNS: list[_DangerousPattern] = [
     # -- Python/Perl/Ruby one-liner execution --
     (re.compile(r"\bpython[23]?\s+-c\s+.*(?:import\s+os|subprocess|__import__)"),
      "Python one-liner with system access"),
+
+    # -- Perl/Ruby/Node one-liner code execution --
+    (re.compile(r"\bperl\s+-e\b"),
+     "Perl one-liner code execution (perl -e)"),
+    (re.compile(r"\bruby\s+-e\b"),
+     "Ruby one-liner code execution (ruby -e)"),
+    (re.compile(r"\bnode\s+-e\b"),
+     "Node one-liner code execution (node -e)"),
+
+    # -- find -exec dangerous combos --
+    (re.compile(r"\bfind\b.*-exec\s+rm\b"),
+     "Dangerous find/exec deletion (find -exec rm)"),
+    (re.compile(r"\bfind\b.*-exec\s+chmod\b"),
+     "Dangerous find/exec permission change (find -exec chmod)"),
+
+    # -- Docker privilege escalation --
+    (re.compile(r"\bdocker\s+run\b.*--privileged\b"),
+     "Docker container with full host privileges (--privileged)"),
+
+    # -- Process substitution remote code execution --
+    (re.compile(r"\bsource\s+<\(\s*curl\b"),
+     "Process substitution RCE (source <(curl ...))"),
+    (re.compile(r"\bsource\s+<\(\s*wget\b"),
+     "Process substitution RCE (source <(wget ...))"),
 ]
 
 
@@ -135,6 +159,14 @@ MODERATE_PATTERNS: list[_DangerousPattern] = [
      "Removing Docker containers/images"),
     (re.compile(r"\bgit\s+(push\s+.*--force|reset\s+--hard|clean\s+-f)"),
      "Destructive git operation"),
+
+    # -- In-place file modification --
+    (re.compile(r"\bsed\s+-i\b"),
+     "In-place file modification (sed -i)"),
+
+    # -- awk with system() calls --
+    (re.compile(r"\bawk\b.*\bsystem\s*\("),
+     "awk with system() call"),
 ]
 
 

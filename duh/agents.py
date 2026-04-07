@@ -52,6 +52,17 @@ AGENT_PROMPTS: dict[str, str] = {
 
 AGENT_TYPES = list(AGENT_PROMPTS.keys())
 
+# ---------------------------------------------------------------------------
+# Default model per agent type (used when caller doesn't specify)
+# ---------------------------------------------------------------------------
+
+AGENT_TYPE_DEFAULTS: dict[str, str] = {
+    "general": "inherit",   # use parent's model
+    "coder": "sonnet",      # balanced speed/quality
+    "researcher": "haiku",  # fast and cheap for search
+    "planner": "opus",      # complex reasoning
+}
+
 
 # ---------------------------------------------------------------------------
 # Agent definition
@@ -100,6 +111,15 @@ AGENT_TOOL_SCHEMA: dict[str, Any] = {
             "description": "Agent specialization (default: general).",
             "default": "general",
         },
+        "model": {
+            "type": "string",
+            "enum": ["haiku", "sonnet", "opus", "inherit"],
+            "description": (
+                "Model for the subagent. 'inherit' (or omitted) uses the "
+                "agent type's default: general=inherit, coder=sonnet, "
+                "researcher=haiku, planner=opus."
+            ),
+        },
     },
     "required": ["prompt"],
 }
@@ -119,10 +139,23 @@ class AgentResult:
         return bool(self.error)
 
 
+def _resolve_model(model: str, agent_type: str) -> str:
+    """Resolve the effective model name for a subagent.
+
+    Priority: explicit model > agent type default > inherit (empty string).
+    'inherit' or '' means: use the parent's deps/model unchanged.
+    """
+    effective = model or AGENT_TYPE_DEFAULTS.get(agent_type, "inherit")
+    if effective == "inherit":
+        return ""
+    return effective
+
+
 async def run_agent(
     *,
     prompt: str,
     agent_type: str = "general",
+    model: str = "",
     deps: Any = None,
     tools: list[Any] | None = None,
     cwd: str = ".",
@@ -136,6 +169,9 @@ async def run_agent(
     Args:
         prompt: The task for the agent.
         agent_type: One of the built-in agent types.
+        model: Model override ('haiku', 'sonnet', 'opus', 'inherit', or '').
+            Empty string uses the agent type's default. 'inherit' uses
+            the parent's model unchanged.
         deps: Deps instance (call_model, run_tool, approve, etc.).
         tools: Tool instances. None = use whatever deps provides.
         cwd: Working directory for the agent.
@@ -148,8 +184,10 @@ async def run_agent(
     from duh.kernel.messages import Message
 
     agent_def = AgentDef.from_type(agent_type)
+    resolved_model = _resolve_model(model, agent_type)
 
     config = EngineConfig(
+        model=resolved_model,
         system_prompt=agent_def.system_prompt,
         tools=tools or [],
         max_turns=min(max_turns, agent_def.max_turns),

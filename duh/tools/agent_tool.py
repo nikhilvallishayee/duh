@@ -11,6 +11,7 @@ class AgentTool:
         "properties": {
             "prompt": {"type": "string", "description": "The task for the subagent."},
             "agent_type": {"type": "string", "enum": ["general", "coder", "researcher", "planner"], "description": "Agent specialization. Default: general."},
+            "model": {"type": "string", "enum": ["haiku", "sonnet", "opus", "inherit"], "description": "Model for subagent. Defaults to agent type's preferred model."},
         },
         "required": ["prompt"],
     }
@@ -26,6 +27,7 @@ class AgentTool:
             result = await run_agent(
                 prompt=input.get("prompt", ""),
                 agent_type=input.get("agent_type", "general"),
+                model=input.get("model", ""),
                 deps=self._parent_deps,
             )
             return ToolResult(output=result.result_text if hasattr(result, 'result_text') else str(result))

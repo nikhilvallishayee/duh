@@ -215,7 +215,12 @@ async def run_stream_json_mode(args: argparse.Namespace) -> int:
 
     # --- Build engine ---
     executor = NativeExecutor(tools=tools, cwd=cwd)
-    approver: Any = AutoApprover() if args.dangerously_skip_permissions else AutoApprover()
+    # SDK mode always uses AutoApprover: the SDK itself handles permission
+    # control via the bidirectional control protocol (control_request /
+    # control_response).  InteractiveApprover would block on stdin which is
+    # reserved for the NDJSON stream, so auto-approve is the only correct
+    # choice here regardless of --dangerously-skip-permissions.
+    approver: Any = AutoApprover()
 
     deps = Deps(
         call_model=call_model,

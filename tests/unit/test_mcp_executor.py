@@ -64,6 +64,9 @@ class _FakeClientSession:
             return self._call_results[name]
         raise RuntimeError(f"Tool call failed: {name}")
 
+    async def __aenter__(self) -> "_FakeClientSession":
+        return self
+
     async def __aexit__(self, *args: Any) -> None:
         pass
 
@@ -201,8 +204,8 @@ class TestMCPConnection:
             ("write_file", "Write a file", {"type": "object"}),
         ])
 
-        async def fake_start_stdio(params: Any) -> tuple[Any, Any]:
-            return (MagicMock(), MagicMock())
+        async def fake_start_stdio(params: Any) -> tuple[Any, Any, Any]:
+            return (MagicMock(), MagicMock(), MagicMock())
 
         executor._start_stdio = fake_start_stdio  # type: ignore[assignment]
 
@@ -226,7 +229,7 @@ class TestMCPConnection:
     async def test_connect_failure_raises_runtime_error(self) -> None:
         executor = _make_executor(("bad", "false", []))
 
-        async def fail_start(params: Any) -> tuple[Any, Any]:
+        async def fail_start(params: Any) -> tuple[Any, Any, Any]:
             raise OSError("Cannot start process")
 
         executor._start_stdio = fail_start  # type: ignore[assignment]
@@ -238,8 +241,8 @@ class TestMCPConnection:
         executor = _make_executor(("s1", "echo", []))
         session = _make_session_with_tools([("tool1", "t1", {})])
 
-        async def fake_start(params: Any) -> tuple[Any, Any]:
-            return (MagicMock(), MagicMock())
+        async def fake_start(params: Any) -> tuple[Any, Any, Any]:
+            return (MagicMock(), MagicMock(), MagicMock())
 
         executor._start_stdio = fake_start  # type: ignore[assignment]
 
@@ -266,8 +269,8 @@ class TestMCPConnection:
 
         sessions = iter([session1, session2])
 
-        async def fake_start(params: Any) -> tuple[Any, Any]:
-            return (MagicMock(), MagicMock())
+        async def fake_start(params: Any) -> tuple[Any, Any, Any]:
+            return (MagicMock(), MagicMock(), MagicMock())
 
         executor._start_stdio = fake_start  # type: ignore[assignment]
 
@@ -297,8 +300,8 @@ class TestMCPToolExecution:
             call_results={"greet": "Hello, world!"},
         )
 
-        async def fake_start(params: Any) -> tuple[Any, Any]:
-            return (MagicMock(), MagicMock())
+        async def fake_start(params: Any) -> tuple[Any, Any, Any]:
+            return (MagicMock(), MagicMock(), MagicMock())
 
         executor._start_stdio = fake_start  # type: ignore[assignment]
 
@@ -332,8 +335,8 @@ class TestMCPToolExecution:
             call_results={},  # No result for fail_tool -> will raise
         )
 
-        async def fake_start(params: Any) -> tuple[Any, Any]:
-            return (MagicMock(), MagicMock())
+        async def fake_start(params: Any) -> tuple[Any, Any, Any]:
+            return (MagicMock(), MagicMock(), MagicMock())
 
         executor._start_stdio = fake_start  # type: ignore[assignment]
 
@@ -352,8 +355,8 @@ class TestMCPToolExecution:
         # Set up a result with empty content
         session._call_results["empty"] = _FakeCallToolResult(content=[])
 
-        async def fake_start(params: Any) -> tuple[Any, Any]:
-            return (MagicMock(), MagicMock())
+        async def fake_start(params: Any) -> tuple[Any, Any, Any]:
+            return (MagicMock(), MagicMock(), MagicMock())
 
         executor._start_stdio = fake_start  # type: ignore[assignment]
 
@@ -377,8 +380,8 @@ class TestMCPToolInfo:
             ("mytool", "My tool description", {"type": "object", "properties": {"x": {"type": "string"}}}),
         ])
 
-        async def fake_start(params: Any) -> tuple[Any, Any]:
-            return (MagicMock(), MagicMock())
+        async def fake_start(params: Any) -> tuple[Any, Any, Any]:
+            return (MagicMock(), MagicMock(), MagicMock())
 
         executor._start_stdio = fake_start  # type: ignore[assignment]
 
@@ -404,8 +407,8 @@ class TestMCPToolInfo:
             ("b", "Tool B", {}),
         ])
 
-        async def fake_start(params: Any) -> tuple[Any, Any]:
-            return (MagicMock(), MagicMock())
+        async def fake_start(params: Any) -> tuple[Any, Any, Any]:
+            return (MagicMock(), MagicMock(), MagicMock())
 
         executor._start_stdio = fake_start  # type: ignore[assignment]
 

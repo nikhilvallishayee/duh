@@ -71,6 +71,7 @@ class MCPConnection:
     config: MCPServerConfig
     session: Any = None  # ClientSession when connected
     tools: list[MCPToolInfo] = field(default_factory=list)
+    _stdio_ctx: Any = None  # stdio_client context manager (must exit on disconnect)
     _cleanup: Any = None  # cleanup callable from context manager
 
 
@@ -123,9 +124,12 @@ class MCPExecutor:
             env=config.env,
         )
 
+        stdio_ctx = None
+        session = None
         try:
-            read_stream, write_stream = await self._start_stdio(params)
+            stdio_ctx, read_stream, write_stream = await self._start_stdio(params)
             session = ClientSession(read_stream, write_stream)
+            await session.__aenter__()
             await session.initialize()
 
             # Discover tools
@@ -147,6 +151,7 @@ class MCPExecutor:
                 config=config,
                 session=session,
                 tools=tools,
+                _stdio_ctx=stdio_ctx,
             )
             self._connections[server_name] = conn
             logger.info(
@@ -157,15 +162,31 @@ class MCPExecutor:
             return tools
 
         except Exception as exc:
+            # Clean up on failure
+            if session is not None:
+                try:
+                    await session.__aexit__(None, None, None)
+                except Exception:
+                    pass
+            if stdio_ctx is not None:
+                try:
+                    await stdio_ctx.__aexit__(None, None, None)
+                except Exception:
+                    pass
             raise RuntimeError(
                 f"Failed to connect to MCP server '{server_name}': {exc}"
             ) from exc
 
-    async def _start_stdio(self, params: Any) -> tuple[Any, Any]:
-        """Start the stdio transport. Separated for testability."""
+    async def _start_stdio(self, params: Any) -> tuple[Any, Any, Any]:
+        """Start the stdio transport. Returns (ctx, read_stream, write_stream).
+
+        The caller must keep *ctx* alive and eventually call
+        ``ctx.__aexit__(None, None, None)`` to clean up the subprocess.
+        Separated for testability.
+        """
         ctx = stdio_client(params)
         read_stream, write_stream = await ctx.__aenter__()
-        return read_stream, write_stream
+        return ctx, read_stream, write_stream
 
     async def connect_all(self) -> dict[str, list[MCPToolInfo]]:
         """Connect to all configured servers. Returns {server_name: [tools]}."""
@@ -191,6 +212,11 @@ class MCPExecutor:
         if conn.session is not None:
             try:
                 await conn.session.__aexit__(None, None, None)
+            except Exception:
+                pass
+        if conn._stdio_ctx is not None:
+            try:
+                await conn._stdio_ctx.__aexit__(None, None, None)
             except Exception:
                 pass
 

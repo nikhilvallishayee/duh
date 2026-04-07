@@ -35,3 +35,7 @@ packages = ["duh"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "integration: marks tests that talk to real external services",
+    "slow: marks tests that may take more than a few seconds",
+]

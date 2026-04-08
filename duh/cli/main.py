@@ -38,6 +38,32 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "doctor":
         return run_doctor()
 
+    if args.command == "bridge":
+        from duh.bridge.server import BridgeServer
+
+        async def _run_bridge() -> int:
+            server = BridgeServer(
+                host=args.host,
+                port=args.port,
+                token=args.token,
+            )
+            await server.start()
+            print(f"Bridge server running on ws://{args.host}:{args.port}")
+            print("Press Ctrl+C to stop.")
+            try:
+                await asyncio.Future()  # run forever
+            except asyncio.CancelledError:
+                pass
+            finally:
+                await server.stop()
+            return 0
+
+        try:
+            return asyncio.run(_run_bridge())
+        except KeyboardInterrupt:
+            sys.stderr.write("\nBridge server stopped.\n")
+            return 0
+
     # SDK mode: stream-json on both input and output
     if getattr(args, "input_format", "text") == "stream-json":
         from duh.cli.sdk_runner import run_stream_json_mode

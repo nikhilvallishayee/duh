@@ -206,3 +206,76 @@ class SSETransport:
             self._client = None
         self._message_endpoint = ""
         logger.info("SSE transport disconnected: %s", self._url)
+
+
+# ---------------------------------------------------------------------------
+# HTTP Transport
+# ---------------------------------------------------------------------------
+
+
+class HTTPTransport:
+    """MCP transport over plain HTTP POST (JSON-RPC).
+
+    Each tool call is a single HTTP request/response. No persistent
+    connection -- simple and reliable for serverless deployments.
+
+    The server URL is ``{base_url}{rpc_path}`` (default: /rpc).
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        headers: dict[str, str] | None = None,
+        timeout: float = 30.0,
+        rpc_path: str = "/rpc",
+    ) -> None:
+        _require_httpx()
+        self._base_url = base_url.rstrip("/")
+        self._headers: dict[str, str] = headers or {}
+        self._timeout = timeout
+        self._rpc_path = rpc_path
+        self._connected = False
+        self._client: Any = None  # httpx.AsyncClient
+
+    @property
+    def connected(self) -> bool:
+        return self._connected
+
+    async def connect(self) -> tuple[Any, Any]:
+        """Create the HTTP client. No handshake needed for plain HTTP."""
+        _require_httpx()
+        self._client = httpx.AsyncClient(
+            headers=self._headers,
+            timeout=httpx.Timeout(self._timeout),
+        )
+        self._connected = True
+
+        read_stream: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        write_stream: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        logger.info("HTTP transport connected: %s", self._base_url)
+        return read_stream, write_stream
+
+    async def send(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Send a JSON-RPC request via POST.
+
+        Returns the parsed JSON response.
+        """
+        if not self._connected or self._client is None:
+            raise RuntimeError("HTTP transport not connected")
+
+        url = f"{self._base_url}{self._rpc_path}"
+        response = await self._client.post(
+            url,
+            json=message,
+            headers={"Content-Type": "application/json", **self._headers},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def disconnect(self) -> None:
+        """Close the HTTP client."""
+        self._connected = False
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+        logger.info("HTTP transport disconnected: %s", self._base_url)

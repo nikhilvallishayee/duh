@@ -51,7 +51,15 @@ class ThinkingBlock:
     type: str = "thinking"
 
 
-ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | ThinkingBlock | dict[str, Any]
+@dataclass(frozen=True)
+class ImageBlock:
+    """An image content block (base64-encoded)."""
+    media_type: str  # image/png, image/jpeg, image/gif, image/webp
+    data: str  # base64-encoded image data
+    type: str = "image"
+
+
+ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | ThinkingBlock | ImageBlock | dict[str, Any]
 
 
 # ---------------------------------------------------------------------------

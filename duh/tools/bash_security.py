@@ -20,6 +20,74 @@ import re
 from typing import TypedDict
 
 
+# ---------------------------------------------------------------------------
+# Env var allowlist + binary hijack detection (ported from Claude Code TS)
+# ---------------------------------------------------------------------------
+
+# Vars that are safe to set in shell commands.
+# Based on Claude Code's 166-var allowlist, distilled to the most common.
+SAFE_ENV_VARS: frozenset[str] = frozenset({
+    # Shell basics
+    "PATH", "HOME", "USER", "SHELL", "TERM", "LANG", "LC_ALL", "LC_CTYPE",
+    "EDITOR", "VISUAL", "PAGER", "COLORTERM", "CLICOLOR", "CLICOLOR_FORCE",
+    "NO_COLOR", "FORCE_COLOR", "TERM_PROGRAM", "COLUMNS", "LINES",
+    # Build tools
+    "CC", "CXX", "CFLAGS", "CXXFLAGS", "LDFLAGS", "PKG_CONFIG_PATH",
+    "CMAKE_PREFIX_PATH", "MAKEFLAGS", "DESTDIR",
+    # Go
+    "GOPATH", "GOROOT", "GOBIN", "GOPROXY", "GOFLAGS", "GOEXPERIMENT",
+    "CGO_ENABLED", "GOARCH", "GOOS",
+    # Rust
+    "CARGO_HOME", "RUSTUP_HOME", "RUST_LOG", "RUST_BACKTRACE",
+    "RUSTFLAGS", "CARGO_TARGET_DIR",
+    # Node.js
+    "NODE_ENV", "NODE_OPTIONS", "NODE_PATH", "NPM_CONFIG_PREFIX",
+    "YARN_CACHE_FOLDER", "NVM_DIR",
+    # Python
+    "PYTHONPATH", "PYTHONDONTWRITEBYTECODE", "PYTHONUNBUFFERED",
+    "VIRTUAL_ENV", "CONDA_PREFIX", "PIP_INDEX_URL",
+    # Java / JVM
+    "JAVA_HOME", "CLASSPATH", "MAVEN_HOME", "GRADLE_HOME",
+    # Ruby
+    "GEM_HOME", "GEM_PATH", "BUNDLE_PATH", "RBENV_ROOT",
+    # Docker / containers
+    "DOCKER_HOST", "COMPOSE_FILE", "COMPOSE_PROJECT_NAME",
+    # CI
+    "CI", "GITHUB_ACTIONS", "GITLAB_CI", "CIRCLECI", "JENKINS_URL",
+    "GITHUB_TOKEN", "GITHUB_REPOSITORY",
+    # Git
+    "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME",
+    "GIT_COMMITTER_EMAIL", "GIT_LFS_SKIP_SMUDGE",
+    # AWS (non-secret — credentials handled separately)
+    "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_PROFILE",
+    "AWS_DEFAULT_OUTPUT",
+    # Misc
+    "TZ", "DISPLAY", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+    "XDG_CACHE_HOME", "XDG_RUNTIME_DIR", "TMPDIR", "TEMP", "TMP",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",
+    "KUBECONFIG", "ANSIBLE_CONFIG",
+})
+
+
+# Regex matching env vars that enable binary hijacking.
+# These allow overriding which shared libraries get loaded — a critical
+# attack vector on Unix systems.
+BINARY_HIJACK_RE = re.compile(
+    r"^(LD_|DYLD_|LIBPATH|SHLIB_PATH|LIB_PATH)"
+)
+
+
+def is_env_var_safe(name: str) -> bool:
+    """Check if an environment variable name is safe to set.
+
+    Returns True for known-safe vars, False for hijack vars,
+    True for unknown vars (permissive by default — we only block known-bad).
+    """
+    if BINARY_HIJACK_RE.match(name):
+        return False
+    return True  # permissive: only block known-dangerous patterns
+
+
 class Classification(TypedDict):
     risk: str       # "safe" | "moderate" | "dangerous"
     reason: str
@@ -134,6 +202,16 @@ DANGEROUS_PATTERNS: list[_DangerousPattern] = [
      "Process substitution RCE (source <(curl ...))"),
     (re.compile(r"\bsource\s+<\(\s*wget\b"),
      "Process substitution RCE (source <(wget ...))"),
+
+    # -- Binary hijack via env var injection --
+    (re.compile(r"\bLD_PRELOAD\s*=|\bexport\s+LD_PRELOAD\b"),
+     "Binary hijack via LD_PRELOAD"),
+    (re.compile(r"\bDYLD_INSERT_LIBRARIES\s*=|\bexport\s+DYLD_INSERT_LIBRARIES\b"),
+     "Binary hijack via DYLD_INSERT_LIBRARIES"),
+    (re.compile(r"\bLD_LIBRARY_PATH\s*=.*\.\./|\bexport\s+LD_LIBRARY_PATH\b.*\.\./"),
+     "Suspicious LD_LIBRARY_PATH with path traversal"),
+    (re.compile(r"\bDYLD_LIBRARY_PATH\s*=|\bexport\s+DYLD_LIBRARY_PATH\b"),
+     "Binary hijack via DYLD_LIBRARY_PATH"),
 ]
 
 

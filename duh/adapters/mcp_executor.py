@@ -46,11 +46,18 @@ def _require_mcp() -> None:
 
 @dataclass
 class MCPServerConfig:
-    """Configuration for a single MCP server (stdio transport)."""
+    """Configuration for a single MCP server.
 
-    command: str
+    For stdio transport: set ``command`` and ``args``.
+    For remote transports (sse, http, ws): set ``transport`` and ``url``.
+    """
+
+    command: str = ""
     args: list[str] = field(default_factory=list)
     env: dict[str, str] | None = None
+    transport: str = "stdio"  # stdio | sse | http | ws
+    url: str = ""
+    headers: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -73,6 +80,41 @@ class MCPConnection:
     tools: list[MCPToolInfo] = field(default_factory=list)
     _stdio_ctx: Any = None  # stdio_client context manager (must exit on disconnect)
     _cleanup: Any = None  # cleanup callable from context manager
+
+
+def _create_transport(config: MCPServerConfig) -> Any | None:
+    """Create a transport instance based on config, or None for stdio.
+
+    Returns None for stdio (handled by existing code path).
+    Raises ValueError for unknown transport types.
+    """
+    transport_type = config.transport.lower()
+
+    if transport_type == "stdio":
+        return None
+
+    from duh.adapters.mcp_transports import SSETransport, HTTPTransport, WebSocketTransport
+
+    if transport_type == "sse":
+        return SSETransport(
+            url=config.url,
+            headers=config.headers or {},
+        )
+    elif transport_type == "http":
+        return HTTPTransport(
+            base_url=config.url,
+            headers=config.headers or {},
+        )
+    elif transport_type == "ws":
+        return WebSocketTransport(
+            url=config.url,
+            headers=config.headers or {},
+        )
+    else:
+        raise ValueError(
+            f"Unsupported MCP transport type: '{transport_type}'. "
+            f"Valid options: stdio, sse, http, ws"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -189,14 +231,52 @@ class MCPExecutor:
         return ctx, read_stream, write_stream
 
     async def connect_all(self) -> dict[str, list[MCPToolInfo]]:
-        """Connect to all configured servers. Returns {server_name: [tools]}."""
+        """Connect to all configured servers.
+
+        Connects in two phases:
+        1. Local (stdio) servers -- up to 3 concurrent
+        2. Remote (sse/http/ws) servers -- up to 20 concurrent
+
+        Returns {server_name: [tools]}.
+        """
+        local_names = [
+            n for n, c in self._servers.items() if c.transport == "stdio"
+        ]
+        remote_names = [
+            n for n, c in self._servers.items() if c.transport != "stdio"
+        ]
+
         results: dict[str, list[MCPToolInfo]] = {}
-        for name in self._servers:
-            try:
-                results[name] = await self.connect(name)
-            except Exception:
-                logger.exception("Failed to connect to MCP server: %s", name)
-                results[name] = []
+
+        # Phase 1: Local servers (limited concurrency)
+        sem_local = asyncio.Semaphore(3)
+
+        async def _connect_with_sem(name: str, sem: asyncio.Semaphore) -> tuple[str, list[MCPToolInfo]]:
+            async with sem:
+                try:
+                    tools = await self.connect(name)
+                    return name, tools
+                except Exception:
+                    logger.exception("Failed to connect to MCP server: %s", name)
+                    return name, []
+
+        if local_names:
+            local_tasks = [
+                _connect_with_sem(n, sem_local) for n in local_names
+            ]
+            for name, tools in await asyncio.gather(*local_tasks):
+                results[name] = tools
+
+        # Phase 2: Remote servers (higher concurrency)
+        sem_remote = asyncio.Semaphore(20)
+
+        if remote_names:
+            remote_tasks = [
+                _connect_with_sem(n, sem_remote) for n in remote_names
+            ]
+            for name, tools in await asyncio.gather(*remote_tasks):
+                results[name] = tools
+
         return results
 
     async def disconnect(self, server_name: str) -> None:
@@ -298,7 +378,14 @@ class MCPExecutor:
 
             {
                 "mcpServers": {
-                    "name": {"command": "...", "args": [...], "env": {...}}
+                    "name": {
+                        "command": "...",
+                        "args": [...],
+                        "env": {...},
+                        "transport": "stdio|sse|http|ws",
+                        "url": "http://...",
+                        "headers": {...}
+                    }
                 }
             }
         """
@@ -307,8 +394,11 @@ class MCPExecutor:
         mcp_servers = config.get("mcpServers", {})
         for name, srv in mcp_servers.items():
             servers[name] = MCPServerConfig(
-                command=srv["command"],
+                command=srv.get("command", ""),
                 args=srv.get("args", []),
                 env=srv.get("env"),
+                transport=srv.get("transport", "stdio"),
+                url=srv.get("url", ""),
+                headers=srv.get("headers", {}),
             )
         return cls(servers)

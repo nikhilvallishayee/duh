@@ -279,3 +279,155 @@ class HTTPTransport:
             await self._client.aclose()
             self._client = None
         logger.info("HTTP transport disconnected: %s", self._base_url)
+
+
+# ---------------------------------------------------------------------------
+# WebSocket Transport
+# ---------------------------------------------------------------------------
+
+
+class WebSocketTransport:
+    """MCP transport over WebSocket (bidirectional JSON-RPC).
+
+    Maintains a persistent WebSocket connection. Messages are sent as
+    JSON strings. A background listener task routes incoming messages
+    to per-request response queues keyed by JSON-RPC ``id``.
+
+    Supports automatic reconnection on connection drop.
+    """
+
+    def __init__(
+        self,
+        url: str,
+        headers: dict[str, str] | None = None,
+        timeout: float = 30.0,
+        max_reconnect_attempts: int = 3,
+        reconnect_delay: float = 1.0,
+    ) -> None:
+        _require_websockets()
+        self._url = url
+        self._headers: dict[str, str] = headers or {}
+        self._timeout = timeout
+        self._max_reconnect_attempts = max_reconnect_attempts
+        self._reconnect_delay = reconnect_delay
+        self._connected = False
+        self._ws: Any = None  # websockets connection
+        self._listener_task: asyncio.Task[None] | None = None
+        self._pending: dict[int | str, asyncio.Future[dict[str, Any]]] = {}
+        self._next_id = 1
+
+    @property
+    def connected(self) -> bool:
+        return self._connected
+
+    async def connect(self) -> tuple[Any, Any]:
+        """Open a WebSocket connection to the MCP server.
+
+        Returns (read_stream, write_stream) as asyncio.Queue objects.
+        """
+        _require_websockets()
+        extra_headers = self._headers if self._headers else None
+        self._ws = await websockets.connect(
+            self._url,
+            additional_headers=extra_headers,
+        )
+        self._connected = True
+
+        read_stream: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        write_stream: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+        logger.info("WebSocket transport connected: %s", self._url)
+        return read_stream, write_stream
+
+    def _start_listener(self) -> None:
+        """Start the background listener that routes incoming messages."""
+        if self._listener_task is None or self._listener_task.done():
+            self._listener_task = asyncio.create_task(self._listen())
+
+    async def _listen(self) -> None:
+        """Background task: read messages from WebSocket and route them."""
+        try:
+            while self._connected and self._ws is not None:
+                try:
+                    raw = await self._ws.recv()
+                    msg = json.loads(raw)
+                    msg_id = msg.get("id")
+                    if msg_id is not None and msg_id in self._pending:
+                        self._pending[msg_id].set_result(msg)
+                except Exception:
+                    if self._connected:
+                        logger.debug("WebSocket listener error", exc_info=True)
+                    break
+        except asyncio.CancelledError:
+            pass
+
+    async def send(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Send a JSON-RPC message and wait for the matching response.
+
+        The message ``id`` is used to correlate the response.
+        """
+        if not self._connected or self._ws is None:
+            raise RuntimeError("WebSocket transport not connected")
+
+        msg_id = message.get("id", self._next_id)
+        self._next_id += 1
+
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[dict[str, Any]] = loop.create_future()
+        self._pending[msg_id] = future
+
+        try:
+            await self._ws.send(json.dumps(message))
+            result = await asyncio.wait_for(future, timeout=self._timeout)
+            return result
+        finally:
+            self._pending.pop(msg_id, None)
+
+    async def _reconnect(self) -> None:
+        """Attempt to reconnect to the WebSocket server."""
+        for attempt in range(1, self._max_reconnect_attempts + 1):
+            try:
+                logger.info(
+                    "WebSocket reconnect attempt %d/%d: %s",
+                    attempt,
+                    self._max_reconnect_attempts,
+                    self._url,
+                )
+                extra_headers = self._headers if self._headers else None
+                self._ws = await websockets.connect(
+                    self._url,
+                    additional_headers=extra_headers,
+                )
+                self._connected = True
+                self._start_listener()
+                logger.info("WebSocket reconnected: %s", self._url)
+                return
+            except Exception:
+                if attempt < self._max_reconnect_attempts:
+                    await asyncio.sleep(self._reconnect_delay * attempt)
+                else:
+                    logger.error(
+                        "WebSocket reconnect failed after %d attempts: %s",
+                        self._max_reconnect_attempts,
+                        self._url,
+                    )
+                    raise
+
+    async def disconnect(self) -> None:
+        """Close the WebSocket connection and clean up."""
+        self._connected = False
+        if self._listener_task and not self._listener_task.done():
+            self._listener_task.cancel()
+            try:
+                await self._listener_task
+            except (asyncio.CancelledError, Exception):
+                pass
+        if self._ws is not None:
+            await self._ws.close()
+            self._ws = None
+        # Cancel any pending requests
+        for future in self._pending.values():
+            if not future.done():
+                future.cancel()
+        self._pending.clear()
+        logger.info("WebSocket transport disconnected: %s", self._url)

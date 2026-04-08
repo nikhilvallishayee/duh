@@ -35,8 +35,10 @@ Issues = "https://github.com/nikhilvallishayee/duh/issues"
 [project.optional-dependencies]
 openai = ["openai>=1.0"]
 rich = ["rich>=13.0"]
-all = ["openai>=1.0", "rich>=13.0"]
-dev = ["pytest", "pytest-asyncio", "pytest-cov", "openai>=1.0", "rich>=13.0"]
+bridge = ["websockets>=12.0"]
+attachments = ["pdfplumber>=0.10"]
+all = ["openai>=1.0", "rich>=13.0", "websockets>=12.0", "pdfplumber>=0.10"]
+dev = ["pytest", "pytest-asyncio", "pytest-cov", "openai>=1.0", "rich>=13.0", "websockets>=12.0", "pdfplumber>=0.10"]
 
 [project.scripts]
 duh = "duh.cli.main:main"

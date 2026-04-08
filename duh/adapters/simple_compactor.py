@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from duh.kernel.messages import Message, ToolUseBlock
+from duh.kernel.messages import Message, TextBlock, ToolUseBlock
 
 
 class SimpleCompactor:
@@ -139,6 +139,50 @@ class SimpleCompactor:
     @property
     def min_keep(self) -> int:
         return self._min_keep
+
+    async def partial_compact(
+        self,
+        messages: list[Any],
+        from_idx: int,
+        to_idx: int,
+        token_limit: int = 0,
+    ) -> list[Any]:
+        """Compact only messages in the range [from_idx, to_idx).
+
+        Messages before from_idx and from to_idx onward are kept intact.
+        The messages in the range are summarized into a single system message.
+
+        Args:
+            messages: Full message list.
+            from_idx: Start of range to compact (inclusive).
+            to_idx: End of range to compact (exclusive).
+            token_limit: Token budget for the summary (0 = use default).
+
+        Returns a new list (does not mutate the input).
+        Raises ValueError if from_idx > to_idx.
+        """
+        if from_idx > to_idx:
+            raise ValueError(
+                f"from_idx ({from_idx}) must be <= to_idx ({to_idx})"
+            )
+
+        # Clamp to_idx to message length
+        to_idx = min(to_idx, len(messages))
+
+        if from_idx == to_idx:
+            return list(messages)
+
+        before = list(messages[:from_idx])
+        to_compact = list(messages[from_idx:to_idx])
+        after = list(messages[to_idx:])
+
+        if not to_compact:
+            return before + after
+
+        summary_text = _summarize_messages(to_compact)
+        summary_msg = Message(role="system", content=summary_text)
+
+        return before + [summary_msg] + after
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +335,68 @@ def _deduplicate_messages(messages: list[Any]) -> list[Any]:
         else:
             result.append(msg)
 
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Image stripping (pre-compaction)
+# ---------------------------------------------------------------------------
+
+def strip_images(messages: list[Any]) -> list[Any]:
+    """Replace image content blocks with text placeholders.
+
+    Image blocks (type="image") are replaced with
+    ``[image removed for compaction]`` to prevent prompt-too-long
+    errors during the compaction summarization call.
+
+    Returns a new list (does not mutate the input).
+    """
+    result: list[Any] = []
+    for msg in messages:
+        if isinstance(msg, Message):
+            content = msg.content
+            if isinstance(content, str):
+                result.append(msg)
+                continue
+            new_blocks: list[Any] = []
+            changed = False
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "image":
+                    new_blocks.append(TextBlock(text="[image removed for compaction]"))
+                    changed = True
+                else:
+                    new_blocks.append(block)
+            if changed:
+                result.append(Message(
+                    role=msg.role,
+                    content=new_blocks,
+                    id=msg.id,
+                    timestamp=msg.timestamp,
+                    metadata=msg.metadata,
+                ))
+            else:
+                result.append(msg)
+        elif isinstance(msg, dict):
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                result.append(msg)
+                continue
+            new_blocks_d: list[Any] = []
+            changed_d = False
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "image":
+                    new_blocks_d.append({"type": "text", "text": "[image removed for compaction]"})
+                    changed_d = True
+                else:
+                    new_blocks_d.append(block)
+            if changed_d:
+                new_msg = dict(msg)
+                new_msg["content"] = new_blocks_d
+                result.append(new_msg)
+            else:
+                result.append(msg)
+        else:
+            result.append(msg)
     return result
 
 

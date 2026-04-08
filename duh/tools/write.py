@@ -9,6 +9,9 @@ from typing import Any
 from duh.kernel.git_context import _run_git
 from duh.kernel.tool import ToolContext, ToolResult
 
+# Maximum content size for writing (50 MB).
+MAX_FILE_WRITE_BYTES = 50 * 1024 * 1024  # 50 MB
+
 
 class WriteTool:
     """Write content to a file. Creates parent directories if they don't exist."""
@@ -41,6 +44,15 @@ class WriteTool:
     async def call(self, input: dict[str, Any], context: ToolContext) -> ToolResult:
         file_path = input.get("file_path", "")
         content = input.get("content", "")
+
+        if len(content.encode("utf-8", errors="replace")) > MAX_FILE_WRITE_BYTES:
+            return ToolResult(
+                output=(
+                    f"Content too large ({len(content):,} chars, limit ~{MAX_FILE_WRITE_BYTES // 1024 // 1024}MB)."
+                    " Split into smaller writes."
+                ),
+                is_error=True,
+            )
 
         if not file_path:
             return ToolResult(output="file_path is required", is_error=True)

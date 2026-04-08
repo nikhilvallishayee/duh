@@ -21,6 +21,9 @@ from typing import Any
 
 from duh.kernel.messages import Message
 
+# Maximum session file size (64 MB). Matches Claude Code TS MAX_PERSISTED_SIZE.
+MAX_SESSION_BYTES = 64 * 1024 * 1024
+
 
 def _default_base_dir() -> Path:
     return Path.home() / ".config" / "duh" / "sessions"

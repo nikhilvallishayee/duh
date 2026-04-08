@@ -12,6 +12,10 @@ from typing import Any
 
 from duh.kernel.tool import MAX_TOOL_OUTPUT, ToolContext, ToolResult
 
+# Maximum file size for reading (50 MB). Files larger than this should
+# be read with offset/limit. Prevents OOM on binary blobs.
+MAX_FILE_READ_BYTES = 50 * 1024 * 1024  # 50 MB
+
 
 class ReadTool:
     """Read a file and return its contents with line numbers."""
@@ -69,6 +73,20 @@ class ReadTool:
         if not os.access(path, os.R_OK):
             return ToolResult(
                 output=f"Permission denied: cannot read {file_path}",
+                is_error=True,
+            )
+
+        # --- File size cap ---
+        try:
+            file_size = path.stat().st_size
+        except OSError:
+            file_size = 0
+        if file_size > MAX_FILE_READ_BYTES:
+            return ToolResult(
+                output=(
+                    f"File too large ({file_size:,} bytes, limit {MAX_FILE_READ_BYTES:,})."
+                    " Use offset and limit to read sections."
+                ),
                 is_error=True,
             )
 

@@ -83,6 +83,7 @@ class ToolContext:
     permissions: Any = None  # ApprovalGate adapter
     session_id: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    sandbox_policy: Any = None  # SandboxPolicy | None
 
 
 # ---------------------------------------------------------------------------

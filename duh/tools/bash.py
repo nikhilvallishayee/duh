@@ -22,6 +22,7 @@ from typing import Any
 
 from duh.kernel.tool import MAX_TOOL_OUTPUT, TOOL_TIMEOUTS, ToolContext, ToolResult
 from duh.tools.bash_security import classify_command
+from duh.adapters.sandbox.policy import SandboxCommand, detect_sandbox_type
 
 _DEFAULT_TIMEOUT = TOOL_TIMEOUTS.get("Bash", 300)  # from central config
 
@@ -144,7 +145,18 @@ class BashTool:
 
         cwd = context.cwd if context.cwd and context.cwd != "." else None
 
-        argv = build_shell_command(command, resolved_shell)
+        # --- Sandbox wrapping (when policy is set on context) ---
+        sandbox_cmd = None
+        if context.sandbox_policy is not None:
+            sandbox_type = detect_sandbox_type()
+            sandbox_cmd = SandboxCommand.build(
+                command=command,
+                policy=context.sandbox_policy,
+                sandbox_type=sandbox_type,
+            )
+            argv = sandbox_cmd.argv
+        else:
+            argv = build_shell_command(command, resolved_shell)
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -166,6 +178,10 @@ class BashTool:
             )
         except Exception as exc:
             return ToolResult(output=f"Error running command: {exc}", is_error=True)
+
+        # Clean up sandbox temp files
+        if sandbox_cmd is not None:
+            sandbox_cmd.cleanup()
 
         stdout_text = stdout.decode("utf-8", errors="replace") if stdout else ""
         stderr_text = stderr.decode("utf-8", errors="replace") if stderr else ""

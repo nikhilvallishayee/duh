@@ -117,6 +117,16 @@ def _create_transport(config: MCPServerConfig) -> Any | None:
         )
 
 
+# Session management constants (from Claude Code TS)
+MAX_SESSION_RETRIES = 1
+MAX_ERRORS_BEFORE_RECONNECT = 3
+
+
+def _is_session_expired(status_code: int, message: str) -> bool:
+    """Detect MCP session expiry from error response."""
+    return status_code == 404 and "session not found" in message.lower()
+
+
 # ---------------------------------------------------------------------------
 # MCPExecutor -- the ToolExecutor adapter
 # ---------------------------------------------------------------------------
@@ -145,6 +155,7 @@ class MCPExecutor:
         self._servers: dict[str, MCPServerConfig] = servers or {}
         self._connections: dict[str, MCPConnection] = {}
         self._tool_index: dict[str, MCPToolInfo] = {}
+        self._error_counts: dict[str, int] = {}  # server_name -> consecutive errors
 
     # -- Connection lifecycle -----------------------------------------------
 
@@ -347,12 +358,54 @@ class MCPExecutor:
                 f"MCP server '{info.server_name}' is not connected"
             )
 
-        try:
-            result = await conn.session.call_tool(info.name, arguments=input)
-        except Exception as exc:
-            raise RuntimeError(
-                f"MCP tool call failed ({tool_name}): {exc}"
-            ) from exc
+        retries = 0
+        while True:
+            try:
+                result = await conn.session.call_tool(info.name, arguments=input)
+                # Reset error counter on success
+                self._error_counts[info.server_name] = 0
+                break
+            except Exception as exc:
+                exc_str = str(exc)
+                status = getattr(exc, "status_code", getattr(exc, "code", 0))
+
+                # Track consecutive errors
+                count = self._error_counts.get(info.server_name, 0) + 1
+                self._error_counts[info.server_name] = count
+
+                # Session expiry: reconnect and retry once
+                if (_is_session_expired(status, exc_str)
+                        and retries < MAX_SESSION_RETRIES):
+                    retries += 1
+                    logger.info(
+                        "MCP session expired for %s, reconnecting...",
+                        info.server_name,
+                    )
+                    await self.disconnect(info.server_name)
+                    await self.connect(info.server_name)
+                    conn = self._connections.get(info.server_name)
+                    if conn is None or conn.session is None:
+                        raise RuntimeError(
+                            f"Reconnection to '{info.server_name}' failed"
+                        ) from exc
+                    continue
+
+                # Too many consecutive errors: reconnect
+                if count >= MAX_ERRORS_BEFORE_RECONNECT:
+                    logger.warning(
+                        "MCP server %s: %d consecutive errors, reconnecting",
+                        info.server_name, count,
+                    )
+                    self._error_counts[info.server_name] = 0
+                    await self.disconnect(info.server_name)
+                    try:
+                        await self.connect(info.server_name)
+                    except Exception:
+                        pass  # reconnect is best-effort
+
+                raise RuntimeError(
+                    f"MCP tool call failed ({tool_name}): {exc}"
+                ) from exc
 
         # Extract content from MCP result
         if hasattr(result, "content") and result.content:

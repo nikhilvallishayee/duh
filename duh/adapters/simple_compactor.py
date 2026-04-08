@@ -403,6 +403,84 @@ def strip_images(messages: list[Any]) -> list[Any]:
     return result
 
 
+# ---------------------------------------------------------------------------
+# Post-compact restoration constants
+# ---------------------------------------------------------------------------
+
+POST_COMPACT_MAX_FILES: int = 5
+POST_COMPACT_TOKEN_BUDGET: int = 50_000
+
+
+# ---------------------------------------------------------------------------
+# Post-compact context restoration
+# ---------------------------------------------------------------------------
+
+def restore_context(
+    messages: list[Any],
+    *,
+    file_tracker: Any | None = None,
+    skill_context: str | None = None,
+    token_budget: int = POST_COMPACT_TOKEN_BUDGET,
+) -> list[Any]:
+    """Re-inject recently read files and active skills after compaction.
+
+    After compaction drops older messages, important context (which files
+    the agent has been reading, which skills are active) is lost.  This
+    function appends a system message with that context, respecting the
+    token budget.
+
+    Args:
+        messages: The compacted message list.
+        file_tracker: A FileTracker instance (or None).
+        skill_context: Text description of active skills (or None/empty).
+        token_budget: Max estimated tokens for the restoration message.
+
+    Returns a new list with the restoration message appended (if there is
+    any context to restore).  Does not mutate the input.
+    """
+    parts: list[str] = []
+
+    # --- Recent files ---
+    if file_tracker is not None:
+        ops = file_tracker.ops if hasattr(file_tracker, "ops") else []
+        if ops:
+            # Collect unique file paths, most recent first
+            seen: set[str] = set()
+            recent_paths: list[str] = []
+            for op in reversed(ops):
+                path = op.path if hasattr(op, "path") else str(op)
+                if path not in seen:
+                    seen.add(path)
+                    recent_paths.append(path)
+                if len(recent_paths) >= POST_COMPACT_MAX_FILES:
+                    break
+
+            if recent_paths:
+                file_section = "Recently accessed files:\n"
+                file_section += "\n".join(f"- {p}" for p in recent_paths)
+                parts.append(file_section)
+
+    # --- Active skills ---
+    if skill_context and skill_context.strip():
+        parts.append(f"Active context:\n{skill_context.strip()}")
+
+    if not parts:
+        return list(messages)
+
+    # Combine and enforce token budget
+    combined = "\n\n".join(parts)
+    max_chars = token_budget * 4  # rough inverse of chars/4 token estimate
+    if len(combined) > max_chars:
+        combined = combined[:max_chars - 3] + "..."
+
+    restore_msg = Message(
+        role="system",
+        content=f"[Post-compaction context restoration]\n{combined}",
+    )
+
+    return list(messages) + [restore_msg]
+
+
 def _get_role(msg: Any) -> str:
     """Extract role from a Message or dict."""
     if isinstance(msg, Message):

@@ -43,14 +43,43 @@ logger = logging.getLogger(__name__)
 
 
 class HookEvent(str, Enum):
-    """Lifecycle events that can trigger hooks."""
+    """Lifecycle events that can trigger hooks.
 
+    Original 6 events from Phase 1, plus 22 new events added in Phase 2
+    to match the Claude Code TS hook surface area.
+    """
+
+    # --- Original 6 ---
     PRE_TOOL_USE = "PreToolUse"
     POST_TOOL_USE = "PostToolUse"
     SESSION_START = "SessionStart"
     SESSION_END = "SessionEnd"
     NOTIFICATION = "Notification"
     STOP = "Stop"
+
+    # --- Phase 2: 22 new events ---
+    POST_TOOL_USE_FAILURE = "PostToolUseFailure"
+    SUBAGENT_START = "SubagentStart"
+    SUBAGENT_STOP = "SubagentStop"
+    TASK_CREATED = "TaskCreated"
+    TASK_COMPLETED = "TaskCompleted"
+    CONFIG_CHANGE = "ConfigChange"
+    CWD_CHANGED = "CwdChanged"
+    FILE_CHANGED = "FileChanged"
+    INSTRUCTIONS_LOADED = "InstructionsLoaded"
+    USER_PROMPT_SUBMIT = "UserPromptSubmit"
+    PERMISSION_REQUEST = "PermissionRequest"
+    PERMISSION_DENIED = "PermissionDenied"
+    PRE_COMPACT = "PreCompact"
+    POST_COMPACT = "PostCompact"
+    ELICITATION = "Elicitation"
+    ELICITATION_RESULT = "ElicitationResult"
+    STATUS_LINE = "StatusLine"
+    FILE_SUGGESTION = "FileSuggestion"
+    WORKTREE_CREATE = "WorktreeCreate"
+    WORKTREE_REMOVE = "WorktreeRemove"
+    SETUP = "Setup"
+    TEAMMATE_IDLE = "TeammateIdle"
 
 
 class HookType(str, Enum):

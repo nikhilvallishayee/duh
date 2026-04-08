@@ -43,6 +43,17 @@ def _is_fallback_error(error_text: str) -> bool:
     return any(trigger in lower for trigger in _FALLBACK_TRIGGERS)
 
 
+MAX_PTL_RETRIES = 3
+
+_PTL_TRIGGERS = ("prompt is too long", "prompt_too_long", "prompttoolong", "context length exceeded")
+
+
+def _is_ptl_error(error_text: str) -> bool:
+    """Return True if error_text indicates a prompt-too-long condition."""
+    lower = error_text.lower()
+    return any(trigger in lower for trigger in _PTL_TRIGGERS)
+
+
 @dataclass
 class EngineConfig:
     """Configuration for an Engine session."""
@@ -237,69 +248,103 @@ class Engine:
         if self._slog:
             self._slog.model_request(model=effective_model, turn=self._turn_count)
 
-        async for event in query(
-            messages=self._messages,
-            system_prompt=self._config.system_prompt,
-            deps=self._deps,
-            tools=self._config.tools,
-            max_turns=max_turns or self._config.max_turns,
-            model=effective_model,
-            thinking=self._config.thinking,
-            tool_choice=self._config.tool_choice,
-        ):
-            event_type = event.get("type", "")
+        # --- Query with PTL retry ---
+        ptl_retries = 0
+        while True:
+            ptl_detected = False
 
-            # Track assistant messages in history and count output tokens
-            if event_type == "assistant":
-                msg = event.get("message")
-                if isinstance(msg, Message):
-                    self._messages.append(msg)
-                    self._total_output_tokens += count_tokens(msg.text)
+            async for event in query(
+                messages=self._messages,
+                system_prompt=self._config.system_prompt,
+                deps=self._deps,
+                tools=self._config.tools,
+                max_turns=max_turns or self._config.max_turns,
+                model=effective_model,
+                thinking=self._config.thinking,
+                tool_choice=self._config.tool_choice,
+            ):
+                event_type = event.get("type", "")
+
+                # Track assistant messages in history and count output tokens
+                if event_type == "assistant":
+                    msg = event.get("message")
+                    if isinstance(msg, Message):
+                        self._messages.append(msg)
+                        self._total_output_tokens += count_tokens(msg.text)
+                    if self._slog:
+                        self._slog.model_response(model=effective_model, turn=self._turn_count)
+
+                # Structured logging for tool & error events
                 if self._slog:
-                    self._slog.model_response(model=effective_model, turn=self._turn_count)
+                    if event_type == "tool_use":
+                        self._slog.tool_call(
+                            name=event.get("name", ""),
+                            input=event.get("input"),
+                        )
+                    elif event_type == "tool_result":
+                        self._slog.tool_result(
+                            name=event.get("name", ""),
+                            output=str(event.get("output", "")),
+                            is_error=event.get("is_error", False),
+                        )
+                    elif event_type == "error":
+                        self._slog.error(error=event.get("error", ""))
 
-            # Structured logging for tool & error events
-            if self._slog:
-                if event_type == "tool_use":
-                    self._slog.tool_call(
-                        name=event.get("name", ""),
-                        input=event.get("input"),
-                    )
-                elif event_type == "tool_result":
-                    self._slog.tool_result(
-                        name=event.get("name", ""),
-                        output=str(event.get("output", "")),
-                        is_error=event.get("is_error", False),
-                    )
-                elif event_type == "error":
-                    self._slog.error(error=event.get("error", ""))
+                # Detect PTL errors for retry
+                if event_type == "error":
+                    error_text = event.get("error", "")
+                    if (_is_ptl_error(error_text)
+                            and ptl_retries < MAX_PTL_RETRIES
+                            and self._deps.compact):
+                        ptl_detected = True
+                        continue  # don't yield PTL error, we'll retry
 
-            # Detect fallback-eligible errors
-            if fallback_model and event_type == "error":
-                error_text = event.get("error", "")
-                if _is_fallback_error(error_text):
-                    should_fallback = True
-                    # Don't yield this error — we'll retry with fallback
+                # Detect fallback-eligible errors
+                if fallback_model and event_type == "error":
+                    error_text = event.get("error", "")
+                    if _is_fallback_error(error_text):
+                        should_fallback = True
+                        # Don't yield this error — we'll retry with fallback
+                        continue
+
+                # Don't yield done if we're about to PTL-retry
+                if event_type == "done" and ptl_detected:
                     continue
 
-            yield event
+                yield event
 
-            # --- Budget enforcement after each turn ---
-            if event_type == "done":
-                budget_events = self._check_budget(effective_model)
-                for be in budget_events:
-                    yield be
-                if any(be["type"] == "budget_exceeded" for be in budget_events):
-                    return
+                # --- Budget enforcement after each turn ---
+                if event_type == "done":
+                    budget_events = self._check_budget(effective_model)
+                    for be in budget_events:
+                        yield be
+                    if any(be["type"] == "budget_exceeded" for be in budget_events):
+                        return
 
-            # Auto-save session after each turn completes
-            if event_type == "done" and self._session_store:
-                try:
-                    await self._session_store.save(
-                        self._session_id, self._messages,
-                    )
-                except Exception:
-                    logger.debug("Session auto-save failed", exc_info=True)
+                # Auto-save session after each turn completes
+                if event_type == "done" and self._session_store:
+                    try:
+                        await self._session_store.save(
+                            self._session_id, self._messages,
+                        )
+                    except Exception:
+                        logger.debug("Session auto-save failed", exc_info=True)
+
+            if ptl_detected:
+                ptl_retries += 1
+                logger.info(
+                    "Prompt too long (retry %d/%d), compacting...",
+                    ptl_retries, MAX_PTL_RETRIES,
+                )
+                context_limit = get_context_limit(effective_model)
+                # Compact to 70% of limit to leave headroom
+                target = int(context_limit * 0.70)
+                self._messages = await self._deps.compact(
+                    self._messages, token_limit=target,
+                )
+                continue  # retry the query
+
+            break  # Query completed normally
 
         # --- Fallback retry (once only) ---
         if should_fallback:

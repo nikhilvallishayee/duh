@@ -194,3 +194,34 @@ class TestStripImages:
         content = result[0]["content"]
         texts = [b.get("text", "") for b in content]
         assert any("[image removed for compaction]" in t for t in texts)
+
+
+class TestCompactWithImages:
+    """compact() should strip images before summarizing."""
+
+    async def test_compact_strips_images(self):
+        c = SimpleCompactor(bytes_per_token=1, min_keep=1)
+        msgs = [
+            Message(
+                role="user",
+                content=[
+                    TextBlock(text="Look at this:"),
+                    {"type": "image", "source": {"type": "base64", "data": "x" * 10000}},
+                ],
+                id="m0", timestamp="t0",
+            ),
+            _msg(content="b" * 50, id="m1"),
+            _msg(content="c" * 50, id="m2"),
+        ]
+        # Token limit forces compaction. The image should be stripped
+        # so the summary doesn't include the base64 data.
+        result = await c.compact(msgs, token_limit=80)
+        # Verify no image blocks survive in the result
+        for msg in result:
+            content = msg.content if isinstance(msg, Message) else msg.get("content", "")
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict):
+                        assert block.get("type") != "image", (
+                            "Image block survived compaction"
+                        )

@@ -75,8 +75,11 @@ class SimpleCompactor:
         if not messages:
             return []
 
-        # Step 0: remove duplicate file reads and redundant tool results
+        # Step 0a: remove duplicate file reads and redundant tool results
         messages = _deduplicate_messages(messages)
+
+        # Step 0b: strip image blocks to prevent prompt-too-long during summary
+        messages = strip_images(messages)
 
         # Partition: system vs. conversation
         system_msgs: list[Any] = []

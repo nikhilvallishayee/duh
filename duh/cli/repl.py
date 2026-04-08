@@ -43,7 +43,7 @@ from typing import Any
 
 from duh.adapters.anthropic import AnthropicProvider
 from duh.adapters.native_executor import NativeExecutor
-from duh.adapters.approvers import AutoApprover, InteractiveApprover
+from duh.adapters.approvers import ApprovalMode, AutoApprover, InteractiveApprover, TieredApprover
 from duh.cli.runner import BRIEF_INSTRUCTION, SYSTEM_PROMPT, _interpret_error
 from duh.kernel.deps import Deps
 from duh.kernel.engine import Engine, EngineConfig
@@ -273,6 +273,7 @@ SLASH_COMMANDS = {
     "/health": "Run provider and MCP health checks",
     "/clear": "Clear conversation history",
     "/compact": "Compact older messages",
+    "/snapshot": "Ghost snapshot (/snapshot, /snapshot apply, /snapshot discard)",
     "/exit": "Exit the REPL",
 }
 
@@ -701,6 +702,10 @@ def _handle_slash(
             sys.stdout.write("  No compactor configured.\n")
         return True, model
 
+    if name == "/snapshot":
+        # Handled by REPL loop (see run_repl) -- return sentinel
+        return True, f"\x00snapshot\x00{arg.strip()}"
+
     if name == "/exit":
         return False, model
 
@@ -949,7 +954,16 @@ async def run_repl(args: argparse.Namespace) -> int:
             break
 
     executor = NativeExecutor(tools=tools, cwd=cwd)
-    approver: Any = AutoApprover() if args.dangerously_skip_permissions else InteractiveApprover()
+
+    # --- Approval mode selection ---
+    approval_mode_str = getattr(args, "approval_mode", None)
+    if approval_mode_str:
+        mode = ApprovalMode(approval_mode_str)
+        approver: Any = TieredApprover(mode=mode, cwd=cwd)
+    elif args.dangerously_skip_permissions:
+        approver = AutoApprover()
+    else:
+        approver = InteractiveApprover()
 
     # --- Wire compactor ---
     from duh.adapters.simple_compactor import SimpleCompactor

@@ -42,6 +42,7 @@ class Config:
     max_turns: int = 10
     max_cost: float | None = None
     system_prompt: str = ""
+    approval_mode: str = ""
     permissions: dict[str, Any] = field(default_factory=dict)
     hooks: dict[str, Any] = field(default_factory=dict)
     mcp_servers: dict[str, Any] = field(default_factory=dict)
@@ -101,6 +102,8 @@ def _merge_into(config: Config, data: dict[str, Any]) -> None:
             pass
     if "system_prompt" in data and data["system_prompt"]:
         config.system_prompt = str(data["system_prompt"])
+    if "approval_mode" in data and data["approval_mode"]:
+        config.approval_mode = str(data["approval_mode"])
     if "permissions" in data and isinstance(data["permissions"], dict):
         config.permissions.update(data["permissions"])
     if "hooks" in data and isinstance(data["hooks"], dict):

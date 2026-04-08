@@ -38,6 +38,11 @@ def build_parser() -> argparse.ArgumentParser:
                         default="text", help="Input format (default: text).")
     parser.add_argument("--dangerously-skip-permissions", action="store_true",
                         default=False, help="Auto-approve all tool calls.")
+    parser.add_argument("--approval-mode", type=str, default=None,
+                        choices=["suggest", "auto-edit", "full-auto"],
+                        help="Approval mode: suggest (reads auto-approved), "
+                             "auto-edit (reads+writes auto-approved), "
+                             "full-auto (all auto-approved).")
     parser.add_argument("--permission-mode", type=str, default=None,
                         choices=["default", "acceptEdits", "plan", "bypassPermissions", "dontAsk", "auto"],
                         help="Permission mode (SDK compat). bypassPermissions = auto-approve.")
@@ -88,4 +93,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", required=False)
     subparsers.add_parser("doctor", help="Run diagnostics and health checks.")
+
+    bridge_parser = subparsers.add_parser("bridge", help="Start the remote bridge server.")
+    bridge_sub = bridge_parser.add_subparsers(dest="bridge_command", required=True)
+    start_parser = bridge_sub.add_parser("start", help="Start the WebSocket bridge server.")
+    start_parser.add_argument("--host", type=str, default="localhost",
+                              help="Host to bind to (default: localhost).")
+    start_parser.add_argument("--port", type=int, default=8765,
+                              help="Port to bind to (default: 8765).")
+    start_parser.add_argument("--token", type=str, default="",
+                              help="Bearer token for authentication (empty = open).")
+
     return parser

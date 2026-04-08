@@ -341,19 +341,40 @@ PS_MODERATE_PATTERNS: list[_DangerousPattern] = [
 def classify_command(cmd: str, *, shell: str = "bash") -> Classification:
     """Classify a shell command by risk level.
 
+    Uses the AST parser for structural analysis (pipes, &&, ||, ;,
+    subshells).  Falls back to regex-only if AST parsing fails.
+
     Parameters
     ----------
     cmd:
         The raw command string to classify.
     shell:
         Which shell the command targets: ``"bash"`` (default) or
-        ``"powershell"``.  When ``"powershell"`` is given, PowerShell-specific
-        patterns are checked **in addition** to the common Unix patterns
-        (since many PS environments also expose Unix aliases).
+        ``"powershell"``.
 
     Returns a dict with:
         risk: "safe" | "moderate" | "dangerous"
         reason: human-readable explanation (empty string for safe commands)
+    """
+    if not cmd or not cmd.strip():
+        return {"risk": "safe", "reason": ""}
+
+    # Try AST-based structural classification first
+    try:
+        from duh.tools.bash_ast import ast_classify
+        return ast_classify(cmd, shell=shell)
+    except Exception:
+        pass
+
+    # Fallback: flat regex scan over the entire command string
+    return _regex_classify(cmd, shell=shell)
+
+
+def _regex_classify(cmd: str, *, shell: str = "bash") -> Classification:
+    """Classify a command using regex patterns only (no structural analysis).
+
+    This is the original classification logic, now extracted as a fallback
+    for when the AST parser is unavailable or fails.
     """
     if not cmd or not cmd.strip():
         return {"risk": "safe", "reason": ""}

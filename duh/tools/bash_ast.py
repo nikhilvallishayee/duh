@@ -308,7 +308,7 @@ def ast_classify(cmd: str, *, shell: str = "bash") -> "Classification":
     Returns the highest-risk classification found across all segments.
     If tokenization fails (e.g., fanout cap exceeded), returns dangerous.
     """
-    from duh.tools.bash_security import classify_command as _regex_classify
+    from duh.tools.bash_security import _regex_classify
 
     if not cmd or not cmd.strip():
         return {"risk": "safe", "reason": ""}

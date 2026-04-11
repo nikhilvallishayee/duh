@@ -23,6 +23,21 @@ from enum import Enum
 from typing import Any
 
 
+def deduplicate_paths(paths: list[str]) -> list[str]:
+    """Deduplicate a list of paths while preserving order.
+
+    Used by both Seatbelt and Landlock adapters when merging
+    policy paths with always-writable defaults.
+    """
+    seen: set[str] = set()
+    result: list[str] = []
+    for p in paths:
+        if p not in seen:
+            seen.add(p)
+            result.append(p)
+    return result
+
+
 class SandboxType(Enum):
     """Supported sandboxing backends."""
     NONE = "none"

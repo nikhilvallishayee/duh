@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from duh.adapters.sandbox.policy import SandboxPolicy
+from duh.adapters.sandbox.policy import SandboxPolicy, deduplicate_paths
 
 
 def _home_duh_path() -> str:
@@ -77,13 +77,7 @@ def generate_profile(policy: SandboxPolicy) -> str:
     ]
 
     write_paths = list(policy.writable_paths) + always_writable
-    # Deduplicate while preserving order
-    seen: set[str] = set()
-    unique_write_paths: list[str] = []
-    for p in write_paths:
-        if p not in seen:
-            seen.add(p)
-            unique_write_paths.append(p)
+    unique_write_paths = deduplicate_paths(write_paths)
 
     if unique_write_paths:
         lines.append(";; File write access (restricted to specific paths)")

@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from duh.adapters.sandbox.policy import SandboxPolicy
+from duh.adapters.sandbox.policy import SandboxPolicy, deduplicate_paths
 
 logger = logging.getLogger(__name__)
 
@@ -97,13 +97,7 @@ def build_ruleset(policy: SandboxPolicy) -> LandlockRuleset:
     always_writable = ["/tmp", "/var/tmp", home_duh]
 
     write_paths = list(policy.writable_paths) + always_writable
-    # Deduplicate
-    seen: set[str] = set()
-    unique: list[str] = []
-    for p in write_paths:
-        if p not in seen:
-            seen.add(p)
-            unique.append(p)
+    unique = deduplicate_paths(write_paths)
 
     return LandlockRuleset(
         read_paths=list(policy.readable_paths),

@@ -308,7 +308,7 @@ def ast_classify(cmd: str, *, shell: str = "bash") -> "Classification":
     Returns the highest-risk classification found across all segments.
     If tokenization fails (e.g., fanout cap exceeded), returns dangerous.
     """
-    from duh.tools.bash_security import _regex_classify
+    from duh.tools.bash_security import _regex_classify, is_env_var_safe
 
     if not cmd or not cmd.strip():
         return {"risk": "safe", "reason": ""}
@@ -344,7 +344,6 @@ def ast_classify(cmd: str, *, shell: str = "bash") -> "Classification":
             continue
 
         # Check for env var assignments (VAR=value cmd) — catch binary hijacks
-        from duh.tools.bash_security import is_env_var_safe
         _env_assign = re.match(r"^(\w+)=", inner)
         if _env_assign and not is_env_var_safe(_env_assign.group(1)):
             var_name = _env_assign.group(1)

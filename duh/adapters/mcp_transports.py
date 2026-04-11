@@ -101,8 +101,6 @@ class SSETransport:
         self._client: Any = None  # httpx.AsyncClient
         self._message_endpoint: str = ""
         self._sse_task: asyncio.Task[None] | None = None
-        self._response_queues: dict[int | str, asyncio.Queue[dict[str, Any]]] = {}
-        self._next_id = 1
 
     @property
     def connected(self) -> bool:

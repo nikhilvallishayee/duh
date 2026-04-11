@@ -52,5 +52,8 @@ class Deps:
     # Optional: how to compact messages when context is too large
     compact: CompactFn | None = None
 
+    # Optional: hook registry for lifecycle event emission
+    hook_registry: Any = None  # HookRegistry | None
+
     # Optional: UUID generator (injectable for deterministic tests)
     uuid: UuidFn = field(default_factory=lambda: lambda: str(_uuid.uuid4()))

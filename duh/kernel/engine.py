@@ -20,6 +20,7 @@ import uuid as _uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncGenerator
 
+from duh.hooks import HookEvent, execute_hooks
 from duh.kernel.deps import Deps
 from duh.kernel.loop import query
 from duh.kernel.messages import Message, UserMessage
@@ -236,9 +237,29 @@ class Engine:
                     "for %s (limit %d)",
                     input_estimate, threshold, effective_model, context_limit,
                 )
+                # Emit PRE_COMPACT hook
+                if self._deps.hook_registry:
+                    await execute_hooks(
+                        self._deps.hook_registry,
+                        HookEvent.PRE_COMPACT,
+                        {"message_count": len(self._messages), "token_estimate": input_estimate},
+                    )
+
+                count_before = len(self._messages)
                 self._messages = await self._deps.compact(
                     self._messages, token_limit=threshold,
                 )
+
+                # Emit POST_COMPACT hook
+                if self._deps.hook_registry:
+                    await execute_hooks(
+                        self._deps.hook_registry,
+                        HookEvent.POST_COMPACT,
+                        {
+                            "message_count_before": count_before,
+                            "message_count_after": len(self._messages),
+                        },
+                    )
 
         # Run the query loop
         effective_model = model or self._config.model
@@ -339,9 +360,31 @@ class Engine:
                 context_limit = get_context_limit(effective_model)
                 # Compact to 70% of limit to leave headroom
                 target = int(context_limit * 0.70)
+
+                # Emit PRE_COMPACT hook
+                if self._deps.hook_registry:
+                    await execute_hooks(
+                        self._deps.hook_registry,
+                        HookEvent.PRE_COMPACT,
+                        {"message_count": len(self._messages), "token_estimate": input_estimate},
+                    )
+
+                count_before = len(self._messages)
                 self._messages = await self._deps.compact(
                     self._messages, token_limit=target,
                 )
+
+                # Emit POST_COMPACT hook
+                if self._deps.hook_registry:
+                    await execute_hooks(
+                        self._deps.hook_registry,
+                        HookEvent.POST_COMPACT,
+                        {
+                            "message_count_before": count_before,
+                            "message_count_after": len(self._messages),
+                        },
+                    )
+
                 continue  # retry the query
 
             break  # Query completed normally

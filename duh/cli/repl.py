@@ -45,6 +45,7 @@ from duh.adapters.anthropic import AnthropicProvider
 from duh.adapters.native_executor import NativeExecutor
 from duh.adapters.approvers import ApprovalMode, AutoApprover, InteractiveApprover, TieredApprover
 from duh.cli.runner import BRIEF_INSTRUCTION, SYSTEM_PROMPT, _interpret_error
+from duh.hooks import HookEvent, HookRegistry, execute_hooks
 from duh.kernel.deps import Deps
 from duh.kernel.engine import Engine, EngineConfig
 from duh.kernel.messages import Message
@@ -979,11 +980,15 @@ async def run_repl(args: argparse.Namespace) -> int:
     from duh.adapters.file_store import FileStore
     store = FileStore()
 
+    # --- Wire hook registry for lifecycle event emission ---
+    _hook_registry = HookRegistry()
+
     deps = Deps(
         call_model=call_model,
         run_tool=executor.run,
         approve=approver.check,
         compact=compactor.compact,
+        hook_registry=_hook_registry,
     )
     # Resolve max_cost: CLI flag > env var > None
     max_cost = getattr(args, "max_cost", None)
@@ -1129,6 +1134,22 @@ async def run_repl(args: argparse.Namespace) -> int:
 
         # Show status bar before each turn (model + turn count)
         renderer.status_bar(model, engine.turn_count + 1)
+
+        # Emit STATUS_LINE hook
+        if _hook_registry:
+            await execute_hooks(
+                _hook_registry,
+                HookEvent.STATUS_LINE,
+                {"model": model, "turn": engine.turn_count + 1},
+            )
+
+        # Emit USER_PROMPT_SUBMIT hook
+        if _hook_registry:
+            await execute_hooks(
+                _hook_registry,
+                HookEvent.USER_PROMPT_SUBMIT,
+                {"prompt": effective_input, "session_id": engine.session_id},
+            )
 
         # --- QueryGuard: reserve slot before dispatching ---
         try:

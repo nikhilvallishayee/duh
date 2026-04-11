@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator
 
+from duh.hooks import HookEvent, execute_hooks
 from duh.kernel.deps import Deps
 from duh.kernel.messages import (
     Message,
@@ -187,9 +188,28 @@ async def query(
 
             # Check approval
             if deps.approve:
+                # Emit PERMISSION_REQUEST hook
+                if deps.hook_registry:
+                    await execute_hooks(
+                        deps.hook_registry,
+                        HookEvent.PERMISSION_REQUEST,
+                        {"tool_name": tool_name, "input": tool_input},
+                        matcher_value=tool_name,
+                    )
+
                 approval = await deps.approve(tool_name, tool_input)
                 if not approval.get("allowed", True):
                     reason = approval.get("reason", "Permission denied")
+
+                    # Emit PERMISSION_DENIED hook
+                    if deps.hook_registry:
+                        await execute_hooks(
+                            deps.hook_registry,
+                            HookEvent.PERMISSION_DENIED,
+                            {"tool_name": tool_name, "input": tool_input, "reason": reason},
+                            matcher_value=tool_name,
+                        )
+
                     result = ToolResultBlock(
                         tool_use_id=tool_id,
                         content=f"Tool use denied: {reason}",
@@ -212,6 +232,14 @@ async def query(
                         content=result_text,
                     )
                 except Exception as e:
+                    # Emit POST_TOOL_USE_FAILURE hook
+                    if deps.hook_registry:
+                        await execute_hooks(
+                            deps.hook_registry,
+                            HookEvent.POST_TOOL_USE_FAILURE,
+                            {"tool_name": tool_name, "error": str(e)},
+                            matcher_value=tool_name,
+                        )
                     result = ToolResultBlock(
                         tool_use_id=tool_id,
                         content=f"Tool error: {e}",

@@ -49,6 +49,7 @@ from duh.kernel.deps import Deps
 from duh.kernel.engine import Engine, EngineConfig
 from duh.kernel.messages import Message
 from duh.kernel.plan_mode import PlanMode
+from duh.kernel.query_guard import QueryGuard
 from duh.tools.registry import get_all_tools
 
 logger = logging.getLogger("duh")
@@ -908,6 +909,11 @@ async def run_repl(args: argparse.Namespace) -> int:
         sys.stderr.write(f"Error: Unknown provider: {provider_name}\n")
         return 1
 
+    # --- Pre-warm the model connection in background ---
+    import asyncio
+    from duh.cli.prewarm import prewarm_connection
+    _prewarm_task = asyncio.ensure_future(prewarm_connection(call_model))
+
     cwd = os.getcwd()
     tools = list(get_all_tools())
 
@@ -1005,6 +1011,7 @@ async def run_repl(args: argparse.Namespace) -> int:
 
     engine = Engine(deps=deps, config=engine_config, session_store=store,
                     structured_logger=structured_logger)
+    _query_guard = QueryGuard()
     _plan_mode = PlanMode(engine)
 
     # --- Load readline history & set up tab completion ---
@@ -1123,48 +1130,70 @@ async def run_repl(args: argparse.Namespace) -> int:
         # Show status bar before each turn (model + turn count)
         renderer.status_bar(model, engine.turn_count + 1)
 
-        # Run the prompt through the engine
-        async for event in engine.run(effective_input):
-            event_type = event.get("type", "")
+        # --- QueryGuard: reserve slot before dispatching ---
+        try:
+            _qg_gen = _query_guard.reserve()
+        except RuntimeError:
+            renderer.error("A query is already in progress.")
+            continue
 
-            if event_type == "text_delta":
-                renderer.text_delta(event.get("text", ""))
+        try:
+            _qg_started = _query_guard.try_start(_qg_gen)
+            if _qg_started is None:
+                renderer.error("Query generation became stale.")
+                continue
 
-            elif event_type == "thinking_delta":
-                renderer.thinking_delta(event.get("text", ""))
+            # Run the prompt through the engine
+            async for event in engine.run(effective_input):
+                event_type = event.get("type", "")
 
-            elif event_type == "tool_use":
-                name = event.get("name", "?")
-                inp = event.get("input", {})
-                renderer.tool_use(name, inp)
+                if event_type == "text_delta":
+                    renderer.text_delta(event.get("text", ""))
 
-            elif event_type == "tool_result":
-                renderer.tool_result(
-                    str(event.get("output", "")),
-                    bool(event.get("is_error")),
-                )
+                elif event_type == "thinking_delta":
+                    renderer.thinking_delta(event.get("text", ""))
 
-            elif event_type == "assistant":
-                msg = event.get("message")
-                if isinstance(msg, Message) and msg.metadata.get("is_error"):
-                    hint = _interpret_error(msg.text)
+                elif event_type == "tool_use":
+                    name = event.get("name", "?")
+                    inp = event.get("input", {})
+                    renderer.tool_use(name, inp)
+
+                elif event_type == "tool_result":
+                    renderer.tool_result(
+                        str(event.get("output", "")),
+                        bool(event.get("is_error")),
+                    )
+
+                elif event_type == "assistant":
+                    msg = event.get("message")
+                    if isinstance(msg, Message) and msg.metadata.get("is_error"):
+                        hint = _interpret_error(msg.text)
+                        renderer.error(hint)
+
+                elif event_type == "error":
+                    hint = _interpret_error(event.get("error", "unknown"))
                     renderer.error(hint)
 
-            elif event_type == "error":
-                hint = _interpret_error(event.get("error", "unknown"))
-                renderer.error(hint)
+                elif event_type == "budget_warning":
+                    # Display budget warnings in yellow
+                    sys.stderr.write(
+                        f"\033[33mWarning: {event.get('message', '')}\033[0m\n"
+                    )
 
-            elif event_type == "budget_warning":
-                # Display budget warnings in yellow
-                sys.stderr.write(
-                    f"\033[33mWarning: {event.get('message', '')}\033[0m\n"
-                )
+                elif event_type == "budget_exceeded":
+                    # Display budget exceeded in bold yellow
+                    sys.stderr.write(
+                        f"\033[1;33m{event.get('message', '')}\033[0m\n"
+                    )
 
-            elif event_type == "budget_exceeded":
-                # Display budget exceeded in bold yellow
-                sys.stderr.write(
-                    f"\033[1;33m{event.get('message', '')}\033[0m\n"
-                )
+        except (KeyboardInterrupt, EOFError):
+            # User aborted mid-query
+            _query_guard.force_end()
+            sys.stdout.write("\n  (query aborted)\n")
+            continue
+        finally:
+            # Always return to idle
+            _query_guard.end(_qg_gen)
 
         # Re-render accumulated text as Rich Markdown (no-op for plain)
         renderer.flush_response()

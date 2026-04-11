@@ -162,6 +162,10 @@ def strip_wrappers(cmd: str) -> str:
 # Regex to find quote boundaries (single, double, escaped chars)
 _QUOTE_RE = re.compile(r"""(?:'[^']*'|"(?:[^"\\]|\\.)*"|\\.)""")
 
+# Regex to split on shell operators: &&, ||, |, ;
+# Order matters: && and || must be matched before | alone.
+_OPERATOR_RE = re.compile(r"\s*(?:&&|\|\||\||;)\s*")
+
 
 def _mask_quotes(cmd: str) -> tuple[str, str]:
     """Replace quoted strings with placeholders so operators inside quotes
@@ -257,11 +261,7 @@ def tokenize(cmd: str) -> list[Segment]:
     # Build the masked version without subshells for splitting
     masked_for_split, _ = _mask_quotes(cmd_no_sub)
 
-    # Split on operators: &&, ||, |, ;
-    # Order matters: && and || must be matched before | alone
-    _SPLIT_RE = re.compile(r"\s*(?:&&|\|\||\||;)\s*")
-
-    parts = _SPLIT_RE.split(masked_for_split)
+    parts = _OPERATOR_RE.split(masked_for_split)
 
     segments: list[Segment] = []
     for part in parts:

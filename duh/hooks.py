@@ -28,8 +28,10 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import json
 import logging
+import os
 import subprocess
 from dataclasses import dataclass
 from enum import Enum
@@ -123,6 +125,56 @@ class HookResult:
     exit_code: int | None = None
 
 
+@dataclass
+class HookResponse:
+    """Parsed response from a blocking hook.
+
+    Hooks can return JSON on stdout with these fields:
+    - decision: "continue" (default) | "block" | "allow"
+    - suppress_output: bool (default False) -- suppress tool output from model
+    - message: str -- explanation for block/allow decision
+    """
+
+    decision: str = "continue"  # "continue" | "block" | "allow"
+    suppress_output: bool = False
+    message: str = ""
+
+    @classmethod
+    def from_json(cls, raw: str) -> "HookResponse":
+        """Parse a HookResponse from JSON string.
+
+        Falls back to continue on parse error.
+        """
+        if not raw or not raw.strip():
+            return cls()
+        try:
+            data = json.loads(raw)
+            if not isinstance(data, dict):
+                return cls()
+            return cls(
+                decision=data.get("decision", "continue"),
+                suppress_output=data.get("suppress_output", False),
+                message=data.get("message", ""),
+            )
+        except (json.JSONDecodeError, TypeError):
+            return cls()
+
+
+# ---------------------------------------------------------------------------
+# Glob matching helper
+# ---------------------------------------------------------------------------
+
+
+def _glob_match(pattern: str, value: str) -> bool:
+    """Match a value against a glob pattern.
+
+    Empty pattern matches everything. Supports *, ?, [seq] via fnmatch.
+    """
+    if not pattern:
+        return True
+    return fnmatch.fnmatch(value, pattern)
+
+
 # ---------------------------------------------------------------------------
 # Hook executors (one per hook type)
 # ---------------------------------------------------------------------------
@@ -145,11 +197,17 @@ async def _execute_command_hook(
     json_input = json.dumps(data)
 
     try:
+        env = dict(os.environ)
+        env["TOOL_NAME"] = str(data.get("tool_name", ""))
+        env["TOOL_INPUT"] = json.dumps(data.get("input", {}), default=str)
+        env["SESSION_ID"] = str(data.get("session_id", ""))
+
         proc = await asyncio.create_subprocess_shell(
             hook.command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env=env,
         )
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
             proc.communicate(input=json_input.encode()),
@@ -288,7 +346,7 @@ class HookRegistry:
         return [
             h
             for h in hooks
-            if not h.matcher or h.matcher == matcher_value
+            if not h.matcher or _glob_match(h.matcher, matcher_value)
         ]
 
     def list_all(self) -> list[HookConfig]:
@@ -410,3 +468,49 @@ async def execute_hooks(
         )
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Blocking hook execution -- aggregate hook responses for veto semantics
+# ---------------------------------------------------------------------------
+
+
+async def execute_hooks_with_blocking(
+    registry: HookRegistry,
+    event: HookEvent,
+    data: dict[str, Any],
+    *,
+    matcher_value: str | None = None,
+    timeout: float | None = None,
+) -> HookResponse:
+    """Execute hooks and aggregate blocking decisions.
+
+    If any hook returns decision="block", the overall response is "block".
+    If all hooks return "continue" or "allow", the response is "continue"
+    or "allow" (first explicit allow wins).
+
+    Returns a HookResponse with the aggregate decision.
+    """
+    results = await execute_hooks(
+        registry, event, data,
+        matcher_value=matcher_value, timeout=timeout,
+    )
+
+    if not results:
+        return HookResponse(decision="continue")
+
+    # Check for any block decision
+    for result in results:
+        if result.success and result.output:
+            parsed = HookResponse.from_json(result.output)
+            if parsed.decision == "block":
+                return parsed
+
+    # Check for explicit allow
+    for result in results:
+        if result.success and result.output:
+            parsed = HookResponse.from_json(result.output)
+            if parsed.decision == "allow":
+                return parsed
+
+    return HookResponse(decision="continue")

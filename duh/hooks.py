@@ -130,6 +130,7 @@ class HookResult:
 
 async def _execute_command_hook(
     hook: HookConfig,
+    event: HookEvent,
     data: dict[str, Any],
     timeout: float,
 ) -> HookResult:
@@ -137,6 +138,8 @@ async def _execute_command_hook(
 
     The hook's JSON input is passed via stdin. Stdout and stderr are captured.
     Exit code 0 = success, non-zero = error.
+    The *event* parameter is accepted (but unused) so the signature matches
+    the dispatch table shared with _execute_function_hook.
     """
     name = hook.name or hook.command
     json_input = json.dumps(data)
@@ -235,9 +238,7 @@ async def _execute_function_hook(
 # ---------------------------------------------------------------------------
 
 _EXECUTORS = {
-    HookType.COMMAND: lambda hook, event, data, timeout: _execute_command_hook(
-        hook, data, timeout
-    ),
+    HookType.COMMAND: _execute_command_hook,
     HookType.FUNCTION: _execute_function_hook,
 }
 

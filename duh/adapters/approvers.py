@@ -203,9 +203,8 @@ class TieredApprover:
             }
 
         if tool_name in _COMMAND_TOOLS:
-            if self._mode == ApprovalMode.FULL_AUTO:
-                return {"allowed": True}
             # Both SUGGEST and AUTO_EDIT need approval for commands
+            # (FULL_AUTO already returned above)
             return {
                 "allowed": False,
                 "reason": (

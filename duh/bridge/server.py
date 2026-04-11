@@ -82,11 +82,18 @@ class BridgeServer:
     async def start(self) -> None:
         """Start the WebSocket server."""
         _require_websockets()
+        if not self._token:
+            logger.warning(
+                "Bridge server starting WITHOUT authentication token. "
+                "Anyone who can reach the port can control duh. "
+                "Set --token to require authentication."
+            )
         logger.info("Bridge server starting on %s:%d", self._host, self._port)
         self._server = await websockets.serve(
             self._handle_connection,
             self._host,
             self._port,
+            max_size=1_048_576,  # 1MB max message size (prevents DoS)
         )
         logger.info("Bridge server listening on ws://%s:%d", self._host, self._port)
 

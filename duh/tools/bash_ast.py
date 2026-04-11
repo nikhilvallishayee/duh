@@ -343,6 +343,13 @@ def ast_classify(cmd: str, *, shell: str = "bash") -> "Classification":
         if not inner.strip():
             continue
 
+        # Check for env var assignments (VAR=value cmd) — catch binary hijacks
+        from duh.tools.bash_security import is_env_var_safe
+        _env_assign = re.match(r"^(\w+)=", inner)
+        if _env_assign and not is_env_var_safe(_env_assign.group(1)):
+            var_name = _env_assign.group(1)
+            return {"risk": "dangerous", "reason": f"Binary hijack via {var_name}"}
+
         result = _regex_classify(inner, shell=shell)
         risk_level = _RISK_ORDER.get(result["risk"], 0)
 

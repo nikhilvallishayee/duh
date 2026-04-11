@@ -123,11 +123,14 @@ def decode_message(raw: str) -> BridgeMessage:
 # ---------------------------------------------------------------------------
 
 def validate_token(provided: str, expected: str) -> bool:
-    """Validate a bearer token.
+    """Validate a bearer token using constant-time comparison.
 
     If ``expected`` is empty, any token is accepted (open mode).
     Otherwise, the provided token must match exactly.
+    Uses hmac.compare_digest to prevent timing side-channel attacks.
     """
+    import hmac
+
     if not expected:
         return True
-    return provided == expected
+    return hmac.compare_digest(provided.encode(), expected.encode())

@@ -147,9 +147,8 @@ _LANDLOCK_WRAPPER_TEMPLATE = textwrap.dedent("""\
         if ruleset_fd < 0:
             errno = ctypes.get_errno()
             if errno == 38:  # ENOSYS
-                print("Landlock not available, running without sandbox", file=sys.stderr)
-                os.execvp("bash", ["bash", "-c", command])
-                return
+                print("SANDBOX_UNAVAILABLE", file=sys.stderr)
+                sys.exit(198)  # Fail-closed: do NOT run unsandboxed
             raise OSError(f"landlock_create_ruleset failed: errno {errno}")
 
         # Add rules for each path
@@ -173,7 +172,8 @@ _LANDLOCK_WRAPPER_TEMPLATE = textwrap.dedent("""\
         ret = libc.syscall(SYS_landlock_restrict_self, ruleset_fd, 0)
         os.close(ruleset_fd)
         if ret < 0:
-            print("landlock_restrict_self failed, running without sandbox", file=sys.stderr)
+            print("SANDBOX_UNAVAILABLE", file=sys.stderr)
+            sys.exit(198)  # Fail-closed: do NOT run unsandboxed
 
         os.execvp("bash", ["bash", "-c", command])
 

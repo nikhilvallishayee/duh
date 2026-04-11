@@ -14,6 +14,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from duh.kernel.tool_categories import COMMAND_TOOLS, READ_TOOLS, WRITE_TOOLS
+
 
 class AutoApprover:
     """Allows all tool calls without prompting. For sandboxed environments."""
@@ -82,12 +84,16 @@ class RuleApprover:
                 if denied in cmd:
                     return {"allowed": False, "reason": f"Command contains denied pattern: {denied}"}
 
-        # Check path restrictions
+        # Check path restrictions (resolve symlinks and .. to prevent traversal)
         if self._allowed_paths is not None:
+            from pathlib import Path as _Path
+            resolved_allowed = [str(_Path(p).resolve()) for p in self._allowed_paths]
             for key in ("path", "file_path"):
                 path = input.get(key)
-                if path and not any(path.startswith(p) for p in self._allowed_paths):
-                    return {"allowed": False, "reason": f"Path '{path}' outside allowed directories"}
+                if path:
+                    resolved = str(_Path(path).resolve())
+                    if not any(resolved.startswith(a) for a in resolved_allowed):
+                        return {"allowed": False, "reason": f"Path '{path}' outside allowed directories"}
 
         return {"allowed": True}
 
@@ -109,21 +115,10 @@ class ApprovalMode(Enum):
     FULL_AUTO = "full-auto"
 
 
-# Tool classification: which tools belong to which tier
-_READ_TOOLS = frozenset({
-    "Read", "Glob", "Grep", "ToolSearch", "WebSearch",
-    "MemoryRecall", "Skill",
-})
-
-_WRITE_TOOLS = frozenset({
-    "Write", "Edit", "MultiEdit", "NotebookEdit",
-    "EnterWorktree", "ExitWorktree", "MemoryStore",
-})
-
-_COMMAND_TOOLS = frozenset({
-    "Bash", "WebFetch", "Task", "HTTP", "Database", "Docker",
-    "GitHub",
-})
+# Tool classification aliases (imported from duh.kernel.tool_categories)
+_READ_TOOLS = READ_TOOLS
+_WRITE_TOOLS = WRITE_TOOLS
+_COMMAND_TOOLS = COMMAND_TOOLS
 
 
 def _is_git_repo(cwd: str) -> bool:

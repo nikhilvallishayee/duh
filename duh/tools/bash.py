@@ -119,20 +119,16 @@ class BashTool:
         if not command:
             return ToolResult(output="command is required", is_error=True)
 
-        # --- Background job handling (bg: prefix) ---
-        if command.startswith("bg:"):
-            actual_cmd = command[3:].strip()
-            if not actual_cmd:
-                return ToolResult(output="bg: requires a command", is_error=True)
-            return await self._submit_background(actual_cmd, timeout, shell, context)
-
         # Resolve the shell backend once for both security + execution
         resolved_shell = resolve_shell(shell)
 
-        # --- Security check (bypassed in skip-permissions mode) ---
+        # --- Security check BEFORE bg: handling (applies to ALL commands) ---
+        is_background = command.startswith("bg:")
+        check_cmd = command[3:].strip() if is_background else command
+
         skip_permissions = context.metadata.get("skip_permissions", False)
         if not skip_permissions:
-            classification = classify_command(command, shell=resolved_shell)
+            classification = classify_command(check_cmd, shell=resolved_shell)
             if classification["risk"] == "dangerous":
                 return ToolResult(
                     output=f"Command blocked: {classification['reason']}",
@@ -141,7 +137,13 @@ class BashTool:
                               "reason": classification["reason"]},
                 )
         else:
-            classification = classify_command(command, shell=resolved_shell)
+            classification = classify_command(check_cmd, shell=resolved_shell)
+
+        # --- Background job handling (AFTER security check) ---
+        if is_background:
+            if not check_cmd:
+                return ToolResult(output="bg: requires a command", is_error=True)
+            return await self._submit_background(check_cmd, timeout, shell, context)
 
         cwd = context.cwd if context.cwd and context.cwd != "." else None
 

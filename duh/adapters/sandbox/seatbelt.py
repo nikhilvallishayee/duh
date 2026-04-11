@@ -51,10 +51,11 @@ def generate_profile(policy: SandboxPolicy) -> str:
     lines.append("")
 
     # Process execution (required for bash -c)
+    # Only allow exec and fork — NOT the process* wildcard which grants
+    # process-info, process-codesign, and other unnecessary capabilities.
     lines.append(";; Process execution")
     lines.append("(allow process-exec)")
     lines.append("(allow process-fork)")
-    lines.append("(allow process*)")
     lines.append("")
 
     # Signals, sysctl (needed for normal operation)
@@ -88,10 +89,12 @@ def generate_profile(policy: SandboxPolicy) -> str:
         lines.append(";; File write access (restricted to specific paths)")
         lines.append("(allow file-write*")
         for wp in unique_write_paths:
-            if wp.startswith("/dev/"):
-                lines.append(f'    (literal "{wp}")')
+            # Escape quotes and backslashes to prevent profile injection
+            safe_wp = wp.replace("\\", "\\\\").replace('"', '\\"')
+            if safe_wp.startswith("/dev/"):
+                lines.append(f'    (literal "{safe_wp}")')
             else:
-                lines.append(f'    (subpath "{wp}")')
+                lines.append(f'    (subpath "{safe_wp}")')
         lines.append(")")
     else:
         lines.append("(deny file-write*)")

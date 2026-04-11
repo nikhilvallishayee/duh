@@ -12,14 +12,11 @@ Clients connect via WebSocket:
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import uuid
 from typing import Any
 
 from duh.bridge.protocol import (
-    BridgeMessage,
     ConnectMessage,
     DisconnectMessage,
     ErrorMessage,

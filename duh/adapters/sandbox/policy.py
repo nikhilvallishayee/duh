@@ -20,7 +20,6 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
 
 
 def deduplicate_paths(paths: list[str]) -> list[str]:

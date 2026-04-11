@@ -16,7 +16,6 @@ The generated profile follows a default-deny model:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from duh.adapters.sandbox.policy import SandboxPolicy, deduplicate_paths

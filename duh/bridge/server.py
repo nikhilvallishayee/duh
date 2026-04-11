@@ -37,20 +37,10 @@ logger = logging.getLogger(__name__)
 # Lazy import -- websockets is optional
 # ---------------------------------------------------------------------------
 
-try:
-    import websockets
-    _ws_available = True
-except ImportError:
-    websockets = None  # type: ignore[assignment]
-    _ws_available = False
-
-
-def _require_websockets() -> None:
-    if not _ws_available:
-        raise RuntimeError(
-            "The 'websockets' package is required for the bridge server. "
-            "Install it with: pip install websockets"
-        )
+from duh._optional_deps import (
+    websockets,
+    require_websockets as _require_websockets,
+)
 
 
 class BridgeServer:

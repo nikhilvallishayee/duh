@@ -25,37 +25,14 @@ logger = logging.getLogger(__name__)
 # Lazy imports -- graceful degradation when optional deps not installed
 # ---------------------------------------------------------------------------
 
-try:
-    import httpx
-
-    _httpx_available = True
-except ImportError:
-    httpx = None  # type: ignore[assignment]
-    _httpx_available = False
-
-try:
-    import websockets
-
-    _ws_available = True
-except ImportError:
-    websockets = None  # type: ignore[assignment]
-    _ws_available = False
-
-
-def _require_httpx() -> None:
-    if not _httpx_available:
-        raise RuntimeError(
-            "The 'httpx' package is required for SSE/HTTP MCP transport. "
-            "Install it with: pip install httpx"
-        )
-
-
-def _require_websockets() -> None:
-    if not _ws_available:
-        raise RuntimeError(
-            "The 'websockets' package is required for WebSocket MCP transport. "
-            "Install it with: pip install websockets"
-        )
+from duh._optional_deps import (
+    httpx,
+    httpx_available as _httpx_available,
+    require_httpx as _require_httpx,
+    websockets,
+    ws_available as _ws_available,
+    require_websockets as _require_websockets,
+)
 
 
 # ---------------------------------------------------------------------------

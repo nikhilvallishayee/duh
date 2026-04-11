@@ -1,7 +1,9 @@
 # ADR-036: Extended Hook Events
 
-**Status**: Proposed  
-**Date**: 2026-04-08
+**Status**: Accepted  
+**Date**: 2026-04-08  
+**Implemented**: 2026-04-08  
+**Note**: 22 new HookEvent enum members added to hooks.py. However, hook emit calls not wired into engine.py or repl.py for most new events (PERMISSION_REQUEST, PRE_COMPACT, POST_COMPACT, USER_PROMPT_SUBMIT, STATUS_LINE, etc.).
 
 ## Context
 

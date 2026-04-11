@@ -1,7 +1,9 @@
 # ADR-031: Prompt-Too-Long Retry
 
-**Status**: Proposed  
-**Date**: 2026-04-08
+**Status**: Accepted  
+**Date**: 2026-04-08  
+**Implemented**: 2026-04-08  
+**Note**: Progressive compaction targets (70%/50%/30%) not implemented; uses fixed 70% on each retry.
 
 ## Context
 

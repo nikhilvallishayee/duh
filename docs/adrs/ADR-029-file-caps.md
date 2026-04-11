@@ -1,7 +1,9 @@
 # ADR-029: Large File Safety Caps
 
-**Status**: Proposed  
-**Date**: 2026-04-08
+**Status**: Accepted  
+**Date**: 2026-04-08  
+**Implemented**: 2026-04-08  
+**Note**: Session state cap (MAX_SESSION_BYTES) defined but not enforced during save.
 
 ## Context
 

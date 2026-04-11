@@ -1,7 +1,9 @@
 # ADR-041: Attachment System
 
-**Status**: Proposed  
-**Date**: 2026-04-08
+**Status**: Accepted  
+**Date**: 2026-04-08  
+**Implemented**: 2026-04-08  
+**Note**: MAX_ATTACHMENT_SIZE is 10MB (implementation) vs 20MB (ADR). CLI integration points (Ctrl+V paste, /attach command, drag-drop, @image: syntax) not implemented.
 
 ## Context
 

@@ -1,7 +1,9 @@
 # ADR-033: QueryGuard State Machine
 
-**Status**: Proposed  
-**Date**: 2026-04-08
+**Status**: Accepted  
+**Date**: 2026-04-08  
+**Implemented**: 2026-04-08  
+**Note**: QueryGuard implemented but not wired into the REPL or engine loop. cancel_on_new option not implemented.
 
 ## Context
 

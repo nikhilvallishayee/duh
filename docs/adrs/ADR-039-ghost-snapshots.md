@@ -1,7 +1,9 @@
 # ADR-039: Ghost Snapshot Mode
 
-**Status**: Proposed  
-**Date**: 2026-04-08
+**Status**: Accepted  
+**Date**: 2026-04-08  
+**Implemented**: 2026-04-08  
+**Note**: Implemented as ReadOnlyExecutor (blocks writes) rather than GhostExecutor with filesystem overlay. No overlay dict, no merge path for applying ghost writes to disk. Turn limits (50 max, warning at 40) and file/size caps on overlay not implemented.
 
 ## Context
 

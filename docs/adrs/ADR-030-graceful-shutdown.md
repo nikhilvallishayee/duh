@@ -1,7 +1,9 @@
 # ADR-030: Graceful Shutdown
 
-**Status**: Proposed  
-**Date**: 2026-04-08
+**Status**: Accepted  
+**Date**: 2026-04-08  
+**Implemented**: 2026-04-08  
+**Note**: Second-signal force exit and SIGQUIT stack dump not implemented.
 
 ## Context
 

@@ -1,7 +1,9 @@
 # ADR-038: Three-Tier Approval Model
 
-**Status**: Proposed  
-**Date**: 2026-04-08
+**Status**: Accepted  
+**Date**: 2026-04-08  
+**Implemented**: 2026-04-08  
+**Note**: Git safety check (blocking force push, hard reset) not implemented as a separate shared check across tiers. Mode names differ: ADR says Suggest/AutoEdit/FullAuto; impl uses SUGGEST/AUTO_EDIT/FULL_AUTO.
 
 ## Context
 

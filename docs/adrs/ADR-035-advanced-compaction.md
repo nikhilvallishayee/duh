@@ -1,7 +1,9 @@
 # ADR-035: Advanced Context Compaction
 
-**Status**: Proposed  
-**Date**: 2026-04-08
+**Status**: Accepted  
+**Date**: 2026-04-08  
+**Implemented**: 2026-04-08  
+**Note**: strip_images removes ALL images (no keep_recent=3 parameter). Compaction order is simplified: strip all images then tail-window, not the staged pipeline described.
 
 ## Context
 

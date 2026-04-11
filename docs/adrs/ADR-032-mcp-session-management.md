@@ -1,7 +1,9 @@
 # ADR-032: MCP Session Management
 
-**Status**: Proposed  
-**Date**: 2026-04-08
+**Status**: Accepted  
+**Date**: 2026-04-08  
+**Implemented**: 2026-04-08  
+**Note**: Circuit breaker reconnects but does not mark servers as degraded or remove tools from schema.
 
 ## Context
 

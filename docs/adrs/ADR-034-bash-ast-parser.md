@@ -1,7 +1,8 @@
 # ADR-034: Bash AST Parser
 
-**Status**: Proposed  
-**Date**: 2026-04-08
+**Status**: Accepted  
+**Date**: 2026-04-08  
+**Implemented**: 2026-04-08
 
 ## Context
 

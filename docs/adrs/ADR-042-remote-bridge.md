@@ -1,7 +1,9 @@
 # ADR-042: Remote Bridge
 
-**Status**: Proposed  
-**Date**: 2026-04-08
+**Status**: Accepted  
+**Date**: 2026-04-08  
+**Implemented**: 2026-04-08  
+**Note**: Default port is 8765 (implementation) vs 9120 (ADR). Rate limiting (10 msg/s) and max clients (5) not implemented. Token generation on startup not automated (must be passed manually).
 
 ## Context
 

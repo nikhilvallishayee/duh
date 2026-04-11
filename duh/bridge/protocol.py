@@ -81,11 +81,7 @@ class ErrorMessage(BridgeMessage):
 
 def encode_message(msg: BridgeMessage) -> str:
     """Encode a BridgeMessage to a JSON string."""
-    d: dict[str, Any] = {}
-    for k, v in msg.__dict__.items():
-        if not k.startswith("_"):
-            d[k] = v
-    return json.dumps(d)
+    return json.dumps(dataclasses.asdict(msg))
 
 
 _MESSAGE_TYPES: dict[str, type[BridgeMessage]] = {

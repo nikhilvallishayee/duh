@@ -26,20 +26,13 @@ import copy
 from typing import Any, Awaitable, Callable
 
 from duh.kernel.messages import Message
-
+from duh.kernel.tool_categories import READ_TOOLS, MUTATING_TOOLS
 
 # Tools that are safe to run in snapshot mode (read-only)
-_SNAPSHOT_ALLOWED_TOOLS = frozenset({
-    "Read", "Glob", "Grep", "ToolSearch", "WebSearch",
-    "MemoryRecall", "Skill",
-})
+_SNAPSHOT_ALLOWED_TOOLS = READ_TOOLS
 
 # Tools that are explicitly blocked in snapshot mode (mutating)
-_SNAPSHOT_BLOCKED_TOOLS = frozenset({
-    "Write", "Edit", "MultiEdit", "Bash", "NotebookEdit",
-    "WebFetch", "HTTP", "Database", "Docker", "GitHub",
-    "Task", "EnterWorktree", "ExitWorktree", "MemoryStore",
-})
+_SNAPSHOT_BLOCKED_TOOLS = MUTATING_TOOLS
 
 
 class ReadOnlyExecutor:

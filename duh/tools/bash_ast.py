@@ -159,8 +159,19 @@ def strip_wrappers(cmd: str) -> str:
 # Tokenizer
 # ---------------------------------------------------------------------------
 
+# ANSI-C quoting: $'...' (must be matched before regular single quotes)
+_ANSI_C_RE = re.compile(r"""\$'(?:[^'\\]|\\.)*'""")
+
 # Regex to find quote boundaries (single, double, escaped chars)
 _QUOTE_RE = re.compile(r"""(?:'[^']*'|"(?:[^"\\]|\\.)*"|\\.)""")
+
+# Heredoc patterns: <<EOF, <<-EOF, <<'EOF', <<"EOF"
+_HEREDOC_RE = re.compile(
+    r"<<-?\s*(?:'([^']+)'|\"([^\"]+)\"|(\w+))"
+)
+
+# Process substitution: <(...) and >(...)
+_PROC_SUB_RE = re.compile(r"[<>]\(")
 
 # Regex to split on shell operators: &&, ||, |, ;
 # Order matters: && and || must be matched before | alone.
@@ -171,10 +182,17 @@ def _mask_quotes(cmd: str) -> tuple[str, str]:
     """Replace quoted strings with placeholders so operators inside quotes
     are not treated as segment separators.
 
+    Also masks ANSI-C $'...' strings before regular quotes.
+
     Returns (masked_cmd, original_cmd) where masked_cmd has quotes replaced
     with null bytes of the same length.
     """
     masked = list(cmd)
+    # Mask ANSI-C quoting first (before regular quotes eat the $'...')
+    for m in _ANSI_C_RE.finditer(cmd):
+        for i in range(m.start(), m.end()):
+            masked[i] = "\x00"
+    # Then mask regular quotes
     for m in _QUOTE_RE.finditer(cmd):
         for i in range(m.start(), m.end()):
             masked[i] = "\x00"
@@ -239,11 +257,100 @@ def _extract_subshells(cmd: str, masked: str) -> tuple[str, list[str]]:
     return cmd, subshells
 
 
+def _extract_heredocs(cmd: str, masked: str) -> tuple[str, list[str]]:
+    """Extract heredoc bodies from the command.
+
+    Handles ``<<EOF...EOF``, ``<<-EOF...EOF``, ``<<'EOF'...EOF``,
+    ``<<"EOF"...EOF``.
+
+    Returns the command with heredoc bodies removed, and a list of
+    the heredoc body contents.
+    """
+    heredoc_bodies: list[str] = []
+    lines = cmd.split("\n")
+    masked_lines = masked.split("\n")
+    result_lines: list[str] = []
+    i = 0
+
+    while i < len(lines):
+        line = lines[i]
+        masked_line = masked_lines[i] if i < len(masked_lines) else line
+
+        # Check for heredoc start in the masked line
+        m = _HEREDOC_RE.search(masked_line)
+        if m:
+            delimiter = m.group(1) or m.group(2) or m.group(3)
+            # Keep the command line: text before the heredoc marker + text
+            # after it (e.g. "cat <<EOF | grep hello" keeps "cat | grep hello")
+            before = line[:m.start()].rstrip()
+            after = line[m.end():].lstrip()
+            result_lines.append(f"{before} {after}".strip() if after else before)
+            # Collect heredoc body
+            body_lines: list[str] = []
+            i += 1
+            while i < len(lines):
+                if lines[i].strip() == delimiter:
+                    break
+                body_lines.append(lines[i])
+                i += 1
+            heredoc_bodies.append("\n".join(body_lines))
+        else:
+            result_lines.append(line)
+        i += 1
+
+    return "\n".join(result_lines), heredoc_bodies
+
+
+def _extract_process_subs(cmd: str, masked: str) -> tuple[str, list[str]]:
+    """Extract ``<(...)`` and ``>(...)`` process substitutions.
+
+    Returns the command with process subs replaced by placeholders,
+    and a list of the extracted inner contents.
+    """
+    subshells: list[str] = []
+    result_chars = list(cmd)
+    i = 0
+
+    while i < len(masked):
+        if (i + 1 < len(masked)
+                and masked[i] in "<>"
+                and masked[i + 1] == "("
+                and masked[i] != "\x00"):
+            # Make sure this is a process substitution, not $( or a regular
+            # redirect.  Process subs are <( or >( where the preceding char
+            # is not $.
+            if i > 0 and masked[i - 1] == "$":
+                i += 1
+                continue
+            depth = 1
+            start = i
+            j = i + 2
+            while j < len(masked) and depth > 0:
+                if masked[j] == "(" and masked[j] != "\x00":
+                    depth += 1
+                elif masked[j] == ")" and masked[j] != "\x00":
+                    depth -= 1
+                j += 1
+            if depth == 0:
+                inner = cmd[start + 2:j - 1]
+                subshells.append(inner)
+                for k in range(start, j):
+                    result_chars[k] = "\x01"
+                masked = masked[:start] + "\x01" * (j - start) + masked[j:]
+            i = j
+        else:
+            i += 1
+
+    return "".join(result_chars), subshells
+
+
 def tokenize(cmd: str) -> list[Segment]:
     """Tokenize a shell command into segments.
 
     Splits on ``|``, ``&&``, ``||``, ``;``, and extracts ``$(...)`` and
-    backtick subshells as separate segments.
+    backtick subshells as separate segments.  Also handles heredocs,
+    process substitutions ``<(...)`` / ``>(...)``, and ANSI-C ``$'...'``
+    quoting.
 
     Raises ValueError if the number of segments exceeds MAX_SUBCOMMANDS.
     """
@@ -255,7 +362,15 @@ def tokenize(cmd: str) -> list[Segment]:
 
     masked, original = _mask_quotes(cmd)
 
-    # Extract subshells before splitting on operators
+    # Extract heredocs before splitting
+    cmd, _heredoc_bodies = _extract_heredocs(cmd, masked)
+    masked, _ = _mask_quotes(cmd)  # re-mask after heredoc removal
+
+    # Extract process substitutions
+    cmd, proc_subs = _extract_process_subs(cmd, masked)
+    masked, _ = _mask_quotes(cmd)  # re-mask after process sub removal
+
+    # Extract $(...) and backtick subshells
     cmd_no_sub, subshells = _extract_subshells(cmd, masked)
 
     # Build the masked version without subshells for splitting
@@ -272,6 +387,12 @@ def tokenize(cmd: str) -> list[Segment]:
 
     # Add subshell contents as separate segments
     for sub in subshells:
+        sub_stripped = sub.strip()
+        if sub_stripped:
+            segments.append(Segment(text=sub_stripped, seg_type=SegmentType.SUBSHELL))
+
+    # Add process substitution contents as subshell segments
+    for sub in proc_subs:
         sub_stripped = sub.strip()
         if sub_stripped:
             segments.append(Segment(text=sub_stripped, seg_type=SegmentType.SUBSHELL))

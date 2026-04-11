@@ -10,6 +10,7 @@ import asyncio
 from typing import Any
 
 from duh.kernel.file_tracker import FileTracker
+from duh.kernel.redact import redact_secrets
 from duh.kernel.tool import MAX_TOOL_OUTPUT, Tool, ToolContext, ToolResult, get_tool_timeout
 from duh.kernel.undo import UndoStack
 
@@ -135,7 +136,7 @@ class NativeExecutor:
                 )
                 result.metadata["truncated"] = True
                 result.metadata["original_size"] = original_size
-            return output
+            return redact_secrets(output) if isinstance(output, str) else output
 
         raw = str(result)
         if len(raw) > MAX_TOOL_OUTPUT:
@@ -144,4 +145,4 @@ class NativeExecutor:
                 + "\n\n... (output truncated at 100KB."
                 " Use Read with offset/limit for full content)"
             )
-        return raw
+        return redact_secrets(raw)

@@ -182,6 +182,20 @@ def get_all_tools(
     except ImportError:
         pass
 
+    # TodoWrite (structured checklist)
+    try:
+        from duh.tools.todo_tool import TodoWriteTool
+        tools.append(TodoWriteTool())
+    except ImportError:
+        pass
+
+    # AskUserQuestion (interactive user prompting)
+    try:
+        from duh.tools.ask_user_tool import AskUserQuestionTool
+        tools.append(AskUserQuestionTool())
+    except ImportError:
+        pass
+
     # LSP (deferred — registered via ToolSearch, not loaded eagerly)
     try:
         from duh.tools.lsp_tool import LSPTool

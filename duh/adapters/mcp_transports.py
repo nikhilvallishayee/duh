@@ -116,7 +116,6 @@ class SSETransport:
         receives server-initiated messages; the write_stream is used
         internally by send().
         """
-        _require_httpx()
         self._client = httpx.AsyncClient(
             headers=self._headers,
             timeout=httpx.Timeout(self._timeout),
@@ -220,7 +219,6 @@ class HTTPTransport:
 
     async def connect(self) -> tuple[Any, Any]:
         """Create the HTTP client. No handshake needed for plain HTTP."""
-        _require_httpx()
         self._client = httpx.AsyncClient(
             headers=self._headers,
             timeout=httpx.Timeout(self._timeout),
@@ -302,7 +300,6 @@ class WebSocketTransport:
 
         Returns (read_stream, write_stream) as asyncio.Queue objects.
         """
-        _require_websockets()
         extra_headers = self._headers if self._headers else None
         self._ws = await websockets.connect(
             self._url,

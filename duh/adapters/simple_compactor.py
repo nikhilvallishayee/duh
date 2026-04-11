@@ -345,12 +345,36 @@ def _deduplicate_messages(messages: list[Any]) -> list[Any]:
 # Image stripping (pre-compaction)
 # ---------------------------------------------------------------------------
 
+_IMAGE_PLACEHOLDER = "[image removed for compaction]"
+
+
+def _replace_image_blocks(
+    blocks: list[Any], *, as_dataclass: bool,
+) -> tuple[list[Any], bool]:
+    """Replace image blocks with text placeholders.
+
+    Returns (new_blocks, changed).  When *as_dataclass* is True the
+    replacement is a TextBlock; otherwise a plain dict.
+    """
+    new_blocks: list[Any] = []
+    changed = False
+    for block in blocks:
+        if isinstance(block, dict) and block.get("type") == "image":
+            if as_dataclass:
+                new_blocks.append(TextBlock(text=_IMAGE_PLACEHOLDER))
+            else:
+                new_blocks.append({"type": "text", "text": _IMAGE_PLACEHOLDER})
+            changed = True
+        else:
+            new_blocks.append(block)
+    return new_blocks, changed
+
+
 def strip_images(messages: list[Any]) -> list[Any]:
     """Replace image content blocks with text placeholders.
 
-    Image blocks (type="image") are replaced with
-    ``[image removed for compaction]`` to prevent prompt-too-long
-    errors during the compaction summarization call.
+    Image blocks (type="image") are replaced with a short placeholder
+    to prevent prompt-too-long errors during compaction summarization.
 
     Returns a new list (does not mutate the input).
     """
@@ -361,14 +385,7 @@ def strip_images(messages: list[Any]) -> list[Any]:
             if isinstance(content, str):
                 result.append(msg)
                 continue
-            new_blocks: list[Any] = []
-            changed = False
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "image":
-                    new_blocks.append(TextBlock(text="[image removed for compaction]"))
-                    changed = True
-                else:
-                    new_blocks.append(block)
+            new_blocks, changed = _replace_image_blocks(content, as_dataclass=True)
             if changed:
                 result.append(Message(
                     role=msg.role,
@@ -384,17 +401,10 @@ def strip_images(messages: list[Any]) -> list[Any]:
             if isinstance(content, str):
                 result.append(msg)
                 continue
-            new_blocks_d: list[Any] = []
-            changed_d = False
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "image":
-                    new_blocks_d.append({"type": "text", "text": "[image removed for compaction]"})
-                    changed_d = True
-                else:
-                    new_blocks_d.append(block)
-            if changed_d:
+            new_blocks, changed = _replace_image_blocks(content, as_dataclass=False)
+            if changed:
                 new_msg = dict(msg)
-                new_msg["content"] = new_blocks_d
+                new_msg["content"] = new_blocks
                 result.append(new_msg)
             else:
                 result.append(msg)

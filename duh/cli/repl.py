@@ -953,6 +953,16 @@ async def run_repl(args: argparse.Namespace) -> int:
 
     system_prompt = "\n\n".join(system_prompt_parts)
 
+    # --- Load prompt templates for /template commands ---
+    _template_state: dict[str, Any] = {"templates": {}, "active": None}
+    try:
+        from duh.kernel.templates import load_all_templates
+
+        loaded_templates = load_all_templates(cwd)
+        _template_state["templates"] = {t.name: t for t in loaded_templates}
+    except Exception:
+        logger.debug("Template loading failed in REPL", exc_info=True)
+
     # --- Locate TaskTool's manager for /tasks slash command ---
     _task_manager = None
     for _t in tools:

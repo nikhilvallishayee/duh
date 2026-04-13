@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -127,3 +129,115 @@ class TestMainReplRouting:
                 from duh.cli.main import main
                 code = main([])
         assert mock_asyncio.run.called
+
+
+class TestRunReplRegression:
+    @pytest.mark.asyncio
+    async def test_help_command_does_not_crash_on_template_state(self, monkeypatch, capsys):
+        from duh.cli import repl as repl_mod
+        from duh import config as config_mod
+        from duh.cli import prewarm as prewarm_mod
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+
+        class _FakeProvider:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def stream(self, **kwargs):
+                if False:  # pragma: no cover
+                    yield {}
+
+        async def _no_prewarm(_call_model):
+            return None
+
+        monkeypatch.setattr(repl_mod, "AnthropicProvider", _FakeProvider)
+        monkeypatch.setattr(repl_mod, "get_all_tools", lambda: [])
+        monkeypatch.setattr(repl_mod, "_load_history", lambda: None)
+        monkeypatch.setattr(repl_mod, "_setup_completion", lambda: None)
+        monkeypatch.setattr(repl_mod, "_save_history", lambda: None)
+        monkeypatch.setattr(prewarm_mod, "prewarm_connection", _no_prewarm)
+        monkeypatch.setattr(
+            config_mod,
+            "load_config",
+            lambda cwd=".": SimpleNamespace(mcp_servers={}),
+        )
+
+        inputs = iter(["/help", "/exit"])
+        monkeypatch.setattr("builtins.input", lambda _prompt="": next(inputs))
+
+        args = argparse.Namespace(
+            debug=False,
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            system_prompt=None,
+            brief=False,
+            approval_mode=None,
+            dangerously_skip_permissions=False,
+            max_turns=8,
+            max_cost=None,
+            fallback_model=None,
+            log_json=False,
+        )
+
+        code = await repl_mod.run_repl(args)
+        assert code == 0
+
+        captured = capsys.readouterr()
+        assert "/help" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_template_list_command_works_in_run_repl(self, monkeypatch, capsys):
+        from duh.cli import repl as repl_mod
+        from duh import config as config_mod
+        from duh.cli import prewarm as prewarm_mod
+        from duh.kernel import templates as templates_mod
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+
+        class _FakeProvider:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def stream(self, **kwargs):
+                if False:  # pragma: no cover
+                    yield {}
+
+        async def _no_prewarm(_call_model):
+            return None
+
+        monkeypatch.setattr(repl_mod, "AnthropicProvider", _FakeProvider)
+        monkeypatch.setattr(repl_mod, "get_all_tools", lambda: [])
+        monkeypatch.setattr(repl_mod, "_load_history", lambda: None)
+        monkeypatch.setattr(repl_mod, "_setup_completion", lambda: None)
+        monkeypatch.setattr(repl_mod, "_save_history", lambda: None)
+        monkeypatch.setattr(prewarm_mod, "prewarm_connection", _no_prewarm)
+        monkeypatch.setattr(
+            config_mod,
+            "load_config",
+            lambda cwd=".": SimpleNamespace(mcp_servers={}),
+        )
+        monkeypatch.setattr(templates_mod, "load_all_templates", lambda cwd=".": [])
+
+        inputs = iter(["/template list", "/exit"])
+        monkeypatch.setattr("builtins.input", lambda _prompt="": next(inputs))
+
+        args = argparse.Namespace(
+            debug=False,
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            system_prompt=None,
+            brief=False,
+            approval_mode=None,
+            dangerously_skip_permissions=False,
+            max_turns=8,
+            max_cost=None,
+            fallback_model=None,
+            log_json=False,
+        )
+
+        code = await repl_mod.run_repl(args)
+        assert code == 0
+
+        captured = capsys.readouterr()
+        assert "No templates" in captured.out

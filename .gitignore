@@ -1,5 +1,6 @@
 .venv/
 __pycache__/
+__pychache__/
 *.pyc
 *.egg-info/
 dist/
@@ -7,3 +8,5 @@ build/
 .pytest_cache/
 .mypy_cache/
 *.egg
+.coverage
+.coverage.*

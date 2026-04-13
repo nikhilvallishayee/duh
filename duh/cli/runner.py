@@ -9,13 +9,18 @@ import os
 import sys
 from typing import Any
 
-from duh.adapters.anthropic import AnthropicProvider
+from duh.adapters.anthropic import AnthropicProvider  # noqa: F401 (test/mocking compatibility)
 from duh.adapters.native_executor import NativeExecutor
 from duh.adapters.approvers import AutoApprover, InteractiveApprover
 from duh.kernel.deps import Deps
 from duh.kernel.engine import Engine, EngineConfig
 from duh.kernel.messages import Message
 from duh.tools.registry import get_all_tools
+from duh.providers.registry import (
+    build_model_backend,
+    get_anthropic_api_key,
+    resolve_provider_name,
+)
 
 logger = logging.getLogger("duh")
 
@@ -83,28 +88,19 @@ async def run_print_mode(args: argparse.Namespace) -> int:
                             format="[%(levelname)s] %(name)s: %(message)s")
 
     # Resolve provider: explicit flag > model name hint > env detection > Ollama fallback
-    provider_name = args.provider
-    if not provider_name and args.model:
-        # Infer provider from model name
-        m = args.model.lower()
-        if any(k in m for k in ("claude", "haiku", "sonnet", "opus")):
-            provider_name = "anthropic"
-        elif any(k in m for k in ("gpt", "o1", "o3", "davinci")):
-            provider_name = "openai"
-    if not provider_name:
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            provider_name = "anthropic"
-        elif os.environ.get("OPENAI_API_KEY"):
-            provider_name = "openai"
-        else:
-            # Try Ollama as fallback
-            try:
-                import httpx
-                r = httpx.get("http://localhost:11434/api/tags", timeout=2)
-                if r.status_code == 200:
-                    provider_name = "ollama"
-            except Exception:
-                pass
+    def _check_ollama() -> bool:
+        try:
+            import httpx
+            r = httpx.get("http://localhost:11434/api/tags", timeout=2)
+            return r.status_code == 200
+        except Exception:
+            return False
+
+    provider_name = resolve_provider_name(
+        explicit_provider=args.provider,
+        model=args.model,
+        check_ollama=_check_ollama,
+    )
 
     if not provider_name:
         sys.stderr.write(
@@ -117,28 +113,19 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         return 1
 
     # Build provider
-    if provider_name == "anthropic":
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            sys.stderr.write("Error: ANTHROPIC_API_KEY not set.\n")
-            return 1
-        model = args.model or "claude-sonnet-4-6"
-        call_model = AnthropicProvider(api_key=api_key, model=model).stream
-    elif provider_name == "openai":
-        from duh.adapters.openai import OpenAIProvider
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        if not api_key:
-            sys.stderr.write("Error: OPENAI_API_KEY not set.\n")
-            return 1
-        model = args.model or "gpt-4o"
-        call_model = OpenAIProvider(api_key=api_key, model=model).stream
-    elif provider_name == "ollama":
-        from duh.adapters.ollama import OllamaProvider
-        model = args.model or "qwen2.5-coder:1.5b"
-        call_model = OllamaProvider(model=model).stream
-    else:
-        sys.stderr.write(f"Error: Unknown provider: {provider_name}\n")
+    backend = build_model_backend(
+        provider_name,
+        args.model,
+        provider_factories={
+            # Keep runner-level patch target stable for legacy unit tests.
+            "anthropic": lambda m: AnthropicProvider(api_key=get_anthropic_api_key(), model=m),
+        },
+    )
+    if not backend.ok:
+        sys.stderr.write(f"Error: {backend.error}\n")
         return 1
+    model = backend.model
+    call_model = backend.call_model
 
     if debug:
         sys.stderr.write(f"[DEBUG] provider={provider_name} model={model}\n")

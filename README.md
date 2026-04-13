@@ -9,7 +9,7 @@
 
 > An evolving, open-source alternative to Claude Code, OpenCode, Codex, and Cline.
 
-Provider-agnostic AI coding harness. Use Claude, GPT-4o, or Ollama local models through one interface. Drop-in replacement for Claude Code in any Claude Agent SDK app.
+Provider-agnostic AI coding harness. Use Claude, OpenAI (API key or ChatGPT subscription Codex login), or Ollama local models through one interface. Drop-in replacement for Claude Code in any Claude Agent SDK app.
 
 ## Quick Start
 
@@ -68,9 +68,11 @@ Full methodology: [docs/benchmark-results.md](docs/benchmark-results.md)
 # Code generation and modification
 duh -p "add input validation to the API endpoints" --dangerously-skip-permissions
 
-# Interactive REPL with 17 commands
+# Interactive REPL with built-in connect/model discovery commands
 duh
 duh> /help                    # see all commands
+duh> /connect openai          # connect OpenAI (ChatGPT Plus/Pro login or API key)
+duh> /models                  # list models for current provider
 duh> /plan add user auth      # design first, then execute
 duh> /model claude-opus-4-6   # switch models mid-session
 duh> /brief on                # concise mode
@@ -154,7 +156,7 @@ duh/
 | Provider | Status | Models | Auto-detect |
 |---|---|---|---|
 | **Anthropic** | Working | Sonnet 4.6, Opus 4.6, Haiku 4.5 | ANTHROPIC_API_KEY or --model claude-* |
-| **OpenAI** | Working | GPT-4o, o1, any OpenAI-compatible | OPENAI_API_KEY or --model gpt-* |
+| **OpenAI** | Working | GPT-4o/o1/o3 + Codex family | `/connect openai` or OPENAI_API_KEY or --model gpt-* |
 | **Ollama** | Working | Any local model | Ollama running on localhost |
 
 ## Safety

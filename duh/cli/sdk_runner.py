@@ -23,11 +23,12 @@ import uuid as _uuid
 from dataclasses import asdict
 from typing import Any
 
-from duh.adapters.anthropic import AnthropicProvider
+from duh.adapters.anthropic import AnthropicProvider  # noqa: F401 (test/mocking compatibility)
 from duh.adapters.native_executor import NativeExecutor
 from duh.adapters.approvers import AutoApprover, InteractiveApprover
 from duh.cli.ndjson import ndjson_read_line, ndjson_write
 from duh.cli.runner import SYSTEM_PROMPT, _interpret_error
+from duh.providers.registry import build_model_backend, resolve_provider_name
 from duh.kernel.deps import Deps
 from duh.kernel.engine import Engine, EngineConfig
 from duh.kernel.messages import Message
@@ -169,18 +170,19 @@ async def run_stream_json_mode(args: argparse.Namespace) -> int:
                             format="[%(levelname)s] %(name)s: %(message)s")
 
     # --- Resolve provider ---
-    provider_name = args.provider
-    if not provider_name:
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            provider_name = "anthropic"
-        else:
-            try:
-                import httpx
-                r = httpx.get("http://localhost:11434/api/tags", timeout=2)
-                if r.status_code == 200:
-                    provider_name = "ollama"
-            except Exception:
-                pass
+    def _check_ollama() -> bool:
+        try:
+            import httpx
+            r = httpx.get("http://localhost:11434/api/tags", timeout=2)
+            return r.status_code == 200
+        except Exception:
+            return False
+
+    provider_name = resolve_provider_name(
+        explicit_provider=args.provider,
+        model=getattr(args, "model", None),
+        check_ollama=_check_ollama,
+    )
 
     if not provider_name:
         ndjson_write(_format_result(
@@ -188,24 +190,14 @@ async def run_stream_json_mode(args: argparse.Namespace) -> int:
         ))
         return 1
 
-    if provider_name == "anthropic":
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            ndjson_write(_format_result(
-                "", is_error=True, result_text="ANTHROPIC_API_KEY not set",
-            ))
-            return 1
-        model = args.model or "claude-sonnet-4-6"
-        call_model = AnthropicProvider(api_key=api_key, model=model).stream
-    elif provider_name == "ollama":
-        from duh.adapters.ollama import OllamaProvider
-        model = args.model or "qwen2.5-coder:1.5b"
-        call_model = OllamaProvider(model=model).stream
-    else:
+    backend = build_model_backend(provider_name, getattr(args, "model", None))
+    if not backend.ok:
         ndjson_write(_format_result(
-            "", is_error=True, result_text=f"Unknown provider: {provider_name}",
+            "", is_error=True, result_text=backend.error or f"Unknown provider: {provider_name}",
         ))
         return 1
+    model = backend.model
+    call_model = backend.call_model
 
     cwd = os.getcwd()
     tools = list(get_all_tools())

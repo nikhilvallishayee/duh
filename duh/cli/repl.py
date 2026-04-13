@@ -15,6 +15,8 @@ If ``rich`` is not installed the REPL falls back to plain ANSI escapes
 Slash commands:
     /help     — show available commands
     /model    — show or change the current model
+    /connect  — connect provider auth (OpenAI API key / ChatGPT subscription)
+    /models   — list available models for current provider
     /brief    — toggle brief mode (shorter responses)
     /cost     — show session cost estimate
     /status   — show session status (turns, messages, model)
@@ -35,13 +37,14 @@ Slash commands:
 from __future__ import annotations
 
 import argparse
+import getpass
 import logging
 import os
 import readline
 import sys
 from typing import Any
 
-from duh.adapters.anthropic import AnthropicProvider
+from duh.adapters.anthropic import AnthropicProvider  # noqa: F401 (test/mocking compatibility)
 from duh.adapters.native_executor import NativeExecutor
 from duh.adapters.approvers import ApprovalMode, AutoApprover, InteractiveApprover, TieredApprover
 from duh.cli.runner import BRIEF_INSTRUCTION, SYSTEM_PROMPT, _interpret_error
@@ -52,6 +55,20 @@ from duh.kernel.messages import Message
 from duh.kernel.plan_mode import PlanMode
 from duh.kernel.query_guard import QueryGuard
 from duh.tools.registry import get_all_tools
+from duh.auth.openai_chatgpt import (
+    connect_openai_api_key,
+    connect_openai_chatgpt_subscription,
+    has_openai_chatgpt_oauth,
+)
+from duh.auth.anthropic import connect_anthropic_api_key
+from duh.providers.registry import (
+    available_models_for_provider,
+    build_model_backend,
+    connected_providers,
+    infer_provider_from_model,
+    resolve_openai_auth_mode,
+    resolve_provider_name,
+)
 
 logger = logging.getLogger("duh")
 
@@ -259,6 +276,8 @@ def _make_renderer(debug: bool = False) -> _PlainRenderer | Any:
 SLASH_COMMANDS = {
     "/help": "Show available commands",
     "/model": "Show or set model (/model <name>)",
+    "/connect": "Connect provider auth (/connect openai|anthropic [...])",
+    "/models": "List models for current provider (/models, /models use <name>)",
     "/cost": "Show estimated session cost",
     "/status": "Show session status",
     "/context": "Show context window token breakdown",
@@ -479,6 +498,36 @@ def _handle_slash(
     name = parts[0].lower()
     arg = parts[1] if len(parts) > 1 else ""
 
+    def _connected_providers() -> list[str]:
+        def _check_ollama() -> bool:
+            try:
+                import httpx
+
+                r = httpx.get("http://localhost:11434/api/tags", timeout=2)
+                return r.status_code == 200
+            except Exception:
+                return False
+
+        providers = connected_providers(_check_ollama)
+        if not providers and provider_name:
+            providers.append(provider_name)
+        return list(dict.fromkeys(providers))
+
+    def _switch_backend_for_model(target_model: str) -> tuple[bool, str]:
+        resolved_provider = infer_provider_from_model(target_model)
+        if not resolved_provider:
+            return False, (
+                f"Could not infer provider for model '{target_model}'. "
+                "Use a model name like claude-*, gpt-*, o1/o3, or *codex*."
+            )
+
+        backend = build_model_backend(resolved_provider, target_model)
+        if not backend.ok:
+            return False, backend.error or f"Failed to configure provider: {resolved_provider}"
+        deps.call_model = backend.call_model
+        engine._config.model = backend.model
+        return True, backend.provider
+
     if name == "/help":
         for k, v in SLASH_COMMANDS.items():
             sys.stdout.write(f"  {k:12s} {v}\n")
@@ -486,9 +535,113 @@ def _handle_slash(
 
     if name == "/model":
         if arg:
-            sys.stdout.write(f"  Model changed to: {arg}\n")
-            return True, arg
+            requested = arg.strip()
+            # Friendly shortcut expected by users.
+            if requested.lower() == "codex":
+                requested = "gpt-5.2-codex"
+            ok, result = _switch_backend_for_model(requested)
+            if not ok:
+                sys.stdout.write(f"  {result}\n")
+                return True, model
+            sys.stdout.write(f"  Model changed to: {requested} ({result})\n")
+            return True, requested
+        inferred = infer_provider_from_model(model) or provider_name or "unknown"
+        sys.stdout.write(f"  Current model: {model} ({inferred})\n")
+        return True, model
+
+    if name == "/connect":
+        parts = arg.strip().split()
+        provider = (parts[0].lower() if parts else "openai")
+        if provider not in ("openai", "anthropic"):
+            sys.stdout.write("  Supported: /connect openai | /connect anthropic\n")
+            return True, model
+
+        method = parts[1].lower() if len(parts) > 1 else ""
+        if provider == "openai" and not method:
+            sys.stdout.write(
+                "  Select auth method:\n"
+                "    1) ChatGPT Plus/Pro login\n"
+                "    2) API key\n"
+                "  Choice [1/2]: "
+            )
+            sys.stdout.flush()
+            try:
+                choice = input().strip()
+            except (EOFError, KeyboardInterrupt):
+                sys.stdout.write("\n")
+                return True, model
+            method = "chatgpt" if choice in ("", "1") else "api-key"
+
+        if provider == "openai":
+            if method in ("chatgpt", "oauth", "plus", "pro"):
+                ok, msg = connect_openai_chatgpt_subscription(input_fn=input)
+                sys.stdout.write(f"  {msg}\n")
+                return True, model
+            if method in ("api-key", "apikey", "key"):
+                ok, msg = connect_openai_api_key(input_fn=getpass.getpass)
+                sys.stdout.write(f"  {msg}\n")
+                return True, model
+            sys.stdout.write("  Usage: /connect openai [chatgpt|api-key]\n")
+            return True, model
+
+        if provider == "anthropic":
+            ok, msg = connect_anthropic_api_key(input_fn=getpass.getpass)
+            sys.stdout.write(f"  {msg}\n")
+            return True, model
+
+    if name == "/models":
+        sub = arg.strip().split(None, 1)
+        connected = _connected_providers()
+        if sub and sub[0].lower() == "use":
+            if len(sub) < 2 or not sub[1].strip():
+                sys.stdout.write("  Usage: /models use <name>\n")
+                return True, model
+            target = sub[1].strip()
+            if target.lower() == "codex":
+                target = "gpt-5.2-codex"
+            ok, result = _switch_backend_for_model(target)
+            if not ok:
+                sys.stdout.write(f"  {result}\n")
+                return True, model
+            sys.stdout.write(f"  Model changed to: {target} ({result})\n")
+            return True, target
+
+        effective_provider = infer_provider_from_model(model) or provider_name or "unknown"
         sys.stdout.write(f"  Current model: {model}\n")
+        sys.stdout.write(f"  Current provider: {effective_provider}\n")
+
+        if "openai" in connected:
+            from duh.providers.registry import get_openai_api_key
+
+            has_key = bool(get_openai_api_key())
+            has_oauth = has_openai_chatgpt_oauth()
+            mode = resolve_openai_auth_mode(model)
+            if mode == "chatgpt":
+                mode_label = "ChatGPT subscription"
+            elif has_key:
+                mode_label = "API key"
+            elif has_oauth:
+                mode_label = "ChatGPT subscription (available for Codex models)"
+            else:
+                mode_label = "not connected"
+            sys.stdout.write(f"  OpenAI auth: {mode_label}\n")
+
+        if not connected:
+            sys.stdout.write("  No connected providers.\n")
+            return True, model
+
+        for pname in connected:
+            models = available_models_for_provider(
+                pname,
+                current_model=model if pname == effective_provider else None,
+            )
+            sys.stdout.write(f"  [{pname}]\n")
+            if not models:
+                sys.stdout.write("    (no models found)\n")
+                continue
+            for m in models:
+                marker = "*" if m == model else " "
+                sys.stdout.write(f"  {marker} {m}\n")
         return True, model
 
     if name == "/brief":
@@ -550,7 +703,6 @@ def _handle_slash(
 
     if name == "/git":
         from duh.kernel.git_context import get_git_context
-        import os
         cwd = os.getcwd()
         ctx = get_git_context(cwd)
         if ctx:
@@ -858,26 +1010,19 @@ async def run_repl(args: argparse.Namespace) -> int:
     renderer = _make_renderer(debug=debug)
 
     # --- Resolve provider ---
-    provider_name = args.provider
-    if not provider_name and getattr(args, "model", None):
-        m = args.model.lower()
-        if any(k in m for k in ("claude", "haiku", "sonnet", "opus")):
-            provider_name = "anthropic"
-        elif any(k in m for k in ("gpt", "o1", "o3", "davinci")):
-            provider_name = "openai"
-    if not provider_name:
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            provider_name = "anthropic"
-        elif os.environ.get("OPENAI_API_KEY"):
-            provider_name = "openai"
-        else:
-            try:
-                import httpx
-                r = httpx.get("http://localhost:11434/api/tags", timeout=2)
-                if r.status_code == 200:
-                    provider_name = "ollama"
-            except Exception:
-                pass
+    def _check_ollama() -> bool:
+        try:
+            import httpx
+            r = httpx.get("http://localhost:11434/api/tags", timeout=2)
+            return r.status_code == 200
+        except Exception:
+            return False
+
+    provider_name = resolve_provider_name(
+        explicit_provider=args.provider,
+        model=getattr(args, "model", None),
+        check_ollama=_check_ollama,
+    )
 
     if not provider_name:
         sys.stderr.write(
@@ -887,28 +1032,12 @@ async def run_repl(args: argparse.Namespace) -> int:
         )
         return 1
 
-    if provider_name == "anthropic":
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            sys.stderr.write("Error: ANTHROPIC_API_KEY not set.\n")
-            return 1
-        model = args.model or "claude-sonnet-4-6"
-        call_model = AnthropicProvider(api_key=api_key, model=model).stream
-    elif provider_name == "openai":
-        from duh.adapters.openai import OpenAIProvider
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        if not api_key:
-            sys.stderr.write("Error: OPENAI_API_KEY not set.\n")
-            return 1
-        model = args.model or "gpt-4o"
-        call_model = OpenAIProvider(api_key=api_key, model=model).stream
-    elif provider_name == "ollama":
-        from duh.adapters.ollama import OllamaProvider
-        model = args.model or "qwen2.5-coder:1.5b"
-        call_model = OllamaProvider(model=model).stream
-    else:
-        sys.stderr.write(f"Error: Unknown provider: {provider_name}\n")
+    backend = build_model_backend(provider_name, getattr(args, "model", None))
+    if not backend.ok:
+        sys.stderr.write(f"Error: {backend.error}\n")
         return 1
+    model = backend.model
+    call_model = backend.call_model
 
     # --- Pre-warm the model connection in background ---
     import asyncio
@@ -1045,6 +1174,14 @@ async def run_repl(args: argparse.Namespace) -> int:
         user_input = user_input.strip()
         if not user_input:
             continue
+
+        # Convenience: allow slash commands without the leading "/".
+        # Example: "model gpt-5.2-codex" -> "/model gpt-5.2-codex"
+        if not user_input.startswith("/"):
+            first = user_input.split(None, 1)[0].lower()
+            candidate = f"/{first}"
+            if candidate in SLASH_COMMANDS:
+                user_input = "/" + user_input
 
         # Slash commands
         if user_input.startswith("/"):

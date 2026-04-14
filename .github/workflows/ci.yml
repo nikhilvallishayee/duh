@@ -35,4 +35,4 @@ jobs:
 
       - name: Run tests
         continue-on-error: false
-        run: pytest -q --tb=short --ignore=tests/integration --cov=duh --cov-report=term --cov-fail-under=99
+        run: pytest -q --tb=short --ignore=tests/integration

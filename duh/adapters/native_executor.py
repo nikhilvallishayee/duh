@@ -13,6 +13,14 @@ from duh.kernel.file_tracker import FileTracker
 from duh.kernel.redact import redact_secrets
 from duh.kernel.tool import MAX_TOOL_OUTPUT, Tool, ToolContext, ToolResult, get_tool_timeout
 from duh.kernel.undo import UndoStack
+from duh.kernel.untrusted import TaintSource, UntrustedStr
+
+
+def _wrap_tool_output(text: str) -> UntrustedStr:
+    """Tag native tool output as TOOL_OUTPUT."""
+    if isinstance(text, UntrustedStr):
+        return text
+    return UntrustedStr(text, TaintSource.TOOL_OUTPUT)
 
 # Tools whose execution should be recorded as file operations.
 _FILE_TOOL_OPS: dict[str, str] = {

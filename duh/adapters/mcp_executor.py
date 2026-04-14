@@ -17,6 +17,16 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+from duh.kernel.untrusted import TaintSource, UntrustedStr
+
+
+def _wrap_mcp_output(text: str) -> UntrustedStr:
+    """Tag MCP tool output as MCP_OUTPUT."""
+    if isinstance(text, UntrustedStr):
+        return text
+    return UntrustedStr(text, TaintSource.MCP_OUTPUT)
+
+
 # ---------------------------------------------------------------------------
 # Lazy MCP SDK import -- graceful degradation when not installed
 # ---------------------------------------------------------------------------

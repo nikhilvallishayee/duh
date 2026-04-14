@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import subprocess
 import sys
 
 import pytest
 
 PYTHON = sys.executable
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def run_duh(
@@ -29,7 +31,7 @@ def run_duh(
         capture_output=True,
         text=True,
         timeout=timeout,
-        cwd="/Users/nomind/Code/duh",
+        cwd=str(PROJECT_ROOT),
         env=env,
     )
 

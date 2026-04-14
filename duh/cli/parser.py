@@ -76,6 +76,16 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Enable brief mode: shorter, more concise responses.")
     parser.add_argument("--log-json", action="store_true", default=False,
                         help="Enable structured JSON logging to ~/.config/duh/logs/duh.jsonl.")
+    parser.add_argument(
+        "--i-understand-the-lethal-trifecta",
+        action="store_true",
+        default=False,
+        help=(
+            "Acknowledge the risk of running with READ_PRIVATE + READ_UNTRUSTED + "
+            "NETWORK_EGRESS simultaneously (Simon Willison's exfiltration trifecta). "
+            "Required when all three capabilities are enabled at once."
+        ),
+    )
 
     # SDK compat: accept flags the SDK may pass that we don't use
     parser.add_argument("--print", action="store_true", default=False,

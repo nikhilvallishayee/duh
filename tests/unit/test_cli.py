@@ -95,6 +95,16 @@ class TestBuildParser:
         args = parser.parse_args([])
         assert args.prompt is None
 
+    def test_parser_accepts_trifecta_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["--i-understand-the-lethal-trifecta"])
+        assert args.i_understand_the_lethal_trifecta is True
+
+    def test_parser_trifecta_flag_defaults_false(self):
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.i_understand_the_lethal_trifecta is False
+
 
 # ---------------------------------------------------------------------------
 # --version

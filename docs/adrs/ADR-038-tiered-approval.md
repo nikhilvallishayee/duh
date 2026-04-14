@@ -1,11 +1,6 @@
 # ADR-038: Three-Tier Approval Model
 
-**Status:** Accepted — partial (`TieredApprover` with `SUGGEST` / `AUTO_EDIT` /
-`FULL_AUTO` tiers is implemented and wired through `--approval-mode` in `repl.py`.
-Mode names use underscored enum values rather than the CamelCase names in this ADR.
-The shared git safety check (blocking `git push --force` / `git reset --hard` across
-all tiers) is not implemented — dangerous-git detection currently lives only in the
-bash security classifier, not the approver.)
+**Status:** Accepted — implemented 2026-04-15
 **Date**: 2026-04-08
 
 ## Context

@@ -8,6 +8,7 @@ TieredApprover: 3-tier model (SUGGEST / AUTO_EDIT / FULL_AUTO)
 
 from __future__ import annotations
 
+import re
 import sys
 import warnings
 from enum import Enum
@@ -15,6 +16,27 @@ from pathlib import Path
 from typing import Any
 
 from duh.kernel.tool_categories import COMMAND_TOOLS, READ_TOOLS, WRITE_TOOLS
+
+
+# ---------------------------------------------------------------------------
+# Git safety check — shared across all tiers
+# ---------------------------------------------------------------------------
+
+# Matches destructive git operations that are irreversible without a reflog.
+# Groups: push --force / push -f, reset --hard, clean -[flags]f, branch -D
+_GIT_DESTRUCTIVE_RE = re.compile(
+    r"git\s+(?:"
+    r"push\s+(?:[\w./-]+\s+)*(?:--force|-f)\b"   # git push --force / -f
+    r"|reset\s+--hard\b"                           # git reset --hard
+    r"|clean\s+-[a-zA-Z]*f[a-zA-Z]*\b"            # git clean -f / -fd / -fxd (f anywhere in flags)
+    r"|branch\s+-D\b"                             # git branch -D
+    r")"
+)
+
+
+def _is_dangerous_git_command(command: str) -> bool:
+    """Return True if *command* matches a known destructive git operation."""
+    return bool(_GIT_DESTRUCTIVE_RE.search(command))
 
 
 class AutoApprover:
@@ -175,8 +197,27 @@ class TieredApprover:
         return self._mode
 
     async def check(self, tool_name: str, input: dict[str, Any]) -> dict[str, Any]:
-        """Check if a tool call is approved under the current mode."""
-        # FULL_AUTO: approve everything
+        """Check if a tool call is approved under the current mode.
+
+        The git safety check runs *before* tier logic — it blocks destructive
+        git commands regardless of mode (including FULL_AUTO).  These are
+        irreversible operations that warrant an explicit pause.
+        """
+        # Git safety check — blocks across ALL tiers including FULL_AUTO
+        if tool_name == "Bash":
+            command = input.get("command", "")
+            if _is_dangerous_git_command(command):
+                return {
+                    "allowed": False,
+                    "reason": (
+                        "Dangerous git command blocked by git safety check. "
+                        "Operations like `git push --force`, `git reset --hard`, "
+                        "`git clean -f`, and `git branch -D` are blocked across "
+                        "all approval tiers. Confirm intent explicitly."
+                    ),
+                }
+
+        # FULL_AUTO: approve everything (after git safety check)
         if self._mode == ApprovalMode.FULL_AUTO:
             return {"allowed": True}
 

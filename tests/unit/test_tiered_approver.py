@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from duh.adapters.approvers import ApprovalMode, TieredApprover
+from duh.adapters.approvers import ApprovalMode, TieredApprover, _is_dangerous_git_command
 
 
 class TestApprovalMode:
@@ -172,3 +172,123 @@ class TestTieredApproverGitSafety:
             TieredApprover(mode=ApprovalMode.SUGGEST)
             git_warnings = [x for x in w if "git" in str(x.message).lower()]
             assert len(git_warnings) == 0
+
+
+class TestIsDangerousGitCommand:
+    """Unit tests for the _is_dangerous_git_command helper."""
+
+    def test_force_push_long_flag(self):
+        assert _is_dangerous_git_command("git push origin main --force") is True
+
+    def test_force_push_short_flag(self):
+        assert _is_dangerous_git_command("git push -f") is True
+
+    def test_force_push_with_remote_branch(self):
+        assert _is_dangerous_git_command("git push origin feature/my-branch --force") is True
+
+    def test_reset_hard(self):
+        assert _is_dangerous_git_command("git reset --hard HEAD~1") is True
+
+    def test_reset_hard_short(self):
+        assert _is_dangerous_git_command("git reset --hard") is True
+
+    def test_clean_f(self):
+        assert _is_dangerous_git_command("git clean -f") is True
+
+    def test_clean_fd(self):
+        assert _is_dangerous_git_command("git clean -fd") is True
+
+    def test_clean_fxd(self):
+        assert _is_dangerous_git_command("git clean -fxd") is True
+
+    def test_branch_delete_capital(self):
+        assert _is_dangerous_git_command("git branch -D my-feature") is True
+
+    def test_safe_push(self):
+        assert _is_dangerous_git_command("git push origin main") is False
+
+    def test_safe_reset_soft(self):
+        assert _is_dangerous_git_command("git reset --soft HEAD~1") is False
+
+    def test_safe_reset_mixed(self):
+        assert _is_dangerous_git_command("git reset HEAD~1") is False
+
+    def test_safe_branch_delete_lowercase(self):
+        """git branch -d (lowercase) is safe — it refuses to delete unmerged branches."""
+        assert _is_dangerous_git_command("git branch -d old-branch") is False
+
+    def test_safe_commit(self):
+        assert _is_dangerous_git_command("git commit -m 'fix'") is False
+
+    def test_safe_status(self):
+        assert _is_dangerous_git_command("git status") is False
+
+    def test_non_git_command(self):
+        assert _is_dangerous_git_command("rm -rf /") is False
+
+    def test_empty_command(self):
+        assert _is_dangerous_git_command("") is False
+
+
+class TestTieredApproverGitSafetyCheck:
+    """The git safety check must block dangerous commands across ALL tiers."""
+
+    async def test_force_push_blocked_in_suggest(self):
+        approver = TieredApprover(mode=ApprovalMode.SUGGEST)
+        result = await approver.check("Bash", {"command": "git push --force"})
+        assert result["allowed"] is False
+        assert "git safety" in result["reason"].lower() or "dangerous git" in result["reason"].lower()
+
+    async def test_force_push_blocked_in_auto_edit(self):
+        approver = TieredApprover(mode=ApprovalMode.AUTO_EDIT)
+        result = await approver.check("Bash", {"command": "git push origin main --force"})
+        assert result["allowed"] is False
+
+    async def test_force_push_blocked_in_full_auto(self):
+        """Critical: even FULL_AUTO must not allow force push."""
+        approver = TieredApprover(mode=ApprovalMode.FULL_AUTO)
+        result = await approver.check("Bash", {"command": "git push --force"})
+        assert result["allowed"] is False
+
+    async def test_reset_hard_blocked_in_full_auto(self):
+        approver = TieredApprover(mode=ApprovalMode.FULL_AUTO)
+        result = await approver.check("Bash", {"command": "git reset --hard HEAD~3"})
+        assert result["allowed"] is False
+
+    async def test_clean_blocked_in_full_auto(self):
+        approver = TieredApprover(mode=ApprovalMode.FULL_AUTO)
+        result = await approver.check("Bash", {"command": "git clean -fd"})
+        assert result["allowed"] is False
+
+    async def test_branch_delete_blocked_in_full_auto(self):
+        approver = TieredApprover(mode=ApprovalMode.FULL_AUTO)
+        result = await approver.check("Bash", {"command": "git branch -D feature/old"})
+        assert result["allowed"] is False
+
+    async def test_safe_git_allowed_in_full_auto(self):
+        """Safe git commands should not be blocked."""
+        approver = TieredApprover(mode=ApprovalMode.FULL_AUTO)
+        result = await approver.check("Bash", {"command": "git status"})
+        assert result["allowed"] is True
+
+    async def test_safe_git_push_allowed_in_full_auto(self):
+        """Normal push without --force should pass."""
+        approver = TieredApprover(mode=ApprovalMode.FULL_AUTO)
+        result = await approver.check("Bash", {"command": "git push origin main"})
+        assert result["allowed"] is True
+
+    async def test_non_bash_tool_not_affected(self):
+        """Git safety check only applies to the Bash tool."""
+        approver = TieredApprover(mode=ApprovalMode.FULL_AUTO)
+        # Write tool named "git push --force" (contrived) should not be caught
+        result = await approver.check("Write", {"file_path": "git push --force"})
+        assert result["allowed"] is True
+
+    async def test_reason_mentions_blocked_commands(self):
+        """Error message should be informative."""
+        approver = TieredApprover(mode=ApprovalMode.FULL_AUTO)
+        result = await approver.check("Bash", {"command": "git reset --hard"})
+        assert result["allowed"] is False
+        reason = result["reason"]
+        assert "git" in reason.lower()
+        assert len(reason) > 20  # substantive message

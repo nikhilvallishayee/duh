@@ -159,3 +159,24 @@ def test_exception_remove(tmp_path: Path) -> None:
         "--project-root", str(tmp_path),
     ])
     assert exit_code == 0
+
+
+def test_init_dry_run_does_not_write(tmp_path: Path) -> None:
+    exit_code = security_main([
+        "init", "--non-interactive",
+        "--mode", "strict",
+        "--dry-run",
+        "--project-root", str(tmp_path),
+    ])
+    assert exit_code == 0
+    assert not (tmp_path / ".duh" / "security.json").exists()
+
+
+def test_init_non_interactive_writes_files(tmp_path: Path) -> None:
+    exit_code = security_main([
+        "init", "--non-interactive",
+        "--mode", "strict",
+        "--project-root", str(tmp_path),
+    ])
+    assert exit_code == 0
+    assert (tmp_path / ".duh" / "security.json").exists()

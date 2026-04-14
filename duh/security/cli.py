@@ -30,7 +30,11 @@ def _build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--fail-on", default=None)
     scan.add_argument("--quiet", action="store_true")
 
-    subs.add_parser("init", help="Interactive wizard (phase 3)")
+    init = subs.add_parser("init", help="Interactive wizard")
+    init.add_argument("--non-interactive", action="store_true")
+    init.add_argument("--mode", default="strict", choices=["advisory", "strict", "paranoid"])
+    init.add_argument("--dry-run", action="store_true")
+    init.add_argument("--project-root", default=".", type=Path)
     subs.add_parser("diff", help="Delta against baseline (phase 4)")
 
     exc = subs.add_parser("exception", help="Exception CRUD")
@@ -185,6 +189,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 1
         return 0
 
+    if args.cmd == "init":
+        return _dispatch_init(args)
+
     if args.cmd == "hook":
         return _dispatch_hook(args)
 
@@ -193,6 +200,30 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     sys.stderr.write(f"duh security: {args.cmd} is not yet implemented\n")
     return 3
+
+
+def _dispatch_init(args) -> int:
+    from duh.security.wizard import Answers, detect, render_plan, write_plan
+
+    project_root = Path(args.project_root)
+    det = detect(project_root=project_root)
+    if not args.non_interactive:
+        sys.stderr.write("interactive wizard not yet implemented; pass --non-interactive\n")
+        return 2
+    answers = Answers(
+        mode=args.mode,
+        enable_runtime=True,
+        extended_scanners=(),
+        generate_ci=False,
+        ci_template="standard",
+        install_git_hook=False,
+        generate_security_md=False,
+        import_legacy=False,
+        pin_scanner_versions=True,
+    )
+    plan = render_plan(detection=det, answers=answers, project_root=project_root)
+    write_plan(plan, dry_run=args.dry_run)
+    return 0
 
 
 def _dispatch_exception(args: argparse.Namespace) -> int:

@@ -5,9 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from duh.kernel.untrusted import UNTAINTED_SOURCES, TaintSource
+
+if TYPE_CHECKING:
+    from duh.kernel.confirmation import ConfirmationMinter
 from duh.security.config import SecurityPolicy
 from duh.security.engine import FindingStore
 from duh.security.exceptions import ExceptionStore
@@ -54,6 +57,38 @@ class PolicyDecision:
     reason: str
     findings: tuple[Finding, ...]
     remediation: str | None
+
+
+@dataclass
+class ConfirmationPolicyDecision:
+    """Decision from the confirmation token gate (7.2)."""
+    action: Literal["allow", "block"]
+    reason: str
+
+
+def resolve_confirmation(
+    *,
+    tool: str,
+    input_obj: dict,
+    chain: list,
+    minter: "ConfirmationMinter",
+    session_id: str,
+    token: str | None,
+) -> ConfirmationPolicyDecision:
+    """Gate dangerous tool calls from tainted context on confirmation token."""
+    if tool not in DANGEROUS_TOOLS:
+        return ConfirmationPolicyDecision(action="allow", reason="non-dangerous tool")
+    if not any_tainted(chain):
+        return ConfirmationPolicyDecision(action="allow", reason="untainted context")
+    if token and minter.validate(token, session_id, tool, input_obj):
+        return ConfirmationPolicyDecision(action="allow", reason="valid confirmation token")
+    return ConfirmationPolicyDecision(
+        action="block",
+        reason=(
+            "Dangerous tool called from tainted context without confirmation. "
+            "Confirm interactively or add a user-origin /continue."
+        ),
+    )
 
 
 def resolve(

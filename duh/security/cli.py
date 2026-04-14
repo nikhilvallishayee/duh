@@ -35,7 +35,13 @@ def _build_parser() -> argparse.ArgumentParser:
     subs.add_parser("exception", help="Exception CRUD (phase 2)")
     subs.add_parser("db", help="Advisory DB management (phase 4)")
     subs.add_parser("doctor", help="Diagnose scanner install + CI (phase 5)")
-    subs.add_parser("hook", help="Install/uninstall pre-push git hook (phase 4)")
+
+    hook = subs.add_parser("hook", help="Install/uninstall git hooks")
+    hook_sub = hook.add_subparsers(dest="hook_cmd", required=True)
+    for verb in ("install", "uninstall"):
+        sp = hook_sub.add_parser(verb)
+        sp.add_argument("kind", choices=["git"])
+        sp.add_argument("--project-root", default=".", type=Path)
 
     return parser
 
@@ -68,6 +74,62 @@ async def _run_scan(project_root: Path, scanner_filter: list[str] | None) -> lis
     return findings
 
 
+def _checkout_baseline(ref: str, project_root: Path) -> Path:
+    """Check out the baseline ref into a temp worktree; return its path."""
+    import subprocess
+    import tempfile
+
+    tmp = Path(tempfile.mkdtemp(prefix="duh-sec-baseline-"))
+    subprocess.run(
+        ["git", "worktree", "add", "--detach", str(tmp), ref],
+        cwd=str(project_root), check=True,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return tmp
+
+
+def _delta(head: list[Finding], base: list[Finding]) -> list[Finding]:
+    base_fps = {f.fingerprint for f in base}
+    return [f for f in head if f.fingerprint not in base_fps]
+
+
+_PRE_PUSH_BODY = """#!/usr/bin/env sh
+#
+# Installed by `duh security init`.
+# To disable once: git push --no-verify
+# To remove entirely: duh security hook uninstall git
+#
+if ! duh security scan --baseline "@{upstream}" --fail-on=high --quiet; then
+    echo ""
+    echo "duh-sec: push blocked by security findings."
+    echo "  Inspect:  duh security scan --baseline @{upstream}"
+    echo "  Bypass:   git push --no-verify"
+    echo "  Disable:  duh security hook uninstall git"
+    exit 1
+fi
+"""
+
+
+def _dispatch_hook(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root)
+    hook_path = project_root / ".git" / "hooks" / "pre-push"
+    if args.hook_cmd == "install":
+        hook_path.parent.mkdir(parents=True, exist_ok=True)
+        hook_path.write_text(_PRE_PUSH_BODY, encoding="utf-8")
+        hook_path.chmod(0o755)
+        sys.stdout.write(
+            "duh-sec: pre-push hook installed.\n"
+            "  To disable once:  git push --no-verify\n"
+            "  To remove:        duh security hook uninstall git\n"
+        )
+        return 0
+    if args.hook_cmd == "uninstall":
+        if hook_path.exists():
+            hook_path.unlink()
+        return 0
+    return 2
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     try:
@@ -76,14 +138,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         return int(exc.code or 2)
 
     if args.cmd == "scan":
-        findings = asyncio.run(_run_scan(args.project_root, args.scanner))
+        head_findings = asyncio.run(_run_scan(args.project_root, args.scanner))
+        findings = head_findings
+        if args.baseline:
+            base_root = _checkout_baseline(args.baseline, args.project_root)
+            base_findings = asyncio.run(_run_scan(base_root, args.scanner))
+            findings = _delta(head_findings, base_findings)
         sarif = _to_sarif(findings)
         payload = json.dumps(sarif, indent=2)
         if args.sarif_out == "-" or args.sarif_out is None:
             sys.stdout.write(payload + "\n")
         else:
             Path(args.sarif_out).write_text(payload, encoding="utf-8")
+        if args.fail_on:
+            threshold = {s.strip() for s in args.fail_on.split(",")}
+            if any(f.severity.value in threshold for f in findings):
+                return 1
         return 0
+
+    if args.cmd == "hook":
+        return _dispatch_hook(args)
 
     sys.stderr.write(f"duh security: {args.cmd} is not yet implemented\n")
     return 3

@@ -23,7 +23,22 @@ import uuid as _uuid
 from dataclasses import asdict
 from typing import Any
 
+from pathlib import Path
+
+from duh.kernel.confirmation import ConfirmationMinter
 from duh.kernel.untrusted import TaintSource, UntrustedStr
+
+
+def load_preconfirm_allowlist(
+    path: Path, minter: ConfirmationMinter, session_id: str
+) -> list[str]:
+    """Load a JSON allowlist and pre-mint tokens for each entry."""
+    data = json.loads(path.read_text())
+    tokens: list[str] = []
+    for entry in data:
+        token = minter.mint(session_id, entry["tool"], entry["input"])
+        tokens.append(token)
+    return tokens
 
 
 def wrap_stream_user_message(msg: dict) -> dict:

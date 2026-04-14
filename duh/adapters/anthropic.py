@@ -15,12 +15,26 @@ from __future__ import annotations
 
 import asyncio
 import os
+from dataclasses import dataclass
 from typing import Any, AsyncGenerator
 
 import httpx
 
 from duh.kernel.backoff import with_backoff
 from duh.kernel.messages import Message
+
+
+@dataclass
+class ParsedToolUse:
+    """Canonical parsed representation of a tool_use JSON block.
+
+    All provider adapters must produce identical ParsedToolUse values
+    for the same input (ADR-054 §9, workstream 7.8).
+    """
+
+    id: str
+    name: str
+    input: dict  # type: ignore[type-arg]
 
 
 class AnthropicProvider:
@@ -45,6 +59,18 @@ class AnthropicProvider:
             max_retries=max_retries,
             timeout=timeout,
             **({"base_url": base_url} if base_url else {}),
+        )
+
+    @classmethod
+    def _parse_tool_use_block(cls, block: dict[str, Any]) -> ParsedToolUse:
+        """Parse a raw tool_use JSON block into a ParsedToolUse.
+
+        All providers must agree on the output for the same input.
+        """
+        return ParsedToolUse(
+            id=str(block.get("id", "")),
+            name=str(block.get("name", "")),
+            input=block.get("input", {}),
         )
 
     async def stream(

@@ -22,6 +22,7 @@ from typing import Any, AsyncGenerator
 
 import httpx
 
+from duh.adapters.anthropic import ParsedToolUse
 from duh.kernel.backoff import with_backoff
 from duh.kernel.messages import Message
 
@@ -48,6 +49,18 @@ class OpenAIProvider:
             **({"base_url": base_url} if base_url else {}),
             timeout=timeout,
             max_retries=max_retries,
+        )
+
+    @classmethod
+    def _parse_tool_use_block(cls, block: dict[str, Any]) -> ParsedToolUse:
+        """Parse a raw tool_use JSON block into a ParsedToolUse.
+
+        All providers must agree on the output for the same input.
+        """
+        return ParsedToolUse(
+            id=str(block.get("id", "")),
+            name=str(block.get("name", "")),
+            input=block.get("input", {}),
         )
 
     async def stream(

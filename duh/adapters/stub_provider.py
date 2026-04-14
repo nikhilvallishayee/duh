@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 from typing import Any, AsyncGenerator
 
+from duh.adapters.anthropic import ParsedToolUse
 from duh.kernel.messages import Message
 
 
@@ -43,6 +44,18 @@ class StubProvider:
 
     def __init__(self, model: str = "stub-model") -> None:
         self._model = model
+
+    @classmethod
+    def _parse_tool_use_block(cls, block: dict[str, Any]) -> ParsedToolUse:
+        """Parse a raw tool_use JSON block into a ParsedToolUse.
+
+        All providers must agree on the output for the same input.
+        """
+        return ParsedToolUse(
+            id=str(block.get("id", "")),
+            name=str(block.get("name", "")),
+            input=block.get("input", {}),
+        )
 
     async def stream(
         self,

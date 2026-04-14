@@ -12,6 +12,7 @@ from typing import Any, AsyncGenerator
 
 import httpx
 
+from duh.adapters.anthropic import ParsedToolUse
 from duh.auth.openai_chatgpt import get_valid_openai_chatgpt_oauth
 from duh.kernel.messages import Message
 
@@ -21,6 +22,18 @@ class OpenAIChatGPTProvider:
 
     def __init__(self, model: str = "gpt-5.2-codex"):
         self._default_model = model
+
+    @classmethod
+    def _parse_tool_use_block(cls, block: dict[str, Any]) -> ParsedToolUse:
+        """Parse a raw tool_use JSON block into a ParsedToolUse.
+
+        All providers must agree on the output for the same input.
+        """
+        return ParsedToolUse(
+            id=str(block.get("id", "")),
+            name=str(block.get("name", "")),
+            input=block.get("input", {}),
+        )
 
     async def stream(
         self,

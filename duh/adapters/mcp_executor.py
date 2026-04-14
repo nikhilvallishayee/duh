@@ -18,6 +18,14 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 from duh.kernel.untrusted import TaintSource, UntrustedStr
+from duh.adapters.mcp_unicode import normalize_mcp_description
+from duh.adapters.mcp_manifest import MCPManifest, DEFAULT_MCP_MANIFEST
+from duh.adapters.sandbox.policy import (
+    SandboxCommand,
+    SandboxPolicy,
+    SandboxType,
+    detect_sandbox_type,
+)
 
 
 def _wrap_mcp_output(text: str) -> UntrustedStr:
@@ -138,6 +146,119 @@ def _is_session_expired(status_code: int, message: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Workstream 7.6: Unicode normalization + subprocess sandbox
+# ---------------------------------------------------------------------------
+
+
+class MCPUnicodeError(RuntimeError):
+    """Raised when an MCP server has suspicious Unicode in tool descriptions.
+
+    Triggered during the handshake if any tool description or parameter
+    description contains zero-width characters, bidi overrides, Unicode Tag
+    Characters, or invisible variation selectors (GlassWorm-style injection).
+    """
+
+
+def _validate_mcp_tool_descriptions(tools: list[dict[str, Any]]) -> list[str]:
+    """Validate all tool descriptions at handshake time.
+
+    Scans both the top-level ``description`` field and every parameter
+    description inside ``inputSchema.properties.*.description``.
+
+    Args:
+        tools: List of tool dicts as returned by the MCP ``list_tools`` RPC
+               (each with at minimum ``name`` and optionally ``description``
+               and ``inputSchema``).
+
+    Returns:
+        A list of human-readable issue strings.  Empty means all clear.
+    """
+    all_issues: list[str] = []
+    for tool in tools:
+        name = tool.get("name", "<unnamed>")
+        desc = tool.get("description", "") or ""
+        _, issues = normalize_mcp_description(desc)
+        for issue in issues:
+            all_issues.append(f"tool '{name}': {issue}")
+
+        # Also scan parameter descriptions inside inputSchema.properties
+        input_schema = tool.get("inputSchema", {}) or {}
+        props = input_schema.get("properties", {}) or {}
+        for param_name, param_schema in props.items():
+            param_desc = (param_schema.get("description", "") or "") if isinstance(param_schema, dict) else ""
+            _, param_issues = normalize_mcp_description(param_desc)
+            for issue in param_issues:
+                all_issues.append(f"tool '{name}' param '{param_name}': {issue}")
+
+    return all_issues
+
+
+def _compute_mcp_sandbox_policy(manifest: MCPManifest) -> SandboxPolicy:
+    """Derive a SandboxPolicy from an MCPManifest.
+
+    Converts the frozen-set Path objects in the manifest to the string lists
+    that SandboxPolicy expects.
+
+    Args:
+        manifest: The server's capability manifest.
+
+    Returns:
+        A :class:`~duh.adapters.sandbox.policy.SandboxPolicy` ready to pass
+        to :meth:`~duh.adapters.sandbox.policy.SandboxCommand.build`.
+    """
+    return SandboxPolicy(
+        writable_paths=[str(p) for p in manifest.writable_paths],
+        readable_paths=[str(p) for p in manifest.readable_paths],
+        network_allowed=manifest.network_allowed,
+    )
+
+
+def _sandbox_available() -> bool:
+    """Return True if OS-level sandboxing is available on this platform."""
+    try:
+        return detect_sandbox_type() != SandboxType.NONE
+    except Exception:
+        return False
+
+
+def _build_sandboxed_command(
+    command: str,
+    args: list[str],
+    manifest: MCPManifest,
+) -> list[str] | None:
+    """Wrap an MCP stdio command in an OS sandbox.
+
+    Derives a :class:`SandboxPolicy` from *manifest*, then uses
+    :class:`SandboxCommand` to wrap the command with the platform-appropriate
+    sandbox (Seatbelt on macOS, Landlock on Linux).
+
+    Args:
+        command: The bare executable (e.g. ``"node"``).
+        args: Positional arguments to the executable.
+        manifest: The server's capability manifest.
+
+    Returns:
+        A complete ``argv`` list to pass to ``asyncio.create_subprocess_exec``,
+        or ``None`` if no sandbox is available on this platform.
+    """
+    if not _sandbox_available():
+        return None
+    policy = _compute_mcp_sandbox_policy(manifest)
+    sandbox_type = detect_sandbox_type()
+    # Build with just the command (no args); args are appended after
+    sandbox_cmd = SandboxCommand.build(
+        command=command,
+        policy=policy,
+        sandbox_type=sandbox_type,
+    )
+    # SandboxCommand.argv already ends with ["bash", "-c", command] for
+    # Seatbelt/NONE, or the python-landlock wrapper for Landlock.
+    # We return it as-is; the caller (MCPExecutor._start_stdio) will pass the
+    # full argv to StdioServerParameters which starts the real subprocess.
+    return sandbox_cmd.argv + args
+
+
+# ---------------------------------------------------------------------------
 # MCPExecutor -- the ToolExecutor adapter
 # ---------------------------------------------------------------------------
 
@@ -198,6 +319,7 @@ class MCPExecutor:
             # Discover tools
             tools_result = await session.list_tools()
             tools: list[MCPToolInfo] = []
+            raw_tool_dicts: list[dict[str, Any]] = []
             for tool in tools_result.tools:
                 info = MCPToolInfo(
                     name=tool.name,
@@ -205,9 +327,25 @@ class MCPExecutor:
                     description=getattr(tool, "description", "") or "",
                     input_schema=getattr(tool, "inputSchema", {}) or {},
                 )
+                raw_tool_dicts.append({
+                    "name": tool.name,
+                    "description": getattr(tool, "description", "") or "",
+                    "inputSchema": getattr(tool, "inputSchema", {}) or {},
+                })
                 qualified = f"mcp__{server_name}__{tool.name}"
                 self._tool_index[qualified] = info
                 tools.append(info)
+
+            # Validate Unicode safety of all tool descriptions at handshake time
+            unicode_issues = _validate_mcp_tool_descriptions(raw_tool_dicts)
+            if unicode_issues:
+                summary = "; ".join(unicode_issues[:3])
+                if len(unicode_issues) > 3:
+                    summary += f" (and {len(unicode_issues) - 3} more)"
+                raise MCPUnicodeError(
+                    f"MCP server '{server_name}' has suspicious Unicode in tool "
+                    f"descriptions: {summary}"
+                )
 
             conn = MCPConnection(
                 server_name=server_name,

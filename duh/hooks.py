@@ -28,13 +28,17 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import builtins
 import fnmatch
 import json
 import logging
 import os
+import shutil
 import subprocess
-from dataclasses import dataclass
+import tempfile
+from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Callable, Awaitable
 
 logger = logging.getLogger(__name__)
@@ -82,6 +86,9 @@ class HookEvent(str, Enum):
     WORKTREE_REMOVE = "WorktreeRemove"
     SETUP = "Setup"
     TEAMMATE_IDLE = "TeammateIdle"
+
+    # --- Phase 7: LLM security hardening events ---
+    AUDIT = "audit"  # PEP 578 audit hook bridge (ADR-054, 7.5)
 
 
 class HookType(str, Enum):
@@ -514,3 +521,83 @@ async def execute_hooks_with_blocking(
                 return parsed
 
     return HookResponse(decision="continue")
+
+
+# ---------------------------------------------------------------------------
+# Per-hook filesystem namespacing (ADR-054, Workstream 7.4)
+# ---------------------------------------------------------------------------
+
+
+class HookFSViolation(PermissionError):
+    """Raised when a hook accesses files outside its namespace."""
+
+
+@dataclass
+class HookContext:
+    """Per-hook runtime context with a private filesystem namespace.
+
+    Each hook receives a unique ``tmp_dir`` that only it may write to.
+    Reads outside ``tmp_dir`` must be explicitly whitelisted in
+    ``allowed_read``.  Use ``ctx.open()`` instead of the built-in open
+    to enforce these constraints.
+    """
+
+    hook_name: str
+    tmp_dir: Path = field(init=False)
+    allowed_read: frozenset[Path] = field(default_factory=frozenset)
+    allowed_write: frozenset[Path] = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.tmp_dir = Path(tempfile.mkdtemp(prefix=f"duh-hook-{self.hook_name}-"))
+        self.allowed_write = frozenset({self.tmp_dir})
+
+    def cleanup(self) -> None:
+        """Remove the private temp directory."""
+        if self.tmp_dir.exists():
+            shutil.rmtree(self.tmp_dir)
+
+    def open(self, path: "str | Path", mode: str = "r"):
+        """Namespace-enforced open.
+
+        Writes are only allowed inside ``tmp_dir`` (or other paths in
+        ``allowed_write``).  Reads are allowed inside ``tmp_dir`` or any
+        path in ``allowed_read``.
+        """
+        resolved = Path(path).resolve()
+        if "w" in mode or "a" in mode or "+" in mode:
+            if not any(
+                resolved == w or resolved.is_relative_to(w)
+                for w in self.allowed_write
+            ):
+                raise HookFSViolation(
+                    f"hook '{self.hook_name}' wrote outside namespace: {resolved}"
+                )
+        else:
+            all_readable = self.allowed_read | self.allowed_write
+            if not any(
+                resolved == r or resolved.is_relative_to(r)
+                for r in all_readable
+            ):
+                raise HookFSViolation(
+                    f"hook '{self.hook_name}' read outside namespace: {resolved}"
+                )
+        return builtins.open(resolved, mode)
+
+
+class HookContextRegistry:
+    """Tracks all active HookContexts for bulk cleanup at SESSION_END."""
+
+    def __init__(self) -> None:
+        self._contexts: list[HookContext] = []
+
+    def create(self, hook_name: str) -> HookContext:
+        """Create a new HookContext and track it for cleanup."""
+        ctx = HookContext(hook_name=hook_name)
+        self._contexts.append(ctx)
+        return ctx
+
+    def cleanup_all(self) -> None:
+        """Remove all tracked temp directories (call at SESSION_END)."""
+        for ctx in self._contexts:
+            ctx.cleanup()
+        self._contexts.clear()

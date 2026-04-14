@@ -84,6 +84,11 @@ def main(argv: list[str] | None = None) -> int:
             sys.stderr.write("\nInterrupted.\n")
             return 130
 
+    # TUI mode: --tui flag launches the Textual full-widget-tree interface
+    if getattr(args, "tui", False):
+        from duh.ui import run_tui
+        return run_tui(args)
+
     # No prompt and no SDK mode → interactive REPL
     from duh.cli.repl import run_repl
     try:

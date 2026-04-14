@@ -1,6 +1,6 @@
 # ADR-011: TUI Architecture
 
-**Status:** Accepted — implemented 2026-04-15. Tier 0 (bare readline) + Tier 1 (Rich rendering: markdown with syntax highlighting, collapsible tool panels, progress spinners, enhanced status bar with tokens/cost) fully shipped. Tier 2 (full widget tree / textual) deferred.
+**Status:** Accepted — fully implemented. Tier 0 (bare readline) + Tier 1 (Rich rendering: markdown with syntax highlighting, collapsible tool panels, progress spinners, enhanced status bar with tokens/cost) + Tier 2 (full Textual widget-tree TUI: `duh/ui/app.py`, `duh/ui/widgets.py`, `duh/ui/theme.py`, invoked via `duh --tui`) all shipped as of 2026-04-14.
 **Date**: 2026-04-06
 
 ## Context
@@ -115,4 +115,4 @@ Engine (yields events)
 - Renderer port: `duh/ports/renderer.py`.
 - REPL consumes renderer + engine events: `duh/cli/repl.py` (ADR-024).
 - JSON / NDJSON output: `duh/cli/runner.py`, `duh/cli/ndjson.py`, `duh/cli/sdk_runner.py`.
-- Tier 2 full-TUI (textual) remains future work.
+- Tier 2 full-TUI (textual): `duh/ui/app.py` (DuhApp + run_tui), `duh/ui/widgets.py` (MessageWidget, ToolCallWidget, ThinkingWidget), `duh/ui/theme.py`. Launched via `duh --tui`.

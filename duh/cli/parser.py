@@ -76,6 +76,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Enable brief mode: shorter, more concise responses.")
     parser.add_argument("--log-json", action="store_true", default=False,
                         help="Enable structured JSON logging to ~/.config/duh/logs/duh.jsonl.")
+    parser.add_argument("--tui", action="store_true", default=False,
+                        help="Launch the full Textual TUI (ADR-011 Tier 2) instead of the readline REPL.")
     parser.add_argument(
         "--i-understand-the-lethal-trifecta",
         action="store_true",

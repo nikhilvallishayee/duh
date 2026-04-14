@@ -1,0 +1,424 @@
+"""D.U.H. Textual TUI — full widget-tree frontend (ADR-011 Tier 2).
+
+Architecture
+------------
+The app is a *pure frontend*: it consumes the same async event stream that
+the readline REPL uses (``engine.run(prompt)``).  The kernel (``loop.py``,
+``engine.py``) is unchanged.  This is the TextualRenderer described in
+ADR-011's architecture diagram.
+
+Layout
+------
+┌─ Header ──────────────────────────────────────────────────────────────┐
+│ model name  |  session id  |  tokens  |  cost                         │
+├─ Sidebar ──┬─ Message log (ScrollableContainer) ─────────────────────┤
+│ session    │                                                            │
+│ info       │  [user]  …                                                │
+│ active     │  [assistant]  …                                           │
+│ tools      │    ┌─ tool call ─────────────────────────────────────┐   │
+│ recent     │    │ Bash(command='ls /')   OK: total 64             │   │
+│ files      │    └─────────────────────────────────────────────────┘   │
+│            │                                                            │
+├────────────┴───────────────────────────────────────────────────────────┤
+│ Input > _______________________________________________  [Send]        │
+├────────────────────────────────────────────────────────────────────────┤
+│ model  turn N  in=NNN out=NNN  $0.0000  connected                     │
+└────────────────────────────────────────────────────────────────────────┘
+
+Keyboard shortcuts
+------------------
+Ctrl+B  — toggle sidebar
+Ctrl+C / q  — quit (when input not focused)
+Enter   — send message (same as clicking Send)
+"""
+
+from __future__ import annotations
+
+import asyncio
+import argparse
+import sys
+from typing import Any
+
+from textual import on, work
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import ScrollableContainer, Horizontal, Vertical
+from textual.widgets import Button, Footer, Header, Input, Label, Static
+
+from duh.ui.theme import APP_CSS
+from duh.ui.widgets import MessageWidget, ThinkingWidget, ToolCallWidget
+
+
+# ---------------------------------------------------------------------------
+# DuhApp
+# ---------------------------------------------------------------------------
+
+
+class DuhApp(App[int]):
+    """D.U.H. Textual TUI application.
+
+    Parameters
+    ----------
+    engine:
+        A fully-configured ``duh.kernel.engine.Engine`` instance.
+    model:
+        Display name of the active model.
+    session_id:
+        Session identifier string for display.
+    debug:
+        When *True*, thinking blocks are visible.
+    """
+
+    CSS = APP_CSS
+
+    BINDINGS = [
+        Binding("ctrl+b", "toggle_sidebar", "Sidebar", show=True),
+        Binding("ctrl+c", "quit", "Quit", show=True),
+        Binding("q", "quit", "Quit", show=False),
+    ]
+
+    # ------------------------------------------------------------------ init
+
+    def __init__(
+        self,
+        engine: Any,
+        model: str = "unknown",
+        session_id: str = "",
+        debug: bool = False,
+    ) -> None:
+        super().__init__()
+        self._engine = engine
+        self._model = model
+        self._session_id = session_id
+        self._debug = debug
+
+        # Running counters
+        self._input_tokens: int = 0
+        self._output_tokens: int = 0
+        self._cost: float = 0.0
+        self._turn: int = 0
+        self._connected: bool = True
+
+        # Track the "current" assistant message being streamed
+        self._active_assistant: MessageWidget | None = None
+        self._active_thinking: ThinkingWidget | None = None
+        self._active_tool: ToolCallWidget | None = None
+
+    # ---------------------------------------------------------------- compose
+
+    def compose(self) -> ComposeResult:
+        yield Static(self._header_text(), id="header")
+        with Horizontal(id="body"):
+            yield self._make_sidebar()
+            yield ScrollableContainer(id="message-log")
+        with Horizontal(id="input-area"):
+            yield Input(placeholder="Type a message… (Enter to send)", id="prompt-input")
+            yield Button("Send", id="send-button", variant="primary")
+        yield Static(self._status_text(), id="statusbar")
+
+    # ----------------------------------------------------------------- sidebar
+
+    def _make_sidebar(self) -> Vertical:
+        sidebar = Vertical(id="sidebar")
+        return sidebar
+
+    # ----------------------------------------------------------------- header / status
+
+    def _header_text(self) -> str:
+        sid = f"  [{self._session_id[:8]}]" if self._session_id else ""
+        return f" D.U.H. | {self._model}{sid}"
+
+    def _status_text(self) -> str:
+        tok = ""
+        if self._input_tokens or self._output_tokens:
+            tok = f"  in={self._input_tokens:,} out={self._output_tokens:,}"
+        cost = f"  ${self._cost:.4f}" if self._cost else ""
+        conn = "connected" if self._connected else "disconnected"
+        return f" [{self._model}] turn {self._turn}{tok}{cost}  {conn}"
+
+    def _refresh_status(self) -> None:
+        self.query_one("#header", Static).update(self._header_text())
+        self.query_one("#statusbar", Static).update(self._status_text())
+
+    # ----------------------------------------------------------------- sidebar toggle
+
+    def action_toggle_sidebar(self) -> None:
+        sidebar = self.query_one("#sidebar")
+        if "visible" in sidebar.classes:
+            sidebar.remove_class("visible")
+        else:
+            sidebar.add_class("visible")
+
+    # ----------------------------------------------------------------- message helpers
+
+    async def _add_widget(self, widget: Any) -> None:
+        """Mount a widget into the message log and scroll to bottom."""
+        log = self.query_one("#message-log", ScrollableContainer)
+        await log.mount(widget)
+        log.scroll_end(animate=False)
+
+    async def _new_user_message(self, text: str) -> MessageWidget:
+        widget = MessageWidget(role="user", text=text)
+        await self._add_widget(widget)
+        return widget
+
+    async def _new_assistant_message(self) -> MessageWidget:
+        widget = MessageWidget(role="assistant", text="")
+        await self._add_widget(widget)
+        return widget
+
+    async def _new_thinking_widget(self) -> ThinkingWidget:
+        widget = ThinkingWidget()
+        await self._add_widget(widget)
+        return widget
+
+    async def _new_tool_widget(self, name: str, inp: dict) -> ToolCallWidget:
+        widget = ToolCallWidget(tool_name=name, input=inp)
+        await self._add_widget(widget)
+        return widget
+
+    async def _add_error_message(self, text: str) -> None:
+        widget = Static(f"[red]Error:[/red] {text}", classes="message-assistant")
+        await self._add_widget(widget)
+
+    # ----------------------------------------------------------------- send message
+
+    @on(Button.Pressed, "#send-button")
+    async def handle_send_button(self, _event: Button.Pressed) -> None:
+        await self._submit()
+
+    @on(Input.Submitted, "#prompt-input")
+    async def handle_input_submitted(self, _event: Input.Submitted) -> None:
+        await self._submit()
+
+    async def _submit(self) -> None:
+        inp = self.query_one("#prompt-input", Input)
+        text = inp.value.strip()
+        if not text:
+            return
+        inp.value = ""
+        inp.disabled = True
+        self.query_one("#send-button", Button).disabled = True
+
+        await self._new_user_message(text)
+        self._run_query(text)
+
+    # ----------------------------------------------------------------- worker
+
+    @work(exclusive=True, thread=False)
+    async def _run_query(self, prompt: str) -> None:
+        """Stream engine events and update the TUI reactively."""
+        self._turn += 1
+        self._active_assistant = None
+        self._active_thinking = None
+        self._active_tool = None
+
+        try:
+            async for event in self._engine.run(prompt):
+                event_type = event.get("type", "")
+
+                if event_type == "text_delta":
+                    text = event.get("text", "")
+                    if self._active_assistant is None:
+                        self._active_assistant = await self._new_assistant_message()
+                    self._active_assistant.append(text)
+                    # Scroll log to bottom
+                    log = self.query_one("#message-log", ScrollableContainer)
+                    log.scroll_end(animate=False)
+
+                elif event_type == "thinking_delta":
+                    if self._debug:
+                        text = event.get("text", "")
+                        if self._active_thinking is None:
+                            self._active_thinking = await self._new_thinking_widget()
+                        self._active_thinking.append(text)
+
+                elif event_type == "tool_use":
+                    # Finish the current assistant message first
+                    self._active_assistant = None
+                    name = event.get("name", "?")
+                    inp = event.get("input", {})
+                    self._active_tool = await self._new_tool_widget(name, inp)
+
+                elif event_type == "tool_result":
+                    if self._active_tool is not None:
+                        output = str(event.get("output", ""))
+                        is_error = bool(event.get("is_error"))
+                        self._active_tool.set_result(output, is_error)
+                        self._active_tool = None
+
+                elif event_type == "assistant":
+                    # Full assistant message arrived — streaming done for this segment
+                    self._active_assistant = None
+
+                elif event_type == "error":
+                    error_text = str(event.get("error", "unknown error"))
+                    await self._add_error_message(error_text)
+
+                elif event_type == "budget_warning":
+                    msg = event.get("message", "")
+                    await self._add_error_message(f"Budget warning: {msg}")
+
+                elif event_type == "budget_exceeded":
+                    msg = event.get("message", "")
+                    await self._add_error_message(f"Budget exceeded: {msg}")
+
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            await self._add_error_message(str(exc))
+        finally:
+            # Update token counts from engine
+            try:
+                from duh.kernel.tokens import estimate_cost
+
+                self._input_tokens = getattr(self._engine, "total_input_tokens", 0)
+                self._output_tokens = getattr(self._engine, "total_output_tokens", 0)
+                self._cost = estimate_cost(
+                    self._model,
+                    self._input_tokens,
+                    self._output_tokens,
+                )
+            except Exception:
+                pass
+
+            self._refresh_status()
+
+            # Re-enable input
+            inp = self.query_one("#prompt-input", Input)
+            inp.disabled = False
+            inp.focus()
+            self.query_one("#send-button", Button).disabled = False
+
+    # ----------------------------------------------------------------- quit
+
+    def action_quit(self) -> int:
+        self.exit(0)
+        return 0
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
+def run_tui(args: argparse.Namespace) -> int:
+    """Build the engine from *args* and launch the Textual TUI.
+
+    This mirrors the structure of ``run_repl`` in ``duh/cli/repl.py``:
+    same provider resolution, same engine setup, different frontend.
+    """
+    import os
+
+    from duh.adapters.approvers import ApprovalMode, AutoApprover, InteractiveApprover, TieredApprover
+    from duh.adapters.native_executor import NativeExecutor
+    from duh.adapters.simple_compactor import SimpleCompactor
+    from duh.adapters.file_store import FileStore
+    from duh.cli.runner import SYSTEM_PROMPT, BRIEF_INSTRUCTION
+    from duh.hooks import HookRegistry
+    from duh.kernel.deps import Deps
+    from duh.kernel.engine import Engine, EngineConfig
+    from duh.kernel.git_context import get_git_context, get_git_warnings
+    from duh.providers.registry import (
+        build_model_backend,
+        resolve_provider_name,
+    )
+    from duh.tools.registry import get_all_tools
+
+    def _check_ollama() -> bool:
+        try:
+            import httpx
+
+            r = httpx.get("http://localhost:11434/api/tags", timeout=2)
+            return r.status_code == 200
+        except Exception:
+            return False
+
+    provider_name = resolve_provider_name(
+        explicit_provider=getattr(args, "provider", None),
+        model=getattr(args, "model", None),
+        check_ollama=_check_ollama,
+    )
+
+    if not provider_name:
+        sys.stderr.write(
+            "Error: No provider available.\n"
+            "  Option 1: export ANTHROPIC_API_KEY=sk-ant-...\n"
+            "  Option 2: start Ollama (ollama serve)\n"
+        )
+        return 1
+
+    backend = build_model_backend(provider_name, getattr(args, "model", None))
+    if not backend.ok:
+        sys.stderr.write(f"Error: {backend.error}\n")
+        return 1
+
+    model = backend.model
+    cwd = os.getcwd()
+    tools = list(get_all_tools())
+
+    system_prompt_parts = [getattr(args, "system_prompt", None) or SYSTEM_PROMPT]
+    if getattr(args, "brief", False):
+        system_prompt_parts.append(BRIEF_INSTRUCTION)
+
+    git_ctx = get_git_context(cwd)
+    if git_ctx:
+        system_prompt_parts.append(git_ctx)
+
+    for warning in get_git_warnings(cwd):
+        sys.stderr.write(f"\033[33mWARNING: {warning}\033[0m\n")
+
+    system_prompt = "\n\n".join(system_prompt_parts)
+
+    executor = NativeExecutor(tools=tools, cwd=cwd)
+
+    approval_mode_str = getattr(args, "approval_mode", None)
+    if approval_mode_str:
+        approver: Any = TieredApprover(mode=ApprovalMode(approval_mode_str), cwd=cwd)
+    elif getattr(args, "dangerously_skip_permissions", False):
+        approver = AutoApprover()
+    else:
+        approver = InteractiveApprover()
+
+    compactor = SimpleCompactor()
+    store = FileStore()
+    hook_registry = HookRegistry()
+
+    deps = Deps(
+        call_model=backend.call_model,
+        run_tool=executor.run,
+        approve=approver.check,
+        compact=compactor.compact,
+        hook_registry=hook_registry,
+    )
+
+    max_cost = getattr(args, "max_cost", None)
+    if max_cost is None:
+        env_cost = os.environ.get("DUH_MAX_COST")
+        if env_cost is not None:
+            try:
+                max_cost = float(env_cost)
+            except (ValueError, TypeError):
+                pass
+
+    trifecta_ack = getattr(args, "i_understand_the_lethal_trifecta", False)
+
+    engine_config = EngineConfig(
+        model=model,
+        fallback_model=getattr(args, "fallback_model", None),
+        system_prompt=system_prompt,
+        tools=tools,
+        max_turns=getattr(args, "max_turns", 10),
+        max_cost=max_cost,
+        trifecta_acknowledged=trifecta_ack,
+    )
+
+    engine = Engine(deps=deps, config=engine_config, session_store=store)
+
+    app = DuhApp(
+        engine=engine,
+        model=model,
+        session_id=engine.session_id,
+        debug=getattr(args, "debug", False),
+    )
+    return app.run() or 0

@@ -166,17 +166,46 @@ class _PlainRenderer:
             "Type /help for commands, /exit or Ctrl-D to quit.\n\n"
         )
 
+    # -- stats update (no-op for plain) --------------------------------
+    def update_stats(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        cost: float,
+    ) -> None:
+        pass
+
     # -- status bar (no-op for plain) ----------------------------------
     def status_bar(self, model: str, turns: int) -> None:
         pass
 
 
 class _RichRenderer:
-    """Renderer that uses the Rich library for styled terminal output."""
+    """Renderer that uses the Rich library for styled terminal output.
+
+    Tier 1 features (ADR-011):
+    - Markdown rendering: assistant text is re-rendered as Rich Markdown after
+      streaming, so headers, code blocks, lists, bold, and tables are styled.
+    - Syntax highlighting: fenced code blocks get language-aware highlighting
+      via Rich's built-in Markdown renderer (which uses ``rich.syntax.Syntax``
+      internally for each fenced block, auto-detecting from the fence tag).
+    - Collapsible tool output panels: successful tool results show a compact
+      summary Panel (green, always visible); errors show a full Panel (red).
+    - Progress spinners: a spinner character appears on stderr while a tool is
+      running; cleared as soon as the result arrives.
+    - Enhanced status bar: shows model, turn, cumulative token counts, and
+      estimated cost so the user can track session economics at a glance.
+    """
 
     def __init__(self, debug: bool = False):
         self.debug = debug
         self._buf: list[str] = []
+        # Track active tool name so the spinner label is meaningful.
+        self._active_tool: str | None = None
+        # Accumulated token counts and cost (updated via update_stats).
+        self._input_tokens: int = 0
+        self._output_tokens: int = 0
+        self._cost: float = 0.0
         theme = Theme({
             "tool": "bold yellow",
             "tool.ok": "green",
@@ -204,7 +233,13 @@ class _RichRenderer:
 
     # -- markdown flush ------------------------------------------------
     def flush_response(self) -> None:
-        """Re-render the full response as Rich Markdown after streaming."""
+        """Re-render the full response as Rich Markdown after streaming.
+
+        Rich's Markdown renderer handles headers, bold/italic, fenced code
+        blocks with syntax highlighting (auto-detected from the fence tag,
+        e.g. ```python, ```bash, ```json), ordered/unordered lists, GFM
+        tables, and blockquotes.
+        """
         full = "".join(self._buf)
         self._buf.clear()
         if not full.strip():
@@ -228,6 +263,8 @@ class _RichRenderer:
 
     # -- tool use & results --------------------------------------------
     def tool_use(self, name: str, inp: dict[str, Any]) -> None:
+        """Show a tool-call header and start a progress spinner on stderr."""
+        self._active_tool = name
         summary = ", ".join(f"{k}={v!r}" for k, v in list(inp.items())[:2])
         self._err_console.print(
             Text.assemble(
@@ -236,30 +273,83 @@ class _RichRenderer:
                 (f"({summary})", ""),
             )
         )
+        # Inline spinner: a single overwritable line on stderr.
+        sys.stderr.write(f"\r  \033[33m⠋\033[0m running {name}…")
+        sys.stderr.flush()
 
     def tool_result(self, output: str, is_error: bool) -> None:
+        """Clear the spinner and render the tool result in a Panel.
+
+        - Errors: full Panel, red border (always shown).
+        - Success: compact one-line summary Panel, green border (always shown).
+          Full output additionally shown in debug mode.
+        """
+        # Clear the spinner line.
+        sys.stderr.write("\r\033[K")
+        sys.stderr.flush()
+        self._active_tool = None
+
         if is_error:
             self._err_console.print(
                 Panel(
                     output[:300],
-                    title="tool error",
+                    title="[bold red]tool error[/bold red]",
                     border_style="tool.err",
                     expand=False,
                 )
             )
-        elif self.debug:
+        else:
+            # Always show a compact summary so the user sees the result.
+            first_line = output.split("\n", 1)[0][:120] if output else "(empty)"
+            summary_text = first_line.strip() or f"({len(output)} chars)"
             self._err_console.print(
-                Text(f"  < {output[:100]}", style="tool.ok")
+                Panel(
+                    Text(summary_text, style="tool.ok"),
+                    title="[green]tool ok[/green]",
+                    border_style="tool.ok",
+                    expand=False,
+                )
             )
+            if self.debug and output and len(output) > len(summary_text):
+                self._err_console.print(
+                    Panel(
+                        output[:500],
+                        title="[green]tool output (full)[/green]",
+                        border_style="tool.ok",
+                        expand=False,
+                    )
+                )
+
+    # -- stats update (called by REPL after each turn) -----------------
+    def update_stats(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        cost: float,
+    ) -> None:
+        """Update running token and cost totals for the status bar."""
+        self._input_tokens = input_tokens
+        self._output_tokens = output_tokens
+        self._cost = cost
 
     # -- errors --------------------------------------------------------
     def error(self, hint: str) -> None:
+        # Clear any active spinner before showing the error.
+        if self._active_tool is not None:
+            sys.stderr.write("\r\033[K")
+            sys.stderr.flush()
+            self._active_tool = None
         self._err_console.print(
             Panel(hint, title="Error", border_style="err", expand=False)
         )
 
     # -- end of turn separator -----------------------------------------
     def turn_end(self) -> None:
+        # Clear any leftover spinner.
+        if self._active_tool is not None:
+            sys.stderr.write("\r\033[K")
+            sys.stderr.flush()
+            self._active_tool = None
         sys.stdout.write("\n\n")
 
     # -- banner --------------------------------------------------------
@@ -278,8 +368,18 @@ class _RichRenderer:
 
     # -- status bar ----------------------------------------------------
     def status_bar(self, model: str, turns: int) -> None:
+        """Render a status bar with model, turn, token counts, and cost."""
+        tok_str = (
+            f"  in={self._input_tokens:,} out={self._output_tokens:,}"
+            if (self._input_tokens or self._output_tokens)
+            else ""
+        )
+        cost_str = f"  ${self._cost:.4f}" if self._cost else ""
         self._err_console.print(
-            Text(f"  [{model}] turn {turns}", style="status")
+            Text(
+                f"  [{model}] turn {turns}{tok_str}{cost_str}",
+                style="status",
+            )
         )
 
 
@@ -1444,6 +1544,15 @@ async def run_repl(args: argparse.Namespace) -> int:
 
         # Re-render accumulated text as Rich Markdown (no-op for plain)
         renderer.flush_response()
+
+        # Update status bar with current token counts and cost estimate.
+        from duh.kernel.tokens import estimate_cost as _estimate_cost
+        renderer.update_stats(
+            input_tokens=engine.total_input_tokens,
+            output_tokens=engine.total_output_tokens,
+            cost=_estimate_cost(model, engine.total_input_tokens, engine.total_output_tokens),
+        )
+
         renderer.turn_end()
 
     # --- Save readline history on exit ---

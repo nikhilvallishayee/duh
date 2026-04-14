@@ -1,6 +1,6 @@
 # ADR-011: TUI Architecture
 
-**Status:** Accepted — Tier 0 (bare readline) + Tier 1 (Rich rendering with status bar, collapsible tool output, syntax highlighting) shipped. Tier 2 (full widget tree) deferred.
+**Status:** Accepted — implemented 2026-04-15. Tier 0 (bare readline) + Tier 1 (Rich rendering: markdown with syntax highlighting, collapsible tool panels, progress spinners, enhanced status bar with tokens/cost) fully shipped. Tier 2 (full widget tree / textual) deferred.
 **Date**: 2026-04-06
 
 ## Context

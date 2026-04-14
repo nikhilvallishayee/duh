@@ -84,6 +84,9 @@ class ToolContext:
     session_id: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
     sandbox_policy: Any = None  # SandboxPolicy | None
+    tool_name: str = ""
+    input_obj: dict[str, Any] = field(default_factory=dict)
+    confirm_token: str | None = None
 
 
 # ---------------------------------------------------------------------------

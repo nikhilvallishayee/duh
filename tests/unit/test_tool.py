@@ -88,6 +88,21 @@ class TestToolContext:
         assert ctx.session_id == "s1"
 
 
+def test_tool_context_has_confirm_token_field() -> None:
+    ctx = ToolContext(tool_name="Bash", input_obj={"command": "ls"})
+    assert hasattr(ctx, "confirm_token")
+    assert ctx.confirm_token is None  # default
+
+
+def test_tool_context_accepts_confirm_token() -> None:
+    ctx = ToolContext(
+        tool_name="Bash",
+        input_obj={"command": "ls"},
+        confirm_token="duh-confirm-123-abc",
+    )
+    assert ctx.confirm_token == "duh-confirm-123-abc"
+
+
 class TestToolProtocol:
     def test_echo_tool_satisfies_protocol(self):
         tool = EchoTool()

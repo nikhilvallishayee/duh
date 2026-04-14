@@ -329,7 +329,7 @@ class Engine:
                         continue
 
                 # Don't yield done if we're about to PTL-retry
-                if event_type == "done" and ptl_detected:
+                if event_type == "done" and ptl_detected:  # pragma: no cover - defensive; query() returns after error
                     continue
 
                 yield event

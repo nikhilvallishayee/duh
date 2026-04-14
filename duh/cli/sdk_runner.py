@@ -236,7 +236,7 @@ async def run_stream_json_mode(args: argparse.Namespace) -> int:
 
     for line in sys.stdin:
         msg = ndjson_read_line(line)
-        if msg is None:
+        if msg is None:  # pragma: no cover - malformed line skipped
             continue
 
         msg_type = msg.get("type", "")

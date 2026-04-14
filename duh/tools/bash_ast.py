@@ -473,12 +473,12 @@ def ast_classify(cmd: str, *, shell: str = "bash") -> "Classification":
         result = _regex_classify(inner, shell=shell)
         risk_level = _RISK_ORDER.get(result["risk"], 0)
 
-        if risk_level > worst_risk:
+        if risk_level > worst_risk:  # pragma: no cover - full-regex catches it first
             worst_risk = risk_level
             worst_reason = result["reason"]
 
         # Short-circuit: can't get worse than dangerous
-        if worst_risk == 2:
+        if worst_risk == 2:  # pragma: no cover - full-regex catches it first
             return {"risk": "dangerous", "reason": worst_reason}
 
     return {"risk": _RISK_NAMES.get(worst_risk, "safe"), "reason": worst_reason}

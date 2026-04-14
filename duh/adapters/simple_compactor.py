@@ -179,7 +179,7 @@ class SimpleCompactor:
         to_compact = list(messages[from_idx:to_idx])
         after = list(messages[to_idx:])
 
-        if not to_compact:
+        if not to_compact:  # pragma: no cover - guarded by from_idx == to_idx check above
             return before + after
 
         summary_text = _summarize_messages(to_compact)
@@ -292,7 +292,7 @@ def _deduplicate_messages(messages: list[Any]) -> list[Any]:
             content = msg.content
         elif isinstance(msg, dict):
             content = msg.get("content", "")
-        else:
+        else:  # pragma: no cover - defensive; non-Message/dict caller
             result.append(msg)
             continue
 
@@ -335,7 +335,7 @@ def _deduplicate_messages(messages: list[Any]) -> list[Any]:
             new_msg = dict(msg)
             new_msg["content"] = new_blocks
             result.append(new_msg)
-        else:
+        else:  # pragma: no cover - defensive; non-Message/dict caller
             result.append(msg)
 
     return result

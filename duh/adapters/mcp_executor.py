@@ -27,7 +27,7 @@ try:
     from mcp.client.stdio import stdio_client
 
     _mcp_available = True
-except ImportError:
+except ImportError:  # pragma: no cover - mcp is installed in test env
     pass
 
 

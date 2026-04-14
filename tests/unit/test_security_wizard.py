@@ -77,6 +77,30 @@ def test_dry_run_does_not_touch_disk(tmp_path: Path) -> None:
     assert not (tmp_path / ".duh" / "security.json").exists()
 
 
+from duh.security.wizard import import_legacy_configs
+
+
+def test_import_bandit_config(tmp_path: Path) -> None:
+    (tmp_path / ".bandit").write_text(
+        "[bandit]\nskips = B602,B607\n"
+    )
+    exceptions = import_legacy_configs(project_root=tmp_path)
+    ids = {e.id for e in exceptions}
+    assert "B602" in ids
+    assert "B607" in ids
+
+
+def test_import_semgrepignore(tmp_path: Path) -> None:
+    (tmp_path / ".semgrepignore").write_text("# comment\ntests/\nvendor/**\n")
+    exceptions = import_legacy_configs(project_root=tmp_path)
+    # Converted into file_glob scopes; one entry per non-comment line
+    assert len(exceptions) >= 2
+
+
+def test_import_missing_files_returns_empty(tmp_path: Path) -> None:
+    assert import_legacy_configs(project_root=tmp_path) == []
+
+
 def test_real_run_writes_files_atomically(tmp_path: Path) -> None:
     det = Detection(
         is_python=True, is_git_repo=False, has_github=False,

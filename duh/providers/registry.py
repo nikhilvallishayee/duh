@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 import httpx
 
+from duh.adapters.stub_provider import stub_provider_enabled
 from duh.auth.anthropic import get_saved_anthropic_api_key
 from duh.auth.openai_chatgpt import (
     OPENAI_CHATGPT_MODELS,
@@ -82,6 +83,9 @@ def resolve_provider_name(
     model: str | None,
     check_ollama: Callable[[], bool],
 ) -> str | None:
+    # Stub provider short-circuits everything for tests / offline runs.
+    if stub_provider_enabled():
+        return "stub"
     provider_name = explicit_provider or infer_provider_from_model(model)
     if provider_name:
         return provider_name
@@ -261,6 +265,17 @@ def build_model_backend(
     provider_factories: ProviderFactories | None = None,
 ) -> ProviderBackend:
     provider_factories = provider_factories or {}
+
+    if provider_name == "stub" or stub_provider_enabled():
+        from duh.adapters.stub_provider import StubProvider
+
+        resolved = model or "stub-model"
+        return ProviderBackend(
+            "stub",
+            resolved,
+            StubProvider(model=resolved).stream,
+            auth_mode="stub",
+        )
 
     if provider_name == "anthropic":
         api_key = get_anthropic_api_key()

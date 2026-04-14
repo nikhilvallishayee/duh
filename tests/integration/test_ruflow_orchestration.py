@@ -7,6 +7,7 @@ Tests that claude-flow can invoke D.U.H. via the SDK shim as a CLI backend.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 
@@ -16,9 +17,20 @@ DUH_SHIM = "/Users/nomind/Code/duh/bin/duh-sdk-shim"
 DUH_PYTHON = "/Users/nomind/Code/duh/.venv/bin/python3"
 
 
-def _run(cmd: list[str], timeout: int = 15, **kwargs) -> subprocess.CompletedProcess[str]:
+def _run(
+    cmd: list[str],
+    timeout: int = 15,
+    stub_provider: bool = True,
+    **kwargs,
+) -> subprocess.CompletedProcess[str]:
+    """Run a subprocess. By default DUH_STUB_PROVIDER=1 is injected so the
+    invoked CLI uses a deterministic in-process stub instead of needing
+    real API credentials."""
+    env = kwargs.pop("env", None) or os.environ.copy()
+    if stub_provider:
+        env["DUH_STUB_PROVIDER"] = "1"
     return subprocess.run(
-        cmd, capture_output=True, text=True, timeout=timeout, **kwargs,
+        cmd, capture_output=True, text=True, timeout=timeout, env=env, **kwargs,
     )
 
 

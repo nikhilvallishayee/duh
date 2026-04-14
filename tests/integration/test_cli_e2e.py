@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 
@@ -10,14 +11,26 @@ import pytest
 PYTHON = sys.executable
 
 
-def run_duh(*args: str, timeout: int = 15) -> subprocess.CompletedProcess[str]:
-    """Run `python -m duh <args>` and return the result."""
+def run_duh(
+    *args: str,
+    timeout: int = 15,
+    stub_provider: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    """Run `python -m duh <args>` and return the result.
+
+    By default the stub provider is enabled so subprocess tests don't need
+    real API credentials. Pass ``stub_provider=False`` to opt out.
+    """
+    env = os.environ.copy()
+    if stub_provider:
+        env["DUH_STUB_PROVIDER"] = "1"
     return subprocess.run(
         [PYTHON, "-m", "duh", *args],
         capture_output=True,
         text=True,
         timeout=timeout,
         cwd="/Users/nomind/Code/duh",
+        env=env,
     )
 
 

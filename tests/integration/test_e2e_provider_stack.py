@@ -983,18 +983,16 @@ class TestBridgeServerE2E:
         assert kwargs.get("max_size") == 1_048_576
 
     @pytest.mark.asyncio
-    async def test_start_warns_when_token_empty(self, caplog):
-        import logging
-
+    async def test_start_auto_generates_token_when_empty(self, capsys):
         server = BridgeServer(host="localhost", port=9998, token="")
         fake_serve = AsyncMock(return_value=MagicMock())
         with patch("duh.bridge.server.websockets.serve", fake_serve):
-            with caplog.at_level(logging.WARNING, logger="duh.bridge.server"):
-                await server.start()
-        assert any(
-            "WITHOUT authentication" in rec.message
-            for rec in caplog.records
-        )
+            await server.start()
+        # ADR-042: empty token triggers auto-generation, prints to stdout
+        assert server._token != ""
+        assert len(server._token) >= 20
+        captured = capsys.readouterr()
+        assert "Auth token:" in captured.out
 
     @pytest.mark.asyncio
     async def test_valid_connect_message_acknowledged(self):

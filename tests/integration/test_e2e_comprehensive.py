@@ -1473,7 +1473,7 @@ class TestShutdown:
 
         await handler.run_cleanup()
 
-        assert calls == ["cb1", "cb2"]
+        assert calls == ["cb2", "cb1"]  # LIFO order per ADR-030
         assert handler.shutting_down
 
     @pytest.mark.asyncio

@@ -94,6 +94,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=False)
     subparsers.add_parser("doctor", help="Run diagnostics and health checks.")
 
+    _security = subparsers.add_parser("security", help="Vulnerability monitoring (ADR-053)")
+    _security.add_argument("security_args", nargs=argparse.REMAINDER)
+
     bridge_parser = subparsers.add_parser("bridge", help="Start the remote bridge server.")
     bridge_sub = bridge_parser.add_subparsers(dest="bridge_command", required=True)
     start_parser = bridge_sub.add_parser("start", help="Start the WebSocket bridge server.")

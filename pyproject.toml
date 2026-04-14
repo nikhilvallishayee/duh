@@ -40,9 +40,31 @@ attachments = ["pdfplumber>=0.10"]
 mcp = ["mcp>=1.0"]
 all = ["openai>=1.0", "rich>=13.0", "websockets>=12.0", "pdfplumber>=0.10", "mcp>=1.0"]
 dev = ["pytest", "pytest-asyncio", "pytest-cov", "pytest-timeout", "openai>=1.0", "rich>=13.0", "websockets>=12.0", "pdfplumber>=0.10", "mcp>=1.0"]
+security = [
+    "pydantic>=2.0",
+    "ruff>=0.6",
+    "pip-audit>=2.10",
+    "detect-secrets>=1.5",
+    "cyclonedx-bom>=7",
+]
 
 [project.scripts]
 duh = "duh.cli.main:main"
+
+[project.entry-points."duh.security.scanners"]
+ruff-sec          = "duh.security.scanners.ruff_sec:RuffSecScanner"
+pip-audit         = "duh.security.scanners.pip_audit:PipAuditScanner"
+detect-secrets    = "duh.security.scanners.detect_secrets:DetectSecretsScanner"
+cyclonedx-sbom    = "duh.security.scanners.cyclonedx_sbom:CycloneDXScanner"
+duh-repo          = "duh.security.scanners.duh_repo:RepoScanner"
+duh-mcp-schema    = "duh.security.scanners.duh_mcp_schema:MCPSchemaScanner"
+duh-mcp-pin       = "duh.security.scanners.duh_mcp_pin:MCPPinScanner"
+duh-sandbox-lint  = "duh.security.scanners.duh_sandbox_lint:SandboxLintScanner"
+duh-oauth-lint    = "duh.security.scanners.duh_oauth_lint:OAuthLintScanner"
+semgrep           = "duh.security.scanners.semgrep_ext:SemgrepScanner"
+osv-scanner       = "duh.security.scanners.osv_scanner:OSVScanner"
+gitleaks          = "duh.security.scanners.gitleaks:GitleaksScanner"
+bandit            = "duh.security.scanners.bandit_fallback:BanditScanner"
 
 [tool.hatch.version]
 path = "duh/__init__.py"

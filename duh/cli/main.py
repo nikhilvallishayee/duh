@@ -38,6 +38,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "doctor":
         return run_doctor()
 
+    if args.command == "security":
+        from duh.security.cli import main as security_main
+        return security_main(args.security_args)
+
     if args.command == "bridge":
         from duh.bridge.server import BridgeServer
 

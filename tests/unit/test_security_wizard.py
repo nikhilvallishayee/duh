@@ -120,3 +120,45 @@ def test_real_run_writes_files_atomically(tmp_path: Path) -> None:
     assert cfg_path.exists()
     data = json.loads(cfg_path.read_text())
     assert data["mode"] == "strict"
+
+
+def test_render_plan_emits_workflow_body_from_generator(tmp_path: Path) -> None:
+    det = Detection(
+        is_python=True, is_git_repo=True, has_github=True,
+        has_docker=False, has_go=False,
+        available_scanners=("ruff-sec",),
+    )
+    answers = Answers(
+        mode="strict", enable_runtime=True, extended_scanners=(),
+        generate_ci=True, ci_template="paranoid",
+        install_git_hook=False, generate_security_md=True,
+        import_legacy=False, pin_scanner_versions=True,
+    )
+    plan = render_plan(detection=det, answers=answers, project_root=tmp_path)
+    by_path = {str(item.path): item.body for item in plan}
+    wf = next(v for k, v in by_path.items() if k.endswith("security.yml"))
+    assert "name: Security" in wf
+    assert "scorecard:" in wf  # paranoid template
+    assert "codeql:" in wf
+    md = next(v for k, v in by_path.items() if k.endswith("SECURITY.md"))
+    assert "# Security Policy" in md
+    db = next(v for k, v in by_path.items() if k.endswith("dependabot.yml"))
+    assert "version: 2" in db
+
+
+def test_render_plan_skips_ci_when_generate_ci_false(tmp_path: Path) -> None:
+    det = Detection(
+        is_python=True, is_git_repo=True, has_github=True,
+        has_docker=False, has_go=False,
+        available_scanners=("ruff-sec",),
+    )
+    answers = Answers(
+        mode="advisory", enable_runtime=False, extended_scanners=(),
+        generate_ci=False, ci_template="minimal",
+        install_git_hook=False, generate_security_md=False,
+        import_legacy=False, pin_scanner_versions=False,
+    )
+    plan = render_plan(detection=det, answers=answers, project_root=tmp_path)
+    paths = [str(item.path) for item in plan]
+    assert not any(p.endswith("security.yml") for p in paths)
+    assert not any(p.endswith("SECURITY.md") for p in paths)

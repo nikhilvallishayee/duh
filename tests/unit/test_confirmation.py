@@ -138,6 +138,22 @@ def test_resolve_allows_non_dangerous_tool_without_token() -> None:
     assert result.action == "allow"
 
 
+def test_repl_continue_mints_token() -> None:
+    from duh.cli.repl import _mint_continue_token
+    m = ConfirmationMinter(session_key=b"k" * 32)
+    token = _mint_continue_token(m, "sess-1", "Bash", {"command": "ls"})
+    assert token.startswith("duh-confirm-")
+    assert m.validate(token, "sess-1", "Bash", {"command": "ls"})
+
+
+def test_ask_user_tool_mints_token() -> None:
+    from duh.tools.ask_user_tool import _mint_answer_token
+    m = ConfirmationMinter(session_key=b"k" * 32)
+    token = _mint_answer_token(m, "sess-1", "Write", {"file_path": "/tmp/x", "content": "y"})
+    assert token.startswith("duh-confirm-")
+    assert m.validate(token, "sess-1", "Write", {"file_path": "/tmp/x", "content": "y"})
+
+
 def test_validate_rejects_expired_token(minter: ConfirmationMinter) -> None:
     import hashlib
     import hmac as _hmac

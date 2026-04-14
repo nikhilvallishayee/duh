@@ -14,8 +14,16 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
 
+from duh.kernel.confirmation import ConfirmationMinter
 from duh.kernel.tool import ToolContext, ToolResult
 from duh.security.trifecta import Capability
+
+
+def _mint_answer_token(
+    minter: ConfirmationMinter, session_id: str, tool: str, input_obj: dict
+) -> str:
+    """Mint a confirmation token when the user answers an AskUserQuestion."""
+    return minter.mint(session_id, tool, input_obj)
 
 AskFn = Callable[[str], Awaitable[str]]
 

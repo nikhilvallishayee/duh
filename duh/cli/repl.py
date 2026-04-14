@@ -44,7 +44,15 @@ import readline
 import sys
 from typing import Any
 
+from duh.kernel.confirmation import ConfirmationMinter
 from duh.kernel.untrusted import TaintSource, UntrustedStr
+
+
+def _mint_continue_token(
+    minter: ConfirmationMinter, session_id: str, tool: str, input_obj: dict
+) -> str:
+    """Mint a confirmation token when the user types /continue."""
+    return minter.mint(session_id, tool, input_obj)
 
 
 def _wrap_user_input(raw: str) -> UntrustedStr:

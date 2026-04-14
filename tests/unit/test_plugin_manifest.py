@@ -64,6 +64,26 @@ def test_load_manifest_missing_raises() -> None:
         load_manifest(Path("/nonexistent/manifest.json"))
 
 
+def test_load_manifest_invalid_json_raises(tmp_path) -> None:
+    from duh.plugins.manifest import ManifestError
+
+    bad = tmp_path / "bad.json"
+    bad.write_text("not-valid-json{{{")
+    with pytest.raises(ManifestError, match="Invalid JSON"):
+        load_manifest(bad)
+
+
+def test_load_manifest_missing_required_field_raises(tmp_path) -> None:
+    from duh.plugins.manifest import ManifestError
+
+    # Missing "version" field
+    data = {"plugin_name": "x", "author": "a", "capabilities": {}}
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(data))
+    with pytest.raises(ManifestError, match="missing required field"):
+        load_manifest(path)
+
+
 # ---------------------------------------------------------------------------
 # Task 7.7.4: compute_manifest_hash
 # ---------------------------------------------------------------------------
@@ -101,3 +121,51 @@ def test_verify_signature_sigstore_without_library_raises() -> None:
     result = verify_signature("sigstore", "dGVzdA==", b"payload")
     # Returns False if sigstore is not installed, or True if it is and verifies
     assert isinstance(result, bool)
+
+
+def test_verify_signature_unknown_method_returns_false() -> None:
+    assert verify_signature("gpg", "abc", b"payload") is False
+
+
+def test_verify_signature_sigstore_mocked_success(monkeypatch) -> None:
+    """Cover sigstore happy path via a mock Verifier."""
+    import types
+
+    mock_verifier = types.SimpleNamespace(
+        verify_artifact=lambda payload, bundle: None,
+    )
+    mock_verifier_cls = types.SimpleNamespace(
+        production=lambda: mock_verifier,
+    )
+    mock_sigstore = types.ModuleType("sigstore")
+    mock_sigstore_verify = types.ModuleType("sigstore.verify")
+    mock_sigstore_verify.Verifier = mock_verifier_cls
+    mock_sigstore.verify = mock_sigstore_verify
+
+    import sys
+    monkeypatch.setitem(sys.modules, "sigstore", mock_sigstore)
+    monkeypatch.setitem(sys.modules, "sigstore.verify", mock_sigstore_verify)
+
+    result = verify_signature("sigstore", "dGVzdA==", b"payload")
+    assert result is True
+
+
+def test_verify_signature_sigstore_mocked_exception(monkeypatch) -> None:
+    """Cover sigstore generic exception path."""
+    import types
+
+    mock_verifier = types.SimpleNamespace(
+        verify_artifact=lambda payload, bundle: (_ for _ in ()).throw(ValueError("bad")),
+    )
+    mock_verifier_cls = types.SimpleNamespace(
+        production=lambda: mock_verifier,
+    )
+    mock_sigstore_verify = types.ModuleType("sigstore.verify")
+    mock_sigstore_verify.Verifier = mock_verifier_cls
+
+    import sys
+    monkeypatch.setitem(sys.modules, "sigstore", types.ModuleType("sigstore"))
+    monkeypatch.setitem(sys.modules, "sigstore.verify", mock_sigstore_verify)
+
+    result = verify_signature("sigstore", "dGVzdA==", b"payload")
+    assert result is False

@@ -428,3 +428,26 @@ class TestDiscoverDirectoryPluginsWithTools:
         assert len(specs) == 1
         assert len(specs[0].tools) == 1
         assert specs[0].tools[0].name == "good_tool"
+
+
+# ---------------------------------------------------------------------------
+# Task 7.7.11: load_plugin_from_dir calls load_verified_plugin
+# ---------------------------------------------------------------------------
+
+
+def test_plugin_loader_calls_verification(monkeypatch, tmp_path) -> None:
+    """The main plugin loader must call load_verified_plugin."""
+    calls = []
+    monkeypatch.setattr(
+        "duh.plugins.load_verified_plugin",
+        lambda path, store, confirm_tofu=None: calls.append(path),
+    )
+    from duh.plugins import load_plugin_from_dir
+    # Create minimal plugin dir with manifest
+    plugin_dir = tmp_path / "my-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "manifest.json").write_text(
+        '{"plugin_name":"x","version":"1","author":"a","capabilities":{},"signature":{}}'
+    )
+    load_plugin_from_dir(plugin_dir)
+    assert len(calls) == 1

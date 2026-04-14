@@ -45,7 +45,10 @@ import logging
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+
+from duh.plugins.manifest import load_manifest, compute_manifest_hash
+from duh.plugins.trust_store import TrustStore
 
 logger = logging.getLogger(__name__)
 
@@ -311,3 +314,78 @@ class PluginRegistry:
             except Exception as exc:
                 errors.append(f"{spec.name}: {exc}")
         return errors
+
+
+# ---------------------------------------------------------------------------
+# Signed manifest + TOFU verification (ADR-054, 7.7)
+# ---------------------------------------------------------------------------
+
+
+class PluginError(RuntimeError):
+    """Raised when plugin loading or verification fails."""
+
+
+def load_verified_plugin(
+    manifest_path: Path,
+    trust_store: TrustStore,
+    *,
+    confirm_tofu: Callable | None = None,
+) -> Any:
+    """Load and verify a plugin manifest against the trust store.
+
+    On first encounter (TOFU), calls ``confirm_tofu(manifest)`` and trusts
+    the plugin if it returns True. Raises PluginError if the user refuses,
+    the key is revoked, or the signature does not match the stored hash.
+
+    Returns the PluginManifest with a ``_sig_hash`` attribute attached.
+
+    Raises:
+        FileNotFoundError: If manifest_path does not exist.
+        PluginError: On TOFU rejection, revocation, or signature mismatch.
+    """
+    raw_data = json.loads(manifest_path.read_text())  # raises FileNotFoundError if missing
+    manifest = load_manifest(manifest_path)
+    sig_hash = compute_manifest_hash(raw_data)
+    # Attach for caller inspection (frozen dataclass, so use object.__setattr__)
+    object.__setattr__(manifest, "_sig_hash", sig_hash)
+
+    result = trust_store.verify(manifest.plugin_name, sig_hash)
+
+    if result.status == "trusted":
+        return manifest
+    elif result.status == "first_use":
+        if confirm_tofu and confirm_tofu(manifest):
+            trust_store.add(manifest.plugin_name, sig_hash)
+            return manifest
+        raise PluginError(
+            f"User refused TOFU trust for plugin {manifest.plugin_name!r}"
+        )
+    elif result.status == "revoked":
+        raise PluginError(
+            f"Plugin {manifest.plugin_name!r} signing key revoked: {result.reason}"
+        )
+    elif result.status == "signature_mismatch":
+        raise PluginError(
+            f"Plugin {manifest.plugin_name!r} signature invalid — possible tampering. "
+            f"Saved: {result.known}, new: {result.provided}"
+        )
+    else:
+        raise PluginError(
+            f"Unknown verification status for {manifest.plugin_name!r}: {result.status}"
+        )
+
+
+def load_plugin_from_dir(
+    plugin_dir: Path,
+    trust_store: TrustStore | None = None,
+    confirm_tofu: Callable | None = None,
+) -> Any:
+    """Load a plugin from a directory, verifying its manifest.json.
+
+    If no trust_store is provided, uses the default location
+    ``~/.duh/trust.json``.
+    """
+    manifest_path = plugin_dir / "manifest.json"
+    if trust_store is None:
+        trust_store = TrustStore(store_path=Path.home() / ".duh" / "trust.json")
+    return load_verified_plugin(manifest_path, trust_store, confirm_tofu=confirm_tofu)

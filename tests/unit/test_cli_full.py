@@ -320,16 +320,13 @@ class TestProviderResolution:
     @pytest.mark.asyncio
     async def test_explicit_anthropic_no_key(self, capsys, monkeypatch):
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.setattr(
-            "duh.providers.registry.get_valid_anthropic_oauth", lambda: None
-        )
         parser = build_parser()
         args = parser.parse_args(["-p", "test", "--provider", "anthropic"])
         code = await run_print_mode(args)
 
         assert code == 1
         captured = capsys.readouterr()
-        assert "not configured" in captured.err
+        assert "ANTHROPIC_API_KEY" in captured.err
 
     @pytest.mark.asyncio
     async def test_unknown_provider(self, capsys, monkeypatch):

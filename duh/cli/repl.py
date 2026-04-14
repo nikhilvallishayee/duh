@@ -15,7 +15,7 @@ If ``rich`` is not installed the REPL falls back to plain ANSI escapes
 Slash commands:
     /help     — show available commands
     /model    — show or change the current model
-    /connect  — connect provider auth (OpenAI / Anthropic — OAuth or API key)
+    /connect  — connect provider auth (OpenAI API key / ChatGPT subscription)
     /models   — list available models for current provider
     /brief    — toggle brief mode (shorter responses)
     /cost     — show session cost estimate
@@ -77,7 +77,7 @@ from duh.auth.openai_chatgpt import (
     connect_openai_chatgpt_subscription,
     has_openai_chatgpt_oauth,
 )
-from duh.auth.anthropic import connect_anthropic_api_key, connect_anthropic_oauth
+from duh.auth.anthropic import connect_anthropic_api_key
 from duh.providers.registry import (
     available_models_for_provider,
     build_model_backend,
@@ -732,33 +732,8 @@ def _handle_slash(
             return True, model
 
         if provider == "anthropic":
-            if not method:
-                sys.stdout.write(
-                    "  Select auth method:\n"
-                    "    1) OAuth (browser login)\n"
-                    "    2) API key\n"
-                    "  Choice [1/2]: "
-                )
-                sys.stdout.flush()
-                try:
-                    choice = input().strip()
-                except (EOFError, KeyboardInterrupt):
-                    sys.stdout.write("\n")
-                    return True, model
-                method = "oauth" if choice in ("", "1") else "api-key"
-
-            if method in ("oauth", "browser", "login"):
-                ok, msg = connect_anthropic_oauth(
-                    input_fn=input,
-                    output_fn=lambda t: sys.stdout.write(f"{t}\n"),
-                )
-                sys.stdout.write(f"  {msg}\n")
-                return True, model
-            if method in ("api-key", "apikey", "key"):
-                ok, msg = connect_anthropic_api_key(input_fn=getpass.getpass)
-                sys.stdout.write(f"  {msg}\n")
-                return True, model
-            sys.stdout.write("  Usage: /connect anthropic [oauth|api-key]\n")
+            ok, msg = connect_anthropic_api_key(input_fn=getpass.getpass)
+            sys.stdout.write(f"  {msg}\n")
             return True, model
 
     if name == "/models":

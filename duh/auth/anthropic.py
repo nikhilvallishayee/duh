@@ -19,17 +19,6 @@ def connect_anthropic_api_key(*, input_fn: Any = input) -> tuple[bool, str]:
     return True, "Anthropic API key saved."
 
 
-def connect_anthropic_oauth(
-    *,
-    input_fn: Any = input,
-    output_fn: Any = print,
-) -> tuple[bool, str]:
-    """Run the Anthropic OAuth PKCE flow (delegates to anthropic_oauth module)."""
-    from duh.auth.anthropic_oauth import run_oauth_flow
-
-    return run_oauth_flow(input_fn=input_fn, output_fn=output_fn)
-
-
 def get_saved_anthropic_api_key() -> str:
     provider = load_provider_auth("anthropic")
     value = provider.get("api_key", "")

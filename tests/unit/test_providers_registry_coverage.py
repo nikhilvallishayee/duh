@@ -411,12 +411,9 @@ class TestBuildModelBackend:
         monkeypatch.setattr(
             "duh.providers.registry.get_saved_anthropic_api_key", lambda: ""
         )
-        monkeypatch.setattr(
-            "duh.providers.registry.get_valid_anthropic_oauth", lambda: None
-        )
         backend = build_model_backend("anthropic", "claude-sonnet-4-6")
         assert not backend.ok
-        assert "not configured" in backend.error
+        assert "ANTHROPIC_API_KEY" in backend.error
 
     def test_anthropic_with_key_default_model(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant")

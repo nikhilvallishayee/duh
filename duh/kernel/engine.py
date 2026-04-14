@@ -28,6 +28,7 @@ from duh.kernel.loop import query
 from duh.kernel.messages import Message, UserMessage
 from duh.kernel.tokens import count_tokens, estimate_cost, format_cost, get_context_limit
 from duh.ports.store import SessionStore
+from duh.security.trifecta import check_trifecta, compute_session_capabilities
 
 if TYPE_CHECKING:
     from duh.adapters.structured_logging import StructuredLogger
@@ -69,6 +70,7 @@ class EngineConfig:
     max_turns: int = 1000
     max_cost: float | None = None
     cwd: str = "."
+    trifecta_acknowledged: bool = False
 
 
 class Engine:
@@ -99,6 +101,11 @@ class Engine:
         if self._slog:
             self._slog.session_id = self._session_id
         self._confirmation_minter = ConfirmationMinter(session_key=os.urandom(32))
+
+        # SESSION_START: refuse sessions where all three trifecta capabilities
+        # are simultaneously present without explicit acknowledgement.
+        _caps = compute_session_capabilities(self._config.tools)
+        check_trifecta(_caps, acknowledged=self._config.trifecta_acknowledged)
 
     @property
     def messages(self) -> list[Message]:

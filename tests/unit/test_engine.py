@@ -3,9 +3,12 @@
 import asyncio
 from typing import Any, AsyncGenerator
 
+import pytest
+
 from duh.kernel.deps import Deps
 from duh.kernel.engine import Engine, EngineConfig
 from duh.kernel.messages import Message
+from duh.security.trifecta import Capability, LethalTrifectaError
 
 
 async def simple_model(**kwargs) -> AsyncGenerator[dict[str, Any], None]:
@@ -90,10 +93,16 @@ class TestEngine:
         assert e1.session_id != e2.session_id
 
 
-def _make_engine() -> Engine:
+def _make_engine(*, trifecta_acknowledged: bool = True, tools: list | None = None) -> Engine:
     """Test helper — create a minimal Engine with a fake model."""
     deps = Deps(call_model=simple_model)
-    return Engine(deps=deps)
+    return Engine(
+        deps=deps,
+        config=EngineConfig(
+            tools=tools or [],
+            trifecta_acknowledged=trifecta_acknowledged,
+        ),
+    )
 
 
 def test_engine_creates_session_key_and_minter() -> None:
@@ -105,3 +114,44 @@ def test_engine_creates_session_key_and_minter() -> None:
     assert isinstance(engine._confirmation_minter, ConfirmationMinter)
     # The key is random — just verify it's 32 bytes
     assert len(engine._confirmation_minter._key) == 32
+
+
+# ---------------------------------------------------------------------------
+# Task 7.3.5: Trifecta check at SESSION_START
+# ---------------------------------------------------------------------------
+
+from dataclasses import dataclass
+
+
+@dataclass
+class _TriFakeTool:
+    """Minimal fake tool for trifecta testing."""
+    name: str
+    capabilities: Capability
+
+
+_TRIFECTA_TOOLS = [
+    _TriFakeTool(name="Read", capabilities=Capability.READ_PRIVATE),
+    _TriFakeTool(
+        name="WebFetch",
+        capabilities=Capability.READ_UNTRUSTED | Capability.NETWORK_EGRESS,
+    ),
+]
+
+
+def test_engine_refuses_session_with_lethal_trifecta() -> None:
+    """Default tool set triggers trifecta — session must refuse."""
+    with pytest.raises(LethalTrifectaError):
+        _make_engine(tools=_TRIFECTA_TOOLS, trifecta_acknowledged=False)
+
+
+def test_engine_starts_with_trifecta_acknowledged() -> None:
+    engine = _make_engine(tools=_TRIFECTA_TOOLS, trifecta_acknowledged=True)
+    assert engine is not None
+
+
+def test_engine_starts_no_trifecta_tools() -> None:
+    """Engine with no trifecta tools starts fine without ack."""
+    tools = [_TriFakeTool(name="Read", capabilities=Capability.READ_PRIVATE)]
+    engine = _make_engine(tools=tools, trifecta_acknowledged=False)
+    assert engine is not None

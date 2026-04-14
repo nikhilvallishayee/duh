@@ -1,8 +1,6 @@
 # ADR-031: Prompt-Too-Long Retry
 
-**Status:** Accepted — partial (PTL detection + retry loop work and fire PRE_COMPACT /
-POST_COMPACT hooks; retries use a fixed 70 % target rather than the progressive
-70/50/30 sequence described below)
+**Status:** Accepted — implemented 2026-04-15
 **Date**: 2026-04-08
 
 ## Context

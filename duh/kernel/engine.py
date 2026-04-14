@@ -49,6 +49,9 @@ def _is_fallback_error(error_text: str) -> bool:
 
 MAX_PTL_RETRIES = 3
 
+# Progressive compaction targets (ADR-031): 70% → 50% → 30% on successive retries.
+_PTL_COMPACTION_TARGETS = [0.70, 0.50, 0.30]
+
 _PTL_TRIGGERS = ("prompt is too long", "prompt_too_long", "prompttoolong", "context length exceeded")
 
 
@@ -97,6 +100,7 @@ class Engine:
         self._total_output_tokens = 0
         self._session_store = session_store
         self._budget_warned_80 = False
+        self._setup_emitted = False  # SETUP fires only once per session
         self._slog = structured_logger
         if self._slog:
             self._slog.session_id = self._session_id
@@ -254,6 +258,23 @@ class Engine:
         if self._slog and self._turn_count == 1:
             self._slog.session_start(model=self._config.model)
 
+        # Emit SETUP hook once per session (first run only)
+        if self._deps.hook_registry and not self._setup_emitted:
+            self._setup_emitted = True
+            await execute_hooks(
+                self._deps.hook_registry,
+                HookEvent.SETUP,
+                {"session_id": self._session_id, "model": self._config.model},
+            )
+
+        # Emit TASK_CREATED hook (fires on every run call)
+        if self._deps.hook_registry:
+            await execute_hooks(
+                self._deps.hook_registry,
+                HookEvent.TASK_CREATED,
+                {"session_id": self._session_id, "turn": self._turn_count},
+            )
+
         # --- Auto-compact if approaching context limit ---
         if self._deps.compact:
             effective_model = model or self._config.model
@@ -362,6 +383,18 @@ class Engine:
 
                 yield event
 
+                # Emit TASK_COMPLETED hook when the query loop finishes
+                if event_type == "done" and self._deps.hook_registry:
+                    await execute_hooks(
+                        self._deps.hook_registry,
+                        HookEvent.TASK_COMPLETED,
+                        {
+                            "session_id": self._session_id,
+                            "turn": self._turn_count,
+                            "stop_reason": event.get("stop_reason", "end_turn"),
+                        },
+                    )
+
                 # --- Budget enforcement after each turn ---
                 if event_type == "done":
                     budget_events = self._check_budget(effective_model)
@@ -386,8 +419,9 @@ class Engine:
                     ptl_retries, MAX_PTL_RETRIES,
                 )
                 context_limit = get_context_limit(effective_model)
-                # Compact to 70% of limit to leave headroom
-                target = int(context_limit * 0.70)
+                # Progressive compaction targets per ADR-031: 70% → 50% → 30%.
+                target_ratio = _PTL_COMPACTION_TARGETS[min(ptl_retries - 1, len(_PTL_COMPACTION_TARGETS) - 1)]
+                target = int(context_limit * target_ratio)
 
                 # Emit PRE_COMPACT hook
                 if self._deps.hook_registry:

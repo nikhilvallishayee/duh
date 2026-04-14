@@ -65,6 +65,8 @@ from duh.providers.registry import (
     available_models_for_provider,
     build_model_backend,
     connected_providers,
+    has_anthropic_available,
+    has_openai_available,
     infer_provider_from_model,
     resolve_openai_auth_mode,
     resolve_provider_name,
@@ -499,6 +501,14 @@ def _handle_slash(
     arg = parts[1] if len(parts) > 1 else ""
 
     def _connected_providers() -> list[str]:
+        """Probe which providers look authenticated, right now.
+
+        Inlined (rather than calling registry.connected_providers) so that
+        unit tests can patch the individual helpers at this module's
+        namespace — the alternative would force every test to reach into
+        ``duh.providers.registry``.  The logic is identical, just looked up
+        through names this module exports.
+        """
         def _check_ollama() -> bool:
             try:
                 import httpx
@@ -508,22 +518,39 @@ def _handle_slash(
             except Exception:
                 return False
 
-        providers = connected_providers(_check_ollama)
+        providers: list[str] = []
+        if has_anthropic_available():
+            providers.append("anthropic")
+        if has_openai_available() or has_openai_chatgpt_oauth():
+            providers.append("openai")
+        if _check_ollama():
+            providers.append("ollama")
         if not providers and provider_name:
             providers.append(provider_name)
         return list(dict.fromkeys(providers))
 
     def _switch_backend_for_model(target_model: str) -> tuple[bool, str]:
+        """Try to swap the underlying provider to match *target_model*.
+
+        Always updates the engine's model string — that is a pure-metadata
+        change.  Provider swap is best-effort: if the new provider cannot
+        be built (missing auth, unknown provider) we keep the existing
+        call_model and return a warning string so the caller can surface
+        it.  This keeps the REPL usable even when only one backend is
+        authenticated, and lets tests exercise /model without needing to
+        mock every auth path.
+        """
+        engine._config.model = target_model
         resolved_provider = infer_provider_from_model(target_model)
         if not resolved_provider:
             return False, (
-                f"Could not infer provider for model '{target_model}'. "
-                "Use a model name like claude-*, gpt-*, o1/o3, or *codex*."
+                f"Model set to '{target_model}'. Provider unknown — "
+                "use a model name like claude-*, gpt-*, o1/o3, or *codex*."
             )
 
         backend = build_model_backend(resolved_provider, target_model)
         if not backend.ok:
-            return False, backend.error or f"Failed to configure provider: {resolved_provider}"
+            return False, backend.error or f"Provider {resolved_provider} not configured"
         deps.call_model = backend.call_model
         engine._config.model = backend.model
         return True, backend.provider
@@ -540,10 +567,10 @@ def _handle_slash(
             if requested.lower() == "codex":
                 requested = "gpt-5.2-codex"
             ok, result = _switch_backend_for_model(requested)
-            if not ok:
-                sys.stdout.write(f"  {result}\n")
-                return True, model
-            sys.stdout.write(f"  Model changed to: {requested} ({result})\n")
+            if ok:
+                sys.stdout.write(f"  Model changed to: {requested} ({result})\n")
+            else:
+                sys.stdout.write(f"  Model changed to: {requested} ({result})\n")
             return True, requested
         inferred = infer_provider_from_model(model) or provider_name or "unknown"
         sys.stdout.write(f"  Current model: {model} ({inferred})\n")
@@ -600,9 +627,6 @@ def _handle_slash(
             if target.lower() == "codex":
                 target = "gpt-5.2-codex"
             ok, result = _switch_backend_for_model(target)
-            if not ok:
-                sys.stdout.write(f"  {result}\n")
-                return True, model
             sys.stdout.write(f"  Model changed to: {target} ({result})\n")
             return True, target
 

@@ -8,31 +8,29 @@ from __future__ import annotations
 
 import json
 import os
-import pathlib
-import shutil
 import subprocess
 import sys
 
 import pytest
 
-PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
-DUH_SHIM = str(PROJECT_ROOT / "bin" / "duh-sdk-shim")
-# Use whatever Python is currently running the test suite — on dev that's
-# the venv interpreter, on CI it's the GitHub-hosted Python.
-DUH_PYTHON = sys.executable
+DUH_SHIM = "/Users/nomind/Code/duh/bin/duh-sdk-shim"
+DUH_PYTHON = "/Users/nomind/Code/duh/.venv/bin/python3"
 
 
-def _has_provider() -> bool:
-    return bool(
-        os.environ.get("DUH_STUB_PROVIDER") == "1"
-        or os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("OPENAI_API_KEY")
-    )
-
-
-def _run(cmd: list[str], timeout: int = 15, **kwargs) -> subprocess.CompletedProcess[str]:
+def _run(
+    cmd: list[str],
+    timeout: int = 15,
+    stub_provider: bool = True,
+    **kwargs,
+) -> subprocess.CompletedProcess[str]:
+    """Run a subprocess. By default DUH_STUB_PROVIDER=1 is injected so the
+    invoked CLI uses a deterministic in-process stub instead of needing
+    real API credentials."""
+    env = kwargs.pop("env", None) or os.environ.copy()
+    if stub_provider:
+        env["DUH_STUB_PROVIDER"] = "1"
     return subprocess.run(
-        cmd, capture_output=True, text=True, timeout=timeout, **kwargs,
+        cmd, capture_output=True, text=True, timeout=timeout, env=env, **kwargs,
     )
 
 
@@ -40,14 +38,7 @@ class TestRuFlowAvailable:
     """Verify claude-flow CLI is available."""
 
     def test_claude_flow_version(self):
-        # Skip cleanly if npx isn't on PATH (CI without Node) or the lookup
-        # would have to download the package (slow + flaky in CI).
-        if shutil.which("npx") is None:
-            pytest.skip("npx not available")
-        try:
-            result = _run(["npx", "--no-install", "@claude-flow/cli", "--version"], timeout=15)
-        except subprocess.TimeoutExpired:
-            pytest.skip("claude-flow CLI lookup timed out")
+        result = _run(["npx", "@claude-flow/cli", "--version"], timeout=30)
         if result.returncode != 0:
             pytest.skip("claude-flow CLI not available")
         assert "claude-flow" in result.stdout.lower()
@@ -58,12 +49,10 @@ class TestDuhAsOrchestrationTarget:
 
     def test_duh_print_mode_from_subprocess(self):
         """Orchestrator can invoke D.U.H. in print mode and get output."""
-        if not _has_provider():
-            pytest.skip("no provider configured")
         result = _run(
             [DUH_PYTHON, "-m", "duh", "-p", "What is 2+2? Reply with just the number.",
              "--dangerously-skip-permissions", "--max-turns", "1"],
-            cwd=str(PROJECT_ROOT),
+            cwd="/Users/nomind/Code/duh",
             timeout=30,
         )
         assert result.returncode == 0
@@ -72,8 +61,6 @@ class TestDuhAsOrchestrationTarget:
 
     def test_duh_stream_json_from_subprocess(self):
         """Orchestrator can invoke D.U.H. in stream-json mode and parse NDJSON."""
-        if not _has_provider():
-            pytest.skip("no provider configured")
         input_lines = (
             '{"type":"control_request","request_id":"r1","request":{"subtype":"initialize"}}\n'
             '{"type":"user","session_id":"","message":{"role":"user","content":"What is 2+2? Reply with just the number."},"parent_tool_use_id":null}\n'
@@ -85,7 +72,7 @@ class TestDuhAsOrchestrationTarget:
              "--dangerously-skip-permissions",
              "--max-turns", "1"],
             input=input_lines,
-            cwd=str(PROJECT_ROOT),
+            cwd="/Users/nomind/Code/duh",
             timeout=30,
         )
         assert result.returncode == 0
@@ -105,15 +92,13 @@ class TestDuhAsOrchestrationTarget:
         assert result_msg["is_error"] is False
 
     def test_duh_shim_exists_and_executable(self):
-        """The SDK shim exists and is executable (if checked in)."""
-        if not os.path.isfile(DUH_SHIM):
-            pytest.skip(f"shim not present at {DUH_SHIM}")
-        assert os.access(DUH_SHIM, os.X_OK), f"shim not executable: {DUH_SHIM}"
+        """The SDK shim exists and is executable."""
+        import os
+        assert os.path.isfile(DUH_SHIM), f"Shim not found: {DUH_SHIM}"
+        assert os.access(DUH_SHIM, os.X_OK), f"Shim not executable: {DUH_SHIM}"
 
     def test_multiple_sequential_invocations(self):
         """Orchestrator can invoke D.U.H. multiple times in sequence."""
-        if not _has_provider():
-            pytest.skip("no provider configured")
         for i in range(3):
             input_lines = (
                 '{"type":"control_request","request_id":"r1","request":{"subtype":"initialize"}}\n'
@@ -126,7 +111,7 @@ class TestDuhAsOrchestrationTarget:
                  "--dangerously-skip-permissions",
                  "--max-turns", "1"],
                 input=input_lines,
-                cwd=str(PROJECT_ROOT),
+                cwd="/Users/nomind/Code/duh",
                 timeout=30,
             )
             assert result.returncode == 0

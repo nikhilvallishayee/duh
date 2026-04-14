@@ -119,6 +119,7 @@ class HookConfig:
     command: str = ""  # For COMMAND hooks
     callback: HookCallback | None = None  # For FUNCTION hooks
     timeout: float = 30.0  # Seconds
+    sandbox: bool = False  # If True, hook receives a private HookContext (7.4)
 
 
 @dataclass
@@ -548,7 +549,8 @@ class HookContext:
     allowed_write: frozenset[Path] = field(init=False)
 
     def __post_init__(self) -> None:
-        self.tmp_dir = Path(tempfile.mkdtemp(prefix=f"duh-hook-{self.hook_name}-"))
+        # resolve() normalises macOS /tmp → /private/var/… symlinks
+        self.tmp_dir = Path(tempfile.mkdtemp(prefix=f"duh-hook-{self.hook_name}-")).resolve()
         self.allowed_write = frozenset({self.tmp_dir})
 
     def cleanup(self) -> None:
@@ -601,3 +603,54 @@ class HookContextRegistry:
         for ctx in self._contexts:
             ctx.cleanup()
         self._contexts.clear()
+
+
+# ---------------------------------------------------------------------------
+# Synchronous fire_hook helper (for sandboxed FUNCTION hooks)
+# ---------------------------------------------------------------------------
+
+
+def fire_hook(
+    event: HookEvent,
+    data: dict[str, Any],
+    *,
+    hooks: "list[tuple[HookConfig, HookCallback]]",
+) -> None:
+    """Fire synchronous hooks from a pre-built list of (config, handler) pairs.
+
+    For hooks with ``sandbox=True``, a fresh :class:`HookContext` is created,
+    passed as ``ctx=`` keyword argument, and cleaned up after the handler
+    returns.  Non-sandboxed hooks are called without a ``ctx`` argument.
+
+    This is a thin synchronous helper; the async ``execute_hooks`` path
+    handles the full registry-based dispatch.
+    """
+    for hook_config, handler in hooks:
+        if hook_config.sandbox:
+            ctx = HookContext(hook_name=hook_config.name)
+            try:
+                handler(event, data, ctx=ctx)
+            finally:
+                ctx.cleanup()
+        else:
+            handler(event, data)
+
+
+# ---------------------------------------------------------------------------
+# Built-in hook catalogue
+# ---------------------------------------------------------------------------
+
+#: Registry of built-in D.U.H. hooks.  Security hooks are always sandboxed.
+_BUILTIN_HOOKS: list["HookConfig"] = []
+
+
+def get_builtin_hooks() -> list["HookConfig"]:
+    """Return the list of built-in D.U.H. hooks.
+
+    Currently returns an empty list; the security hooks registered via
+    :func:`duh.security.hooks.install` use :class:`HookRegistry` directly
+    and are not in this catalogue.  This function exists so that future
+    built-in hooks can be declared here with ``sandbox=True`` and tested
+    via :func:`test_builtin_security_hooks_are_sandboxed`.
+    """
+    return list(_BUILTIN_HOOKS)

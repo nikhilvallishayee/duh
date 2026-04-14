@@ -86,8 +86,8 @@ class TestAllEventsExist:
         assert hasattr(HookEvent, event_name), f"HookEvent.{event_name} missing"
 
     def test_total_count(self):
-        """There should be exactly 28 events (6 original + 22 new)."""
-        assert len(HookEvent) == 28
+        """There should be exactly 29 events (6 original + 22 new + 1 AUDIT)."""
+        assert len(HookEvent) == 29
 
 
 # ===========================================================================
@@ -147,7 +147,7 @@ class TestRegistryMultiEvent:
         reg = HookRegistry()
         for event in HookEvent:
             reg.register(_fn_hook(event, name=f"hook_{event.name}"))
-        assert len(reg.list_all()) == 28
+        assert len(reg.list_all()) == 29
 
     def test_get_hooks_per_event(self):
         """Each event should have exactly one hook after registering one per event."""

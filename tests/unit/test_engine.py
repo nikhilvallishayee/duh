@@ -88,3 +88,20 @@ class TestEngine:
         e1 = Engine(deps=deps)
         e2 = Engine(deps=deps)
         assert e1.session_id != e2.session_id
+
+
+def _make_engine() -> Engine:
+    """Test helper — create a minimal Engine with a fake model."""
+    deps = Deps(call_model=simple_model)
+    return Engine(deps=deps)
+
+
+def test_engine_creates_session_key_and_minter() -> None:
+    """Engine must generate a 32-byte session key and expose a ConfirmationMinter."""
+    from duh.kernel.confirmation import ConfirmationMinter
+
+    engine = _make_engine()
+    assert hasattr(engine, "_confirmation_minter")
+    assert isinstance(engine._confirmation_minter, ConfirmationMinter)
+    # The key is random — just verify it's 32 bytes
+    assert len(engine._confirmation_minter._key) == 32

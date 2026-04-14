@@ -16,11 +16,13 @@ It delegates the actual model calling to the query loop.
 
 from __future__ import annotations
 
+import os
 import uuid as _uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 from duh.hooks import HookEvent, execute_hooks
+from duh.kernel.confirmation import ConfirmationMinter
 from duh.kernel.deps import Deps
 from duh.kernel.loop import query
 from duh.kernel.messages import Message, UserMessage
@@ -96,6 +98,7 @@ class Engine:
         self._slog = structured_logger
         if self._slog:
             self._slog.session_id = self._session_id
+        self._confirmation_minter = ConfirmationMinter(session_key=os.urandom(32))
 
     @property
     def messages(self) -> list[Message]:
@@ -184,6 +187,24 @@ class Engine:
         if remaining is not None:
             lines.append(f"Budget remaining: {format_cost(remaining)} of {format_cost(self._config.max_cost or 0.0)}")
         return "\n".join(lines)
+
+    def _check_confirmation_gate(
+        self,
+        tool: str,
+        input_obj: dict,
+        chain: list,
+        token: str | None,
+    ) -> Any:
+        """Check whether a tool call from `chain` requires a confirmation token."""
+        from duh.security.policy import resolve_confirmation
+        return resolve_confirmation(
+            tool=tool,
+            input_obj=input_obj,
+            chain=chain,
+            minter=self._confirmation_minter,
+            session_id=self._session_id,
+            token=token,
+        )
 
     async def run(
         self,

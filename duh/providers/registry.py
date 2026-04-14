@@ -40,6 +40,12 @@ class ProviderBackend:
 def infer_provider_from_model(model: str | None) -> str | None:
     if not model:
         return None
+    # litellm convention: model strings with "/" (e.g. "gemini/gemini-2.5-flash",
+    # "bedrock/claude-3-haiku") are litellm model strings.  Check before native
+    # providers since a litellm string like "bedrock/claude-3-haiku" would
+    # otherwise match the "haiku" keyword for anthropic.
+    if "/" in model:
+        return "litellm"
     m = model.lower()
     if any(k in m for k in ("claude", "haiku", "sonnet", "opus")):
         return "anthropic"
@@ -338,5 +344,13 @@ def build_model_backend(
 
             create = lambda m: OllamaProvider(model=m)
         return ProviderBackend("ollama", resolved, create(resolved).stream, auth_mode="local")
+
+    if provider_name == "litellm":
+        resolved = model or "gemini/gemini-2.5-flash"
+        create = provider_factories.get("litellm")
+        if create is None:
+            from duh.adapters.litellm_provider import LiteLLMProvider
+            create = lambda m: LiteLLMProvider(model=m)  # noqa: E731
+        return ProviderBackend("litellm", resolved, create(resolved).stream, auth_mode="env_vars")
 
     return ProviderBackend(provider_name, model or "", None, f"Unknown provider: {provider_name}")

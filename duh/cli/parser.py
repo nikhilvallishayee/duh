@@ -19,7 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Model to use (default: auto-detect from provider).")
     parser.add_argument("--fallback-model", type=str, default=None,
                         help="Fallback model if primary is overloaded.")
-    parser.add_argument("--provider", type=str, choices=["anthropic", "ollama", "openai"],
+    parser.add_argument("--provider", type=str, choices=["anthropic", "litellm", "ollama", "openai"],
                         default=None,
                         help="LLM provider (default: auto-detect from API keys or Ollama).")
     parser.add_argument("--max-turns", type=int, default=10,

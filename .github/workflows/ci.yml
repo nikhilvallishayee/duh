@@ -13,10 +13,8 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.12"]
-    env:
-      # Force the deterministic stub provider so subprocess-driven
-      # integration tests don't need real API credentials in CI.
-      DUH_STUB_PROVIDER: "1"
+    # Note: DUH_STUB_PROVIDER lands with PR #2. Until then integration
+    # tests skip when no provider is configured.
 
     steps:
       - uses: actions/checkout@v4

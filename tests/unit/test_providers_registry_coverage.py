@@ -44,9 +44,13 @@ from duh.providers.registry import (
 @pytest.fixture(autouse=True)
 def _clear_cache_and_env(monkeypatch):
     _MODEL_CACHE.clear()
-    # Neutral env for every test unless overridden.
+    # Neutral env for every test unless overridden. DUH_STUB_PROVIDER
+    # is cleared so registry behaviour is tested directly without the
+    # short-circuit that the stub provider installs at module level —
+    # otherwise build_model_backend always returns "stub".
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("DUH_STUB_PROVIDER", raising=False)
     yield
     _MODEL_CACHE.clear()
 

@@ -262,8 +262,11 @@ class TestRunStreamJsonMode:
 
     @pytest.mark.asyncio
     async def test_anthropic_no_api_key_emits_error(self, monkeypatch):
-        """Provider=anthropic but no API key → error result."""
+        """Provider=anthropic but no key/oauth → error result."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setattr(
+            "duh.providers.registry.get_valid_anthropic_oauth", lambda: None
+        )
 
         captured_lines: list[str] = []
 
@@ -277,7 +280,7 @@ class TestRunStreamJsonMode:
 
         assert code == 1
         result_msg = json.loads(captured_lines[0])
-        assert "ANTHROPIC_API_KEY" in result_msg["result"]
+        assert "not configured" in result_msg["result"]
 
     @pytest.mark.asyncio
     async def test_unknown_provider_emits_error(self):

@@ -58,16 +58,29 @@ class AnthropicProvider:
         max_retries: int = 2,
         timeout: float = 600.0,
         base_url: str | None = None,
+        oauth_token: str | None = None,
     ):
         import anthropic
 
         self._default_model = model
-        self._client = anthropic.AsyncAnthropic(
-            api_key=api_key or os.environ.get("ANTHROPIC_API_KEY", ""),
-            max_retries=max_retries,
-            timeout=timeout,
-            **({"base_url": base_url} if base_url else {}),
-        )
+
+        # OAuth bearer token takes precedence over API key when provided
+        if oauth_token:
+            # Use a dummy api_key (SDK requires one) but override auth header
+            self._client = anthropic.AsyncAnthropic(
+                api_key="oauth-placeholder",
+                max_retries=max_retries,
+                timeout=timeout,
+                default_headers={"Authorization": f"Bearer {oauth_token}"},
+                **({"base_url": base_url} if base_url else {}),
+            )
+        else:
+            self._client = anthropic.AsyncAnthropic(
+                api_key=api_key or os.environ.get("ANTHROPIC_API_KEY", ""),
+                max_retries=max_retries,
+                timeout=timeout,
+                **({"base_url": base_url} if base_url else {}),
+            )
 
     @classmethod
     def _parse_tool_use_block(cls, block: dict[str, Any]) -> ParsedToolUse:

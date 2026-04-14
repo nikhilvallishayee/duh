@@ -11,6 +11,7 @@ import httpx
 
 from duh.adapters.stub_provider import stub_provider_enabled
 from duh.auth.anthropic import get_saved_anthropic_api_key
+from duh.auth.anthropic_oauth import get_valid_anthropic_oauth, has_anthropic_oauth
 from duh.auth.openai_chatgpt import (
     OPENAI_CHATGPT_MODELS,
     get_saved_openai_api_key,
@@ -40,6 +41,11 @@ class ProviderBackend:
 def infer_provider_from_model(model: str | None) -> str | None:
     if not model:
         return None
+    # litellm convention: model strings with a "/" prefix (e.g. "gemini/gemini-2.5-flash",
+    # "bedrock/claude-3-haiku") are litellm model strings. Check before native providers
+    # since a litellm string like "bedrock/claude-3-haiku" would otherwise match "haiku".
+    if "/" in model:
+        return "litellm"
     m = model.lower()
     if any(k in m for k in ("claude", "haiku", "sonnet", "opus")):
         return "anthropic"
@@ -57,7 +63,7 @@ def get_openai_api_key() -> str:
 
 
 def has_anthropic_available() -> bool:
-    return bool(get_anthropic_api_key())
+    return bool(get_anthropic_api_key()) or has_anthropic_oauth()
 
 
 def has_openai_available() -> bool:
@@ -278,20 +284,36 @@ def build_model_backend(
         )
 
     if provider_name == "anthropic":
+        # Try OAuth first, then fall back to API key
+        oauth = get_valid_anthropic_oauth()
         api_key = get_anthropic_api_key()
-        if not api_key:
-            return ProviderBackend("anthropic", model or "claude-sonnet-4-6", None, "ANTHROPIC_API_KEY not set.")
+        if not oauth and not api_key:
+            return ProviderBackend(
+                "anthropic",
+                model or "claude-sonnet-4-6",
+                None,
+                "Anthropic auth not configured. Use /connect anthropic.",
+            )
         resolved = model or "claude-sonnet-4-6"
         create = provider_factories.get("anthropic")
         if create is None:
             from duh.adapters.anthropic import AnthropicProvider
 
-            create = lambda m: AnthropicProvider(api_key=api_key, model=m)
+            if oauth:
+                token = oauth.get("access_token", "")
+                create = lambda m: AnthropicProvider(  # noqa: E731
+                    oauth_token=token, model=m
+                )
+            else:
+                create = lambda m: AnthropicProvider(  # noqa: E731
+                    api_key=api_key, model=m
+                )
+        auth_mode = "oauth" if oauth else "api_key"
         return ProviderBackend(
             "anthropic",
             resolved,
             create(resolved).stream,
-            auth_mode="api_key",
+            auth_mode=auth_mode,
         )
 
     if provider_name == "openai":
@@ -338,5 +360,14 @@ def build_model_backend(
 
             create = lambda m: OllamaProvider(model=m)
         return ProviderBackend("ollama", resolved, create(resolved).stream, auth_mode="local")
+
+    if provider_name == "litellm":
+        resolved = model or "gemini/gemini-2.5-flash"
+        create = provider_factories.get("litellm")
+        if create is None:
+            from duh.adapters.litellm_provider import LiteLLMProvider
+
+            create = lambda m: LiteLLMProvider(model=m)  # noqa: E731
+        return ProviderBackend("litellm", resolved, create(resolved).stream, auth_mode="env_vars")
 
     return ProviderBackend(provider_name, model or "", None, f"Unknown provider: {provider_name}")

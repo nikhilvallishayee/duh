@@ -573,15 +573,18 @@ class TestProviderModelDefaults:
 
     @pytest.mark.asyncio
     async def test_anthropic_no_key_error(self, monkeypatch, capsys):
-        """Explicit anthropic provider but no key → exit 1."""
+        """Explicit anthropic provider but no key/oauth → exit 1."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setattr(
+            "duh.providers.registry.get_valid_anthropic_oauth", lambda: None
+        )
 
         args = _make_args(provider="anthropic")
         code = await run_print_mode(args)
 
         assert code == 1
         captured = capsys.readouterr()
-        assert "ANTHROPIC_API_KEY" in captured.err
+        assert "not configured" in captured.err
 
 
 # ===================================================================

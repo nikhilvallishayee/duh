@@ -150,7 +150,7 @@ class TestSlashConnect:
         out = capsys.readouterr().out
         assert "Usage" in out
 
-    def test_anthropic_connect(self, capsys, monkeypatch):
+    def test_anthropic_connect_api_key(self, capsys, monkeypatch):
         from duh.cli import repl as repl_mod
 
         monkeypatch.setattr(
@@ -159,10 +159,31 @@ class TestSlashConnect:
             lambda input_fn=None: (True, "Anthropic connected"),
         )
         engine = _make_engine()
-        keep, _ = _handle_slash("/connect anthropic", engine, "m", _make_deps())
+        keep, _ = _handle_slash("/connect anthropic api-key", engine, "m", _make_deps())
         assert keep is True
         out = capsys.readouterr().out
         assert "Anthropic connected" in out
+
+    def test_anthropic_connect_oauth(self, capsys, monkeypatch):
+        from duh.cli import repl as repl_mod
+
+        monkeypatch.setattr(
+            repl_mod,
+            "connect_anthropic_oauth",
+            lambda input_fn=None, output_fn=None: (True, "Anthropic OAuth OK"),
+        )
+        engine = _make_engine()
+        keep, _ = _handle_slash("/connect anthropic oauth", engine, "m", _make_deps())
+        assert keep is True
+        out = capsys.readouterr().out
+        assert "Anthropic OAuth OK" in out
+
+    def test_anthropic_connect_unknown_method(self, capsys, monkeypatch):
+        engine = _make_engine()
+        keep, _ = _handle_slash("/connect anthropic bogus", engine, "m", _make_deps())
+        assert keep is True
+        out = capsys.readouterr().out
+        assert "Usage" in out
 
 
 # ============================================================================

@@ -67,7 +67,8 @@ def _build_parser() -> argparse.ArgumentParser:
     audit_cmd.add_argument("--project-root", default=".", type=Path)
 
     subs.add_parser("db", help="Advisory DB management (phase 4)")
-    subs.add_parser("doctor", help="Diagnose scanner install + CI (phase 5)")
+    doc = subs.add_parser("doctor", help="Diagnose scanner installs")
+    doc.add_argument("--project-root", default=".", type=Path)
 
     hook = subs.add_parser("hook", help="Install/uninstall git hooks")
     hook_sub = hook.add_subparsers(dest="hook_cmd", required=True)
@@ -75,6 +76,25 @@ def _build_parser() -> argparse.ArgumentParser:
         sp = hook_sub.add_parser(verb)
         sp.add_argument("kind", choices=["git"])
         sp.add_argument("--project-root", default=".", type=Path)
+
+    gen = subs.add_parser("generate", help="Generate CI templates and SECURITY.md")
+    gen_sub = gen.add_subparsers(dest="gen_cmd", required=True)
+
+    gen_wf = gen_sub.add_parser("workflow", help="Write .github/workflows/security.yml")
+    gen_wf.add_argument(
+        "--template",
+        choices=["minimal", "standard", "paranoid"],
+        default="standard",
+    )
+    gen_wf.add_argument("--output", type=Path, default=Path(".github/workflows/security.yml"))
+
+    gen_db = gen_sub.add_parser("dependabot", help="Write .github/dependabot.yml")
+    gen_db.add_argument("--output", type=Path, default=Path(".github/dependabot.yml"))
+
+    gen_md = gen_sub.add_parser("security-md", help="Write SECURITY.md")
+    gen_md.add_argument("--project-name", required=True)
+    gen_md.add_argument("--latest-version", required=True)
+    gen_md.add_argument("--output", type=Path, default=Path("SECURITY.md"))
 
     return parser
 
@@ -189,6 +209,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 1
         return 0
 
+    if args.cmd == "generate":
+        return _dispatch_generate(args)
+
     if args.cmd == "init":
         return _dispatch_init(args)
 
@@ -198,8 +221,39 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.cmd == "exception":
         return _dispatch_exception(args)
 
+    if args.cmd == "doctor":
+        return _dispatch_doctor(args)
+
     sys.stderr.write(f"duh security: {args.cmd} is not yet implemented\n")
     return 3
+
+
+def _dispatch_generate(args) -> int:
+    from duh.security.ci_templates.github_actions import (
+        WorkflowTemplate,
+        generate_dependabot,
+        generate_workflow,
+    )
+    from duh.security.ci_templates.security_md import generate as generate_security_md
+
+    out: Path = args.output
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    if args.gen_cmd == "workflow":
+        body = generate_workflow(template=WorkflowTemplate(args.template))
+    elif args.gen_cmd == "dependabot":
+        body = generate_dependabot()
+    elif args.gen_cmd == "security-md":
+        body = generate_security_md(
+            project_name=args.project_name,
+            latest_version=args.latest_version,
+        )
+    else:
+        return 2
+
+    out.write_text(body, encoding="utf-8")
+    sys.stdout.write(f"wrote {out}\n")
+    return 0
 
 
 def _dispatch_init(args) -> int:
@@ -224,6 +278,23 @@ def _dispatch_init(args) -> int:
     plan = render_plan(detection=det, answers=answers, project_root=project_root)
     write_plan(plan, dry_run=args.dry_run)
     return 0
+
+
+def _dispatch_doctor(args) -> int:
+    from duh.security.engine import ScannerRegistry
+
+    registry = ScannerRegistry()
+    registry.load_entry_points()
+    sys.stdout.write("duh security doctor\n")
+    sys.stdout.write("  scanners discovered:\n")
+    exit_code = 0
+    for name in sorted(registry.names()):
+        scanner = registry.get(name)
+        status = "ok" if scanner.available() else "missing"
+        if status == "missing":
+            exit_code = 1
+        sys.stdout.write(f"    {name:24s} {status}\n")
+    return exit_code
 
 
 def _dispatch_exception(args: argparse.Namespace) -> int:

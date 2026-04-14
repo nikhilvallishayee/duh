@@ -180,3 +180,74 @@ def test_init_non_interactive_writes_files(tmp_path: Path) -> None:
     ])
     assert exit_code == 0
     assert (tmp_path / ".duh" / "security.json").exists()
+
+
+def test_doctor_runs_and_reports(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    exit_code = security_main(["doctor", "--project-root", str(tmp_path)])
+    assert exit_code in (0, 1)
+    out = capsys.readouterr().out
+    assert "scanners" in out.lower()
+
+
+def test_generate_workflow_writes_minimal_template(tmp_path: Path) -> None:
+    out = tmp_path / ".github" / "workflows" / "security.yml"
+    exit_code = security_main([
+        "generate", "workflow",
+        "--template", "minimal",
+        "--output", str(out),
+    ])
+    assert exit_code == 0
+    assert out.exists()
+    body = out.read_text(encoding="utf-8")
+    assert "name: Security" in body
+    assert "dependency-review:" in body
+    assert "codeql:" not in body
+
+
+def test_generate_workflow_paranoid_variant(tmp_path: Path) -> None:
+    out = tmp_path / "security.yml"
+    exit_code = security_main([
+        "generate", "workflow",
+        "--template", "paranoid",
+        "--output", str(out),
+    ])
+    assert exit_code == 0
+    body = out.read_text(encoding="utf-8")
+    assert "scorecard:" in body
+    assert "codeql:" in body
+
+
+def test_generate_dependabot_writes_config(tmp_path: Path) -> None:
+    out = tmp_path / ".github" / "dependabot.yml"
+    exit_code = security_main([
+        "generate", "dependabot",
+        "--output", str(out),
+    ])
+    assert exit_code == 0
+    body = out.read_text(encoding="utf-8")
+    assert "version: 2" in body
+    assert "package-ecosystem: \"pip\"" in body
+
+
+def test_generate_security_md_writes_file(tmp_path: Path) -> None:
+    out = tmp_path / "SECURITY.md"
+    exit_code = security_main([
+        "generate", "security-md",
+        "--project-name", "duh-cli",
+        "--latest-version", "0.4.0",
+        "--output", str(out),
+    ])
+    assert exit_code == 0
+    body = out.read_text(encoding="utf-8")
+    assert "# Security Policy" in body
+    assert "0.4.x" in body
+
+
+def test_generate_workflow_rejects_unknown_template(tmp_path: Path) -> None:
+    out = tmp_path / "security.yml"
+    exit_code = security_main([
+        "generate", "workflow",
+        "--template", "bogus",
+        "--output", str(out),
+    ])
+    assert exit_code != 0

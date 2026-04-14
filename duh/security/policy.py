@@ -7,10 +7,39 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
+from duh.kernel.untrusted import UNTAINTED_SOURCES, TaintSource
 from duh.security.config import SecurityPolicy
 from duh.security.engine import FindingStore
 from duh.security.exceptions import ExceptionStore
 from duh.security.finding import Finding
+
+__all__ = [
+    "DANGEROUS_TOOLS",
+    "any_tainted",
+    "resolve_confirmation",
+    "ConfirmationPolicyDecision",
+    "ToolUseEvent",
+    "PolicyDecision",
+    "resolve",
+]
+
+# Public alias (used by 7.2 confirmation gating)
+DANGEROUS_TOOLS: frozenset[str] = frozenset({
+    "Bash", "Write", "Edit", "MultiEdit", "NotebookEdit",
+    "WebFetch", "Docker", "HTTP",
+})
+
+# Private alias for backward compat inside this module
+_DANGEROUS_TOOLS: frozenset[str] = DANGEROUS_TOOLS
+
+
+def any_tainted(chain: list) -> bool:
+    """Return True if any item in the event chain has a tainted source."""
+    for item in chain:
+        src = getattr(item, "_source", TaintSource.SYSTEM)
+        if src not in UNTAINTED_SOURCES:
+            return True
+    return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,12 +54,6 @@ class PolicyDecision:
     reason: str
     findings: tuple[Finding, ...]
     remediation: str | None
-
-
-_DANGEROUS_TOOLS: frozenset[str] = frozenset({
-    "Bash", "Write", "Edit", "MultiEdit", "NotebookEdit",
-    "WebFetch", "Docker", "HTTP",
-})
 
 
 def resolve(

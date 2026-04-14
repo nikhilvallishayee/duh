@@ -52,6 +52,37 @@ def test_validate_rejects_garbage() -> None:
     assert m.validate("", "s", "t", {}) is False
 
 
+from duh.security.policy import DANGEROUS_TOOLS, any_tainted
+from duh.kernel.untrusted import TaintSource, UntrustedStr
+
+
+def test_dangerous_tools_contains_known_dangerous() -> None:
+    for name in ("Bash", "Write", "Edit", "MultiEdit", "NotebookEdit",
+                 "WebFetch", "Docker", "HTTP"):
+        assert name in DANGEROUS_TOOLS, f"{name} missing from DANGEROUS_TOOLS"
+
+
+def test_any_tainted_with_all_untainted() -> None:
+    chain = [
+        UntrustedStr("a", TaintSource.USER_INPUT),
+        UntrustedStr("b", TaintSource.SYSTEM),
+    ]
+    assert any_tainted(chain) is False
+
+
+def test_any_tainted_with_one_tainted() -> None:
+    chain = [
+        UntrustedStr("a", TaintSource.USER_INPUT),
+        UntrustedStr("b", TaintSource.MODEL_OUTPUT),
+    ]
+    assert any_tainted(chain) is True
+
+
+def test_any_tainted_with_plain_str() -> None:
+    # Plain str has no source — treated as untainted (SYSTEM default)
+    assert any_tainted(["plain"]) is False
+
+
 def test_validate_rejects_expired_token(minter: ConfirmationMinter) -> None:
     import hashlib
     import hmac as _hmac

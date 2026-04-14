@@ -10,3 +10,4 @@ build/
 *.egg
 .coverage
 .coverage.*
+.hypothesis/

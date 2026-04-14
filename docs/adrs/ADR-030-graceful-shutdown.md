@@ -1,9 +1,6 @@
 # ADR-030: Graceful Shutdown
 
-**Status:** Accepted — partial (core SIGINT/SIGTERM handler with timeout-bounded
-cleanup is implemented; second-signal force exit, SIGQUIT stack dump, and LIFO
-callback ordering are not — the current handler runs callbacks in FIFO order with a
-default timeout of 1.5 s rather than the 5 s described below)
+**Status:** Accepted — implemented 2026-04-15
 **Date**: 2026-04-08
 
 ## Context

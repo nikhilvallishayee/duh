@@ -1,11 +1,6 @@
 # ADR-039: Ghost Snapshot Mode
 
-**Status:** Accepted — partial (shipped as a `ReadOnlyExecutor` that blocks all
-mutating tools plus a `SnapshotSession` that deep-copies conversation state. The
-filesystem-overlay design described below — `GhostExecutor` with an in-memory dict of
-virtual writes, merge-to-disk path, 20-file / 10 MB overlay caps, 50-turn / 40-turn
-warning limits — is NOT implemented. `/snapshot` is registered in the REPL for
-apply/discard of the conversation fork, but speculative write-and-merge is not wired.)
+**Status:** Accepted — implemented 2026-04-15
 **Date**: 2026-04-08
 
 ## Context

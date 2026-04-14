@@ -2,8 +2,9 @@
 
 [![CI](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml/badge.svg)](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/duh-cli?color=blue)](https://pypi.org/project/duh-cli/)
-[![Tests](https://img.shields.io/badge/tests-3642%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-4160%20passing-brightgreen)]()
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)]()
+[![Security](https://img.shields.io/badge/security-ADR--053%20%2B%20ADR--054-blueviolet)]()
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)]()
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
@@ -24,6 +25,7 @@ pip install 'duh-cli[openai]'          # + OpenAI API key provider
 pip install 'duh-cli[rich]'            # + Rich TUI rendering
 pip install 'duh-cli[bridge]'          # + WebSocket remote bridge
 pip install 'duh-cli[attachments]'     # + PDF attachment support (pdfplumber)
+pip install 'duh-cli[security]'        # + vulnerability monitoring (ruff, pip-audit, detect-secrets, cyclonedx)
 pip install 'duh-cli[all]'             # everything above
 ```
 
@@ -35,6 +37,9 @@ duh --provider anthropic --model claude-sonnet-4-6 -p "hello"    # force Claude
 duh --provider openai --model gpt-5.2-codex -p "refactor db"     # ChatGPT Plus/Pro Codex (OAuth)
 duh                                                              # interactive REPL
 duh doctor                                                       # diagnostics + health checks
+duh security scan                                                # vulnerability scan (SARIF output)
+duh security init --non-interactive                              # set up security policy
+duh security doctor                                              # scanner health check
 ```
 
 ## Providers
@@ -59,9 +64,28 @@ Run `/help` in the REPL for the full description of each command. Highlights: `/
 
 `Read`, `Write`, `Edit`, `MultiEdit`, `Bash`, `Glob`, `Grep`, `Skill`, `ToolSearch`, `WebFetch`, `WebSearch`, `Task`, `EnterWorktree`, `ExitWorktree`, `NotebookEdit`, `TestImpact`, `MemoryStore`, `MemoryRecall`, `HTTP`, `Docker`, `Database`, `GitHub`, `TodoWrite`, `AskUserQuestion`, plus `LSP` (deferred, loaded via `ToolSearch`).
 
-## Sandboxing
+## Security
 
-Shell commands can be wrapped by the host OS sandbox: **macOS Seatbelt** (`sandbox-exec` profiles), **Linux Landlock** (syscall-level filesystem access control), and a network policy layer that blocks outbound traffic unless explicitly allowed (see `duh/adapters/sandbox/`). Approval behaviour is controlled with `--approval-mode suggest|auto-edit|full-auto` (reads only / reads+writes / everything), with `--dangerously-skip-permissions` as the hard bypass.
+D.U.H. ships a three-layer pluggable security module (ADR-053 + ADR-054) that addresses every published agent RCE in the 2024-2026 CVE corpus:
+
+**Layer 1 — Vulnerability monitoring (`duh security` CLI):**
+- 13 scanners across 3 tiers: Minimal (ruff-sec, pip-audit, detect-secrets, cyclonedx-sbom + 5 D.U.H.-specific scanners), Extended (semgrep, osv-scanner, gitleaks, bandit), Paranoid (GitHub Actions CodeQL, Scorecard, Dependabot)
+- D.U.H.-specific scanners detect project-file RCE (CVE-2025-59536), MCP tool poisoning (CVE-2025-54136), sandbox bypass (CVE-2025-59532), command injection (CVE-2026-35022), and OAuth hardening violations
+- SARIF output for GitHub Code Scanning, delta mode (`--baseline`), exception management with expiry
+- `duh security init` wizard, `duh security doctor`, pre-push git hook installer
+
+**Layer 2 — Runtime hardening (ADR-054):**
+- **Taint propagation**: `UntrustedStr` subclass tags every string with its origin (`user_input`, `model_output`, `tool_output`, `file_content`, `mcp_output`, `network`) and propagates through all string operations
+- **Confirmation tokens**: HMAC-bound tokens prevent model-originated tainted strings from reaching dangerous tools (Bash, Write, Edit) without explicit user confirmation
+- **Lethal trifecta check**: Sessions with simultaneous read-private + read-untrusted + network-egress capabilities require explicit acknowledgement (`--i-understand-the-lethal-trifecta`)
+- **MCP Unicode normalization**: NFKC normalization + rejection of zero-width, bidi, tag, and variation selector characters in MCP tool descriptions (GlassWorm defense)
+- **Per-hook filesystem namespacing**: Each hook gets a private temp directory; cross-hook file access is blocked
+- **PEP 578 audit hook bridge**: `sys.addaudithook` telemetry on `open`, `subprocess.Popen`, `socket.connect`, `exec`, `import pickle` — sub-500ns fast path
+- **Signed plugin manifests**: TOFU trust store with sigstore-ready verification and revocation
+- **Provider differential fuzzer**: Hypothesis property tests ensure all 5 adapters parse tool_use identically
+
+**Layer 3 — Sandboxing:**
+Shell commands and MCP stdio servers are wrapped by the host OS sandbox: **macOS Seatbelt** (`sandbox-exec` profiles), **Linux Landlock** (syscall-level filesystem access control), and a network policy layer that blocks outbound traffic unless explicitly allowed (see `duh/adapters/sandbox/`). Approval behaviour is controlled with `--approval-mode suggest|auto-edit|full-auto` (reads only / reads+writes / everything), with `--dangerously-skip-permissions` as the hard bypass.
 
 ## MCP (Model Context Protocol)
 
@@ -69,11 +93,11 @@ MCP servers connect via four transports: **stdio** (via the `mcp` SDK), **SSE**,
 
 ## Hooks
 
-**28 lifecycle events** (6 original + 22 extended) including `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PermissionRequest`, `PreCompact`, `PostCompact`, `FileChanged`, `SubagentStart`, `Elicitation`, and more. Hooks support **glob matchers**, **blocking semantics** (a hook can refuse a tool call or rewrite its input), and both shell-command and Python-callable handlers. See [ADR-013](docs/adrs/ADR-013-hook-system.md), [ADR-036](docs/adrs/ADR-036-extended-hooks.md), [ADR-044](docs/adrs/ADR-044-hook-event-emission.md), [ADR-045](docs/adrs/ADR-045-hook-blocking-semantics.md).
+**29 lifecycle events** (6 original + 22 extended + AUDIT) including `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PermissionRequest`, `PreCompact`, `PostCompact`, `FileChanged`, `SubagentStart`, `Elicitation`, and more. Hooks support **glob matchers**, **blocking semantics** (a hook can refuse a tool call or rewrite its input), and both shell-command and Python-callable handlers. See [ADR-013](docs/adrs/ADR-013-hook-system.md), [ADR-036](docs/adrs/ADR-036-extended-hooks.md), [ADR-044](docs/adrs/ADR-044-hook-event-emission.md), [ADR-045](docs/adrs/ADR-045-hook-blocking-semantics.md).
 
 ## Tests and coverage
 
-**3642 tests, 100% line coverage**, ~26s on a laptop. CI runs on GitHub Actions with a `--cov-fail-under=85` floor (current actual: 100%).
+**4160 tests, 100% line coverage**, ~28s on a laptop. Includes 330+ security-specific tests (unit, integration, property-based), CVE replay fixtures, and performance regression gates. CI runs on GitHub Actions with a `--cov-fail-under=85` floor (current actual: 100%).
 
 ```bash
 .venv/bin/python -m pytest tests/                         # full suite
@@ -95,8 +119,10 @@ DUH_STUB_PROVIDER=1 .venv/bin/python -m pytest tests/     # force stub provider
 | [045](docs/adrs/ADR-045-hook-blocking-semantics.md) | Hook blocking + input rewriting |
 | [051](docs/adrs/ADR-051-oauth-provider-authentication.md) | OAuth provider authentication (ChatGPT Plus/Pro) |
 | [052](docs/adrs/ADR-052-chatgpt-codex-adapter.md) | ChatGPT Codex adapter (Responses API) |
+| [053](docs/adrs/ADR-053-continuous-vulnerability-monitoring.md) | Continuous vulnerability monitoring (pluggable scanner module) |
+| [054](docs/adrs/ADR-054-llm-specific-security-hardening.md) | LLM-specific security hardening (taint propagation, confirmation tokens, lethal trifecta) |
 
-Full list: [docs/adrs/](docs/adrs/) (52 ADRs).
+Full list: [docs/adrs/](docs/adrs/) (54 ADRs).
 
 ## Development
 
@@ -128,10 +154,13 @@ duh/
   auth/          # credential store + OpenAI ChatGPT PKCE OAuth
   providers/     # provider registry + model resolution
   tools/         # 25+ built-in tools (see list above)
+  security/      # vulnerability monitoring, policy resolver, scanner plugins, CI templates
+    scanners/    # 13 scanners (4 minimal, 5 D.U.H.-custom, 4 extended)
   cli/           # parser, main, runner, repl, sdk_runner, ndjson
   bridge/        # optional WebSocket remote bridge
   ui/            # Rich TUI rendering
-  hooks.py       # 28-event hook system
+  plugins/       # plugin loader, signed manifests, TOFU trust store
+  hooks.py       # 29-event hook system with per-hook FS namespacing
 ```
 
 ## License

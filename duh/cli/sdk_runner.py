@@ -250,6 +250,7 @@ async def run_stream_json_mode(args: argparse.Namespace) -> int:
         system_prompt=system_prompt,
         tools=tools,
         max_turns=args.max_turns,
+        trifecta_acknowledged=True,  # SDK sessions are always explicit
     )
     engine = Engine(deps=deps, config=engine_config)
     session_id = engine.session_id

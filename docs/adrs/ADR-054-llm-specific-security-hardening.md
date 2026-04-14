@@ -1,6 +1,6 @@
 # ADR-054: LLM-Specific Security Hardening — Taint Propagation, Confirmation Tokens, Lethal Trifecta
 
-**Status:** Proposed — 2026-04-14
+**Status:** Implemented — 2026-04-15 (proposed 2026-04-14)
 **Date:** 2026-04-14
 **Full design:** [`docs/superpowers/specs/2026-04-14-llm-security-hardening-design.md`](../superpowers/specs/2026-04-14-llm-security-hardening-design.md)
 **Prerequisite:** [ADR-053](ADR-053-continuous-vulnerability-monitoring.md)

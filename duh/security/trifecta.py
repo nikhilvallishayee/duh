@@ -51,7 +51,7 @@ def compute_session_capabilities(tools: list) -> Capability:
     """
     caps = Capability.NONE
     for tool in tools:
-        caps |= tool.capabilities
+        caps |= getattr(tool, "capabilities", Capability.NONE)
     return caps
 
 

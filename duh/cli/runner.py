@@ -334,6 +334,14 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     if mtt is not None:
         thinking = {"type": "enabled", "budget_tokens": mtt} if mtt > 0 else {"type": "disabled"}
 
+    # Trifecta acknowledgement from CLI flag or config file
+    trifecta_ack = getattr(args, "i_understand_the_lethal_trifecta", False)
+    if not trifecta_ack:
+        try:
+            trifecta_ack = app_config.trifecta_acknowledged
+        except (NameError, AttributeError):
+            pass
+
     engine_config = EngineConfig(
         model=model,
         fallback_model=getattr(args, "fallback_model", None),
@@ -343,6 +351,7 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         max_cost=max_cost,
         tool_choice=args.tool_choice,
         thinking=thinking,
+        trifecta_acknowledged=trifecta_ack,
     )
     # --- Wire structured JSON logger ---
     structured_logger = None

@@ -8,6 +8,15 @@ from typing import Any
 import httpx
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.kernel.untrusted import TaintSource, UntrustedStr
+
+
+def _wrap_network_body(text: str) -> UntrustedStr:
+    """Tag network response body as NETWORK."""
+    if isinstance(text, UntrustedStr):
+        return text
+    return UntrustedStr(text, TaintSource.NETWORK)
+
 
 _MAX_CONTENT_BYTES = 100_000  # 100 KB
 _DEFAULT_TIMEOUT = 30  # seconds

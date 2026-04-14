@@ -44,6 +44,15 @@ import readline
 import sys
 from typing import Any
 
+from duh.kernel.untrusted import TaintSource, UntrustedStr
+
+
+def _wrap_user_input(raw: str) -> UntrustedStr:
+    """Tag raw REPL input as USER_INPUT taint-source."""
+    if isinstance(raw, UntrustedStr):
+        return raw
+    return UntrustedStr(raw, TaintSource.USER_INPUT)
+
 from duh.adapters.anthropic import AnthropicProvider  # noqa: F401 (test/mocking compatibility)
 from duh.adapters.native_executor import NativeExecutor
 from duh.adapters.approvers import ApprovalMode, AutoApprover, InteractiveApprover, TieredApprover

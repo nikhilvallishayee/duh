@@ -353,3 +353,35 @@ class TestLoadInstructions:
         duh_idx = next(i for i, s in enumerate(result) if "DUH instructions" in s)
         agents_idx = next(i for i, s in enumerate(result) if "AGENTS instructions" in s)
         assert duh_idx < agents_idx
+
+
+# ---------------------------------------------------------------------------
+# Task 7.3.7: trifecta_acknowledged in Config + .duh/security.json
+# ---------------------------------------------------------------------------
+
+
+class TestTrifectaAcknowledged:
+    def test_config_trifecta_acknowledged_defaults_false(self):
+        with patch("duh.config.config_dir", return_value=Path("/nonexistent")):
+            cfg = load_config(cwd="/nonexistent")
+        assert cfg.trifecta_acknowledged is False
+
+    def test_config_trifecta_acknowledged_from_security_json(self, tmp_path: Path):
+        # Create project .duh dir with both settings.json and security.json
+        duh_dir = tmp_path / ".duh"
+        duh_dir.mkdir(parents=True)
+        (duh_dir / "settings.json").write_text("{}")
+        (duh_dir / "security.json").write_text(
+            json.dumps({"trifecta_acknowledged": True})
+        )
+        with patch("duh.config.config_dir", return_value=Path("/nonexistent")):
+            cfg = load_config(cwd=str(tmp_path))
+        assert cfg.trifecta_acknowledged is True
+
+    def test_config_trifecta_stays_false_without_security_json(self, tmp_path: Path):
+        duh_dir = tmp_path / ".duh"
+        duh_dir.mkdir(parents=True)
+        (duh_dir / "settings.json").write_text("{}")
+        with patch("duh.config.config_dir", return_value=Path("/nonexistent")):
+            cfg = load_config(cwd=str(tmp_path))
+        assert cfg.trifecta_acknowledged is False

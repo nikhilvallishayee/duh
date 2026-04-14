@@ -46,6 +46,7 @@ class Config:
     permissions: dict[str, Any] = field(default_factory=dict)
     hooks: dict[str, Any] = field(default_factory=dict)
     mcp_servers: dict[str, Any] = field(default_factory=dict)
+    trifecta_acknowledged: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +209,14 @@ def load_config(
         if project_data:
             _merge_into(config, project_data)
             logger.debug("Loaded project config from %s", project_path)
+
+        # Load .duh/security.json (sibling of settings.json) for security keys
+        security_path = project_path.parent / "security.json"
+        if security_path.exists():
+            security_data = _load_json(security_path)
+            if security_data.get("trifecta_acknowledged") is True:
+                config.trifecta_acknowledged = True
+                logger.debug("trifecta_acknowledged=True from %s", security_path)
 
     # Layer 3: environment variables
     _apply_env(config)

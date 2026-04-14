@@ -74,6 +74,17 @@ class FileStore:
             else:
                 lines.append(json.dumps(msg, ensure_ascii=False))
 
+        # Check projected size against the session cap before writing.
+        existing_size = path.stat().st_size if path.exists() else 0
+        new_bytes = sum(len(line.encode("utf-8")) + 1 for line in lines)  # +1 for "\n"
+        projected_size = existing_size + new_bytes
+        if projected_size > MAX_SESSION_BYTES:
+            raise ValueError(
+                f"Session state would exceed the {MAX_SESSION_BYTES // 1024 // 1024} MB "
+                f"session cap ({projected_size // 1024 // 1024} MB projected). "
+                "Compact the session before saving."
+            )
+
         # Atomic write: copy existing content + new lines → temp → rename.
         fd, tmp_path = tempfile.mkstemp(
             dir=str(self._base_dir), suffix=".tmp",

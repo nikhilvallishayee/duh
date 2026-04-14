@@ -73,8 +73,42 @@ async def test_write_accepts_normal_content(tmp_path, ctx):
     assert not result.is_error
 
 
-def test_session_store_cap(tmp_path):
-    """FileStore should refuse sessions larger than MAX_SESSION_BYTES."""
-    from duh.adapters.file_store import FileStore, MAX_SESSION_BYTES
+def test_session_cap_constant():
+    """MAX_SESSION_BYTES constant must be exactly 64 MB."""
+    from duh.adapters.file_store import MAX_SESSION_BYTES
 
     assert MAX_SESSION_BYTES == 64 * 1024 * 1024  # 64 MB
+
+
+@pytest.mark.asyncio
+async def test_file_store_save_raises_when_over_session_cap(tmp_path, monkeypatch):
+    """FileStore.save() must raise ValueError when projected size exceeds MAX_SESSION_BYTES."""
+    import duh.adapters.file_store as fs_module
+    from duh.adapters.file_store import FileStore
+    from duh.kernel.messages import Message
+
+    # Use a tiny cap (200 bytes) so we can trigger it without writing a huge file.
+    # A two-message save with 50-char content fields exceeds 200 bytes of JSON easily.
+    monkeypatch.setattr(fs_module, "MAX_SESSION_BYTES", 200)
+
+    store = FileStore(base_dir=tmp_path)
+
+    msgs = [
+        Message(role="user", content="a" * 50, id="m0", timestamp="t0"),
+        Message(role="assistant", content="b" * 50, id="m1", timestamp="t1"),
+    ]
+
+    with pytest.raises(ValueError, match="session cap"):
+        await store.save("s1", msgs)
+
+
+@pytest.mark.asyncio
+async def test_file_store_save_allows_session_under_cap(tmp_path):
+    """FileStore.save() must not raise for sessions within the 64 MB cap."""
+    from duh.adapters.file_store import FileStore
+    from duh.kernel.messages import Message
+
+    store = FileStore(base_dir=tmp_path)
+    msg = Message(role="user", content="small message", id="m1", timestamp="t1")
+    # Should not raise
+    await store.save("normal", [msg])

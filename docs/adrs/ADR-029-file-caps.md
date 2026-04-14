@@ -1,8 +1,6 @@
 # ADR-029: Large File Safety Caps
 
-**Status:** Accepted — partial (Read/Write 50 MB caps enforced; session-state cap
-`MAX_SESSION_BYTES` (64 MB) is declared in `duh/adapters/file_store.py` but still not
-checked inside `FileStore.save()` — tracked as a known gap)
+**Status:** Accepted — implemented 2026-04-15
 **Date**: 2026-04-08
 
 ## Context

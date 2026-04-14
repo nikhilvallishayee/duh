@@ -9,10 +9,14 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     strategy:
       matrix:
         python-version: ["3.12"]
+    env:
+      # Force the deterministic stub provider so subprocess-driven
+      # integration tests don't need real API credentials in CI.
+      DUH_STUB_PROVIDER: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -31,8 +35,32 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pytest-timeout pytest-cov
 
-      - name: Run tests
-        continue-on-error: false
-        run: pytest -q --tb=short --ignore=tests/integration
+      - name: Run unit tests
+        run: |
+          pytest tests/unit -q --tb=short \
+            --timeout=30 --timeout-method=thread
+
+      - name: Run integration tests
+        run: |
+          pytest tests/integration -q --tb=short \
+            --timeout=60 --timeout-method=thread
+
+      - name: Coverage report
+        run: |
+          pytest tests/ -q --tb=no \
+            --timeout=30 --timeout-method=thread \
+            --cov=duh --cov-report=term --cov-report=xml \
+            --cov-fail-under=85
+
+      - name: Upload coverage XML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore

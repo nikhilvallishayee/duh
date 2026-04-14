@@ -11,6 +11,15 @@ from pathlib import Path
 from typing import Any
 
 from duh.kernel.tool import MAX_TOOL_OUTPUT, ToolContext, ToolResult
+from duh.kernel.untrusted import TaintSource, UntrustedStr
+
+
+def _wrap_file_content(text: str) -> UntrustedStr:
+    """Tag file-system content as FILE_CONTENT."""
+    if isinstance(text, UntrustedStr):
+        return text
+    return UntrustedStr(text, TaintSource.FILE_CONTENT)
+
 
 # Maximum file size for reading (50 MB). Files larger than this should
 # be read with offset/limit. Prevents OOM on binary blobs.

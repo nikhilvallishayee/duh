@@ -6,6 +6,14 @@ from pathlib import Path
 from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.kernel.untrusted import TaintSource, UntrustedStr
+
+
+def _wrap_file_content(text: str) -> UntrustedStr:
+    """Tag file-system content as FILE_CONTENT."""
+    if isinstance(text, UntrustedStr):
+        return text
+    return UntrustedStr(text, TaintSource.FILE_CONTENT)
 
 
 class GlobTool:

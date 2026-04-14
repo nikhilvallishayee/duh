@@ -23,6 +23,17 @@ import uuid as _uuid
 from dataclasses import asdict
 from typing import Any
 
+from duh.kernel.untrusted import TaintSource, UntrustedStr
+
+
+def wrap_stream_user_message(msg: dict) -> dict:
+    """Tag the content string of a stream-json user message as USER_INPUT."""
+    content = msg.get("content", "")
+    if isinstance(content, str) and not isinstance(content, UntrustedStr):
+        msg = dict(msg)
+        msg["content"] = UntrustedStr(content, TaintSource.USER_INPUT)
+    return msg
+
 from duh.adapters.anthropic import AnthropicProvider  # noqa: F401 (test/mocking compatibility)
 from duh.adapters.native_executor import NativeExecutor
 from duh.adapters.approvers import AutoApprover, InteractiveApprover

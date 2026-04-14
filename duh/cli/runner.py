@@ -9,6 +9,15 @@ import os
 import sys
 from typing import Any
 
+from duh.kernel.untrusted import TaintSource, UntrustedStr
+
+
+def wrap_prompt_flag(value: str) -> UntrustedStr:
+    """Tag the -p/--prompt CLI flag value as USER_INPUT."""
+    if isinstance(value, UntrustedStr):
+        return value
+    return UntrustedStr(value, TaintSource.USER_INPUT)
+
 from duh.adapters.anthropic import AnthropicProvider  # noqa: F401 (test/mocking compatibility)
 from duh.adapters.native_executor import NativeExecutor
 from duh.adapters.approvers import AutoApprover, InteractiveApprover

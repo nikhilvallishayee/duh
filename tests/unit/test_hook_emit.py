@@ -474,3 +474,185 @@ class TestEngineEmitsCompactHooks:
             events.append(ev)
 
         assert any(e.get("type") == "done" for e in events)
+
+
+class TestEngineEmitsSetupAndTaskHooks:
+    """Verify SETUP, TASK_CREATED, and TASK_COMPLETED are emitted by the engine."""
+
+    @pytest.mark.asyncio
+    async def test_setup_hook_emitted_on_engine_run(self):
+        """SETUP hook fires at the beginning of the first engine.run() call."""
+        from duh.kernel.deps import Deps
+        from duh.kernel.engine import Engine, EngineConfig
+        from duh.kernel.messages import Message
+
+        recorder = _Recorder()
+        registry = HookRegistry()
+        registry.register(HookConfig(
+            event=HookEvent.SETUP,
+            hook_type=HookType.FUNCTION,
+            name="setup_hook",
+            callback=recorder.callback,
+        ))
+
+        async def fake_model(**kw):
+            yield {"type": "text_delta", "text": "ready"}
+            yield {"type": "assistant", "message": Message(
+                role="assistant", content="ready",
+                metadata={"stop_reason": "end_turn"},
+            )}
+
+        deps = Deps(call_model=fake_model, hook_registry=registry)
+        config = EngineConfig(model="test-model")
+        engine = Engine(deps=deps, config=config)
+
+        events = []
+        async for ev in engine.run("hello"):
+            events.append(ev)
+
+        assert recorder.has_event(HookEvent.SETUP), "SETUP hook should fire on first run"
+        data = recorder.get_data(HookEvent.SETUP)
+        assert "session_id" in data
+
+    @pytest.mark.asyncio
+    async def test_task_created_hook_emitted_on_run(self):
+        """TASK_CREATED hook fires when engine.run() begins processing a prompt."""
+        from duh.kernel.deps import Deps
+        from duh.kernel.engine import Engine, EngineConfig
+        from duh.kernel.messages import Message
+
+        recorder = _Recorder()
+        registry = HookRegistry()
+        registry.register(HookConfig(
+            event=HookEvent.TASK_CREATED,
+            hook_type=HookType.FUNCTION,
+            name="task_created_hook",
+            callback=recorder.callback,
+        ))
+
+        async def fake_model(**kw):
+            yield {"type": "text_delta", "text": "ok"}
+            yield {"type": "assistant", "message": Message(
+                role="assistant", content="ok",
+                metadata={"stop_reason": "end_turn"},
+            )}
+
+        deps = Deps(call_model=fake_model, hook_registry=registry)
+        config = EngineConfig(model="test-model")
+        engine = Engine(deps=deps, config=config)
+
+        events = []
+        async for ev in engine.run("do the task"):
+            events.append(ev)
+
+        assert recorder.has_event(HookEvent.TASK_CREATED), "TASK_CREATED should fire"
+        data = recorder.get_data(HookEvent.TASK_CREATED)
+        assert "session_id" in data
+        assert "turn" in data
+
+    @pytest.mark.asyncio
+    async def test_task_completed_hook_emitted_after_done(self):
+        """TASK_COMPLETED hook fires after the query loop emits 'done'."""
+        from duh.kernel.deps import Deps
+        from duh.kernel.engine import Engine, EngineConfig
+        from duh.kernel.messages import Message
+
+        recorder = _Recorder()
+        registry = HookRegistry()
+        registry.register(HookConfig(
+            event=HookEvent.TASK_COMPLETED,
+            hook_type=HookType.FUNCTION,
+            name="task_completed_hook",
+            callback=recorder.callback,
+        ))
+
+        async def fake_model(**kw):
+            yield {"type": "text_delta", "text": "done"}
+            yield {"type": "assistant", "message": Message(
+                role="assistant", content="done",
+                metadata={"stop_reason": "end_turn"},
+            )}
+
+        deps = Deps(call_model=fake_model, hook_registry=registry)
+        config = EngineConfig(model="test-model")
+        engine = Engine(deps=deps, config=config)
+
+        events = []
+        async for ev in engine.run("finish this"):
+            events.append(ev)
+
+        assert recorder.has_event(HookEvent.TASK_COMPLETED), "TASK_COMPLETED should fire"
+        data = recorder.get_data(HookEvent.TASK_COMPLETED)
+        assert "session_id" in data
+        assert "stop_reason" in data
+
+    @pytest.mark.asyncio
+    async def test_setup_fires_only_on_first_run(self):
+        """SETUP fires once per engine session, not on every run() call."""
+        from duh.kernel.deps import Deps
+        from duh.kernel.engine import Engine, EngineConfig
+        from duh.kernel.messages import Message
+
+        recorder = _Recorder()
+        registry = HookRegistry()
+        registry.register(HookConfig(
+            event=HookEvent.SETUP,
+            hook_type=HookType.FUNCTION,
+            name="setup_hook",
+            callback=recorder.callback,
+        ))
+
+        async def fake_model(**kw):
+            yield {"type": "text_delta", "text": "ok"}
+            yield {"type": "assistant", "message": Message(
+                role="assistant", content="ok",
+                metadata={"stop_reason": "end_turn"},
+            )}
+
+        deps = Deps(call_model=fake_model, hook_registry=registry)
+        config = EngineConfig(model="test-model")
+        engine = Engine(deps=deps, config=config)
+
+        # Run twice
+        async for _ in engine.run("first"):
+            pass
+        async for _ in engine.run("second"):
+            pass
+
+        assert recorder.count(HookEvent.SETUP) == 1, "SETUP should fire only once"
+
+    @pytest.mark.asyncio
+    async def test_task_hooks_fire_each_run(self):
+        """TASK_CREATED and TASK_COMPLETED fire on each engine.run() call."""
+        from duh.kernel.deps import Deps
+        from duh.kernel.engine import Engine, EngineConfig
+        from duh.kernel.messages import Message
+
+        recorder = _Recorder()
+        registry = HookRegistry()
+        for event in (HookEvent.TASK_CREATED, HookEvent.TASK_COMPLETED):
+            registry.register(HookConfig(
+                event=event,
+                hook_type=HookType.FUNCTION,
+                name=f"hook_{event.value}",
+                callback=recorder.callback,
+            ))
+
+        async def fake_model(**kw):
+            yield {"type": "text_delta", "text": "ok"}
+            yield {"type": "assistant", "message": Message(
+                role="assistant", content="ok",
+                metadata={"stop_reason": "end_turn"},
+            )}
+
+        deps = Deps(call_model=fake_model, hook_registry=registry)
+        config = EngineConfig(model="test-model")
+        engine = Engine(deps=deps, config=config)
+
+        async for _ in engine.run("turn 1"):
+            pass
+        async for _ in engine.run("turn 2"):
+            pass
+
+        assert recorder.count(HookEvent.TASK_CREATED) == 2
+        assert recorder.count(HookEvent.TASK_COMPLETED) == 2

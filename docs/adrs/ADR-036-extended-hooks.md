@@ -1,12 +1,6 @@
 # ADR-036: Extended Hook Events
 
-**Status:** Accepted — partial (enum members added to `duh/hooks.py`; the high-value
-events are now emitted — `PERMISSION_REQUEST` / `PERMISSION_DENIED` /
-`POST_TOOL_USE_FAILURE` from `loop.py`, `PRE_COMPACT` / `POST_COMPACT` from `engine.py`,
-and `USER_PROMPT_SUBMIT` / `STATUS_LINE` / `SESSION_START` / `SESSION_END` from
-`repl.py` via ADR-044. Several rarer events in the table below — e.g. `MODEL_SWITCH`,
-`TOOL_TIMEOUT`, `IDLE_TIMEOUT`, IDE integration events — are defined in the enum but
-have no emit sites yet.)
+**Status:** Accepted — implemented 2026-04-15
 **Date**: 2026-04-08
 
 ## Context

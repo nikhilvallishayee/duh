@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "mode": "strict",
+  "runtime": {
+    "enabled": true
+  },
+  "scanners": {
+    "ruff-sec": {
+      "enabled": true,
+      "enforce": true,
+      "severity_floor": "medium"
+    },
+    "pip-audit": {
+      "enabled": true,
+      "enforce": true,
+      "severity_floor": "high"
+    },
+    "detect-secrets": {
+      "enabled": true,
+      "enforce": true,
+      "severity_floor": "medium"
+    },
+    "cyclonedx-sbom": {
+      "enabled": true,
+      "enforce": false,
+      "severity_floor": "info"
+    },
+    "duh-repo": {
+      "enabled": true,
+      "enforce": true,
+      "severity_floor": "high"
+    },
+    "duh-mcp-schema": {
+      "enabled": true,
+      "enforce": true,
+      "severity_floor": "medium"
+    },
+    "duh-mcp-pin": {
+      "enabled": true,
+      "enforce": true,
+      "severity_floor": "high"
+    },
+    "duh-sandbox-lint": {
+      "enabled": true,
+      "enforce": true,
+      "severity_floor": "high"
+    },
+    "duh-oauth-lint": {
+      "enabled": true,
+      "enforce": true,
+      "severity_floor": "high"
+    }
+  }
+}

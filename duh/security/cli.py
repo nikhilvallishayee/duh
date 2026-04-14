@@ -32,7 +32,36 @@ def _build_parser() -> argparse.ArgumentParser:
 
     subs.add_parser("init", help="Interactive wizard (phase 3)")
     subs.add_parser("diff", help="Delta against baseline (phase 4)")
-    subs.add_parser("exception", help="Exception CRUD (phase 2)")
+
+    exc = subs.add_parser("exception", help="Exception CRUD")
+    exc_sub = exc.add_subparsers(dest="exc_cmd", required=True)
+
+    add = exc_sub.add_parser("add")
+    add.add_argument("id")
+    add.add_argument("--reason", required=True)
+    add.add_argument("--expires", required=True)
+    add.add_argument("--aliases", default="")
+    add.add_argument("--package", default=None)
+    add.add_argument("--ticket", default=None)
+    add.add_argument("--permanent", action="store_true")
+    add.add_argument("--long-term", action="store_true")
+    add.add_argument("--project-root", default=".", type=Path)
+
+    lst = exc_sub.add_parser("list")
+    lst.add_argument("--project-root", default=".", type=Path)
+
+    rm = exc_sub.add_parser("remove")
+    rm.add_argument("id")
+    rm.add_argument("--project-root", default=".", type=Path)
+
+    renew = exc_sub.add_parser("renew")
+    renew.add_argument("id")
+    renew.add_argument("--expires", required=True)
+    renew.add_argument("--project-root", default=".", type=Path)
+
+    audit_cmd = exc_sub.add_parser("audit")
+    audit_cmd.add_argument("--project-root", default=".", type=Path)
+
     subs.add_parser("db", help="Advisory DB management (phase 4)")
     subs.add_parser("doctor", help="Diagnose scanner install + CI (phase 5)")
 
@@ -159,5 +188,62 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.cmd == "hook":
         return _dispatch_hook(args)
 
+    if args.cmd == "exception":
+        return _dispatch_exception(args)
+
     sys.stderr.write(f"duh security: {args.cmd} is not yet implemented\n")
     return 3
+
+
+def _dispatch_exception(args: argparse.Namespace) -> int:
+    import os
+    import socket
+    from datetime import datetime
+
+    from duh.security.exceptions import ExceptionStore
+
+    project_root = Path(args.project_root)
+    path = project_root / ".duh" / "security-exceptions.json"
+    store = ExceptionStore.load(path)
+
+    if args.exc_cmd == "add":
+        now = datetime.now().astimezone()
+        expires = datetime.fromisoformat(args.expires)
+        store.add(
+            id=args.id,
+            reason=args.reason,
+            expires_at=expires,
+            added_by=f"{os.environ.get('USER', 'unknown')}@{socket.gethostname()}",
+            added_at=now,
+            aliases=tuple(args.aliases.split(",")) if args.aliases else (),
+            scope={"package": args.package} if args.package else {},
+            ticket=args.ticket,
+            permanent=args.permanent,
+            long_term=args.long_term,
+        )
+        store.save()
+        return 0
+
+    if args.exc_cmd == "list":
+        for exc in store.all():
+            sys.stdout.write(f"{exc.id}\texpires={exc.expires_at.isoformat()}\treason={exc.reason}\n")
+        return 0
+
+    if args.exc_cmd == "remove":
+        removed = store.remove(args.id)
+        store.save()
+        return 0 if removed else 1
+
+    if args.exc_cmd == "renew":
+        new_expiry = datetime.fromisoformat(args.expires)
+        store.renew(args.id, new_expiry)
+        store.save()
+        return 0
+
+    if args.exc_cmd == "audit":
+        report = store.audit(at=datetime.now().astimezone())
+        sys.stdout.write(f"expired: {', '.join(report.expired) or '(none)'}\n")
+        sys.stdout.write(f"expiring_soon: {', '.join(report.expiring_soon) or '(none)'}\n")
+        return 0
+
+    return 2

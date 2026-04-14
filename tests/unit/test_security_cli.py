@@ -114,3 +114,48 @@ def test_hook_uninstall_removes_hook(tmp_path: Path) -> None:
     exit_code = security_main(["hook", "uninstall", "git", "--project-root", str(tmp_path)])
     assert exit_code == 0
     assert not (tmp_path / ".git" / "hooks" / "pre-push").exists()
+
+
+from datetime import datetime, timedelta, timezone
+
+from duh.security.exceptions import ExceptionStore
+
+
+def test_exception_add_persists(tmp_path: Path) -> None:
+    expires = (datetime.now(tz=timezone.utc) + timedelta(days=30)).isoformat()
+    exit_code = security_main([
+        "exception", "add", "CVE-2025-12345",
+        "--reason", "patch pending",
+        "--expires", expires,
+        "--project-root", str(tmp_path),
+    ])
+    assert exit_code == 0
+    store = ExceptionStore.load(tmp_path / ".duh" / "security-exceptions.json")
+    assert any(e.id == "CVE-2025-12345" for e in store.all())
+
+
+def test_exception_list_prints(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    expires = (datetime.now(tz=timezone.utc) + timedelta(days=30)).isoformat()
+    security_main([
+        "exception", "add", "CVE-2025-12345",
+        "--reason", "r", "--expires", expires,
+        "--project-root", str(tmp_path),
+    ])
+    exit_code = security_main(["exception", "list", "--project-root", str(tmp_path)])
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "CVE-2025-12345" in out
+
+
+def test_exception_remove(tmp_path: Path) -> None:
+    expires = (datetime.now(tz=timezone.utc) + timedelta(days=30)).isoformat()
+    security_main([
+        "exception", "add", "CVE-2025-12345",
+        "--reason", "r", "--expires", expires,
+        "--project-root", str(tmp_path),
+    ])
+    exit_code = security_main([
+        "exception", "remove", "CVE-2025-12345",
+        "--project-root", str(tmp_path),
+    ])
+    assert exit_code == 0

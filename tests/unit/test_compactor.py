@@ -319,3 +319,240 @@ class TestHelpers:
     def test_block_to_serializable_other(self):
         result = _block_to_serializable(42)
         assert result == "42"
+
+
+# ---------------------------------------------------------------------------
+# strip_images — keep_recent parameter (ADR-035 gap 1)
+# ---------------------------------------------------------------------------
+
+class TestStripImagesKeepRecent:
+    """strip_images must accept keep_recent and preserve images in recent msgs."""
+
+    def _image_msg(self, role: str = "user") -> Message:
+        from duh.kernel.messages import ImageBlock
+        return Message(
+            role=role,
+            content=[ImageBlock(media_type="image/png", data="abc123")],
+            id="m1", timestamp="t1",
+        )
+
+    def _image_dict_msg(self, role: str = "user") -> dict:
+        return {
+            "role": role,
+            "content": [{"type": "image", "source": {"type": "base64", "data": "abc"}}],
+        }
+
+    def test_strip_images_default_keeps_recent_3(self):
+        """With 5 messages, the last 3 should have images preserved."""
+        from duh.adapters.simple_compactor import strip_images
+        msgs = [self._image_msg() for _ in range(5)]
+        result = strip_images(msgs)
+        assert len(result) == 5
+        # First 2 (older) should have image stripped
+        for msg in result[:2]:
+            assert isinstance(msg.content[0], TextBlock), "Old image should be replaced"
+        # Last 3 (recent) should have image preserved
+        for msg in result[2:]:
+            assert msg.content[0].type == "image", "Recent image should be preserved"
+
+    def test_strip_images_custom_keep_recent(self):
+        """With keep_recent=1, only the last message preserves images."""
+        from duh.adapters.simple_compactor import strip_images
+        msgs = [self._image_msg() for _ in range(4)]
+        result = strip_images(msgs, keep_recent=1)
+        assert len(result) == 4
+        # First 3 stripped
+        for msg in result[:3]:
+            assert isinstance(msg.content[0], TextBlock)
+        # Last 1 preserved
+        assert result[3].content[0].type == "image"
+
+    def test_strip_images_keep_recent_0_strips_all(self):
+        """With keep_recent=0, all images should be stripped."""
+        from duh.adapters.simple_compactor import strip_images
+        msgs = [self._image_msg() for _ in range(3)]
+        result = strip_images(msgs, keep_recent=0)
+        for msg in result:
+            assert isinstance(msg.content[0], TextBlock)
+
+    def test_strip_images_fewer_than_keep_recent(self):
+        """With 2 messages and keep_recent=3, all messages preserve images."""
+        from duh.adapters.simple_compactor import strip_images
+        msgs = [self._image_msg() for _ in range(2)]
+        result = strip_images(msgs, keep_recent=3)
+        for msg in result:
+            assert msg.content[0].type == "image"
+
+    def test_strip_images_dict_messages_keep_recent(self):
+        """Dict messages also respect keep_recent."""
+        from duh.adapters.simple_compactor import strip_images
+        msgs = [self._image_dict_msg() for _ in range(4)]
+        result = strip_images(msgs, keep_recent=2)
+        # First 2 stripped (placeholder dict)
+        for msg in result[:2]:
+            assert msg["content"][0]["type"] == "text"
+        # Last 2 preserved
+        for msg in result[2:]:
+            assert msg["content"][0]["type"] == "image"
+
+    def test_strip_images_no_mutation(self):
+        """Input messages must not be mutated."""
+        from duh.adapters.simple_compactor import strip_images
+        from duh.kernel.messages import ImageBlock
+        msgs = [self._image_msg() for _ in range(5)]
+        original_types = [m.content[0].type for m in msgs]
+        strip_images(msgs, keep_recent=3)
+        after_types = [m.content[0].type for m in msgs]
+        assert original_types == after_types
+
+
+# ---------------------------------------------------------------------------
+# Staged compaction pipeline (ADR-035 gap 2)
+# ---------------------------------------------------------------------------
+
+class TestStagedCompactionPipeline:
+    """compact() must implement the staged pipeline:
+    1. Image strip → early exit if under limit
+    2. Partial removal (oldest first) → early exit if under limit
+    3. Aggressive (last 5 turns) → final stage
+    """
+
+    def _big_text_msg(self, role: str = "user", chars: int = 10_000) -> Message:
+        return Message(role=role, content="x" * chars, id="m1", timestamp="t1")
+
+    def _image_msg(self, role: str = "user") -> Message:
+        from duh.kernel.messages import ImageBlock
+        return Message(
+            role=role,
+            # Large base64-like data so image stripping makes a dent
+            content=[ImageBlock(media_type="image/png", data="A" * 5_000)],
+            id="m1", timestamp="t1",
+        )
+
+    @pytest.mark.asyncio
+    async def test_image_strip_alone_sufficient(self):
+        """If image stripping brings context under the limit, no messages removed."""
+        from duh.adapters.simple_compactor import SimpleCompactor
+        c = SimpleCompactor(bytes_per_token=1)
+
+        # 5 image messages (large). After stripping older 3, total drops enough.
+        # We need token budget such that full images exceed limit but stripped don't.
+        # Each image block serialised ≈ the data length (base64 string in JSON).
+        # We'll use a tiny limit and big images.
+        msgs = [
+            Message(
+                role="user" if i % 2 == 0 else "assistant",
+                content=[{"type": "image", "source": {"data": "X" * 2_000}}],
+                id=f"m{i}", timestamp="t0",
+            )
+            for i in range(5)
+        ]
+        # After stripping the first 2 (keep_recent=3), each stripped msg is ~60 chars
+        # (placeholder text). Total tokens should fit within a reasonable limit.
+        # With bytes_per_token=1, let's pick a limit that is:
+        #   exceeded with all images intact but satisfied after stripping old ones.
+
+        # Manually estimate: original messages each ~2060 chars (overhead + data).
+        # After stripping oldest 2: ~120 chars (placeholders) + 3 * 2060 ≈ 6300 chars.
+        # Let's pick limit=7000 so stripping alone is sufficient.
+        result = await c.compact(msgs, token_limit=7_000)
+
+        # Should keep all 5 messages (none removed), but old images stripped
+        non_system = [m for m in result if _get_role(m) != "system"]
+        assert len(non_system) == 5, (
+            f"Image-strip-only stage should keep all messages, got {len(non_system)}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_partial_removal_after_image_strip(self):
+        """If still over after image strip, oldest messages are partially removed."""
+        from duh.adapters.simple_compactor import SimpleCompactor
+        c = SimpleCompactor(bytes_per_token=1, min_keep=2)
+
+        # Create 10 large text messages (no images, so image stripping doesn't help)
+        msgs = [
+            Message(
+                role="user" if i % 2 == 0 else "assistant",
+                content="Z" * 500,
+                id=f"m{i}", timestamp="t0",
+            )
+            for i in range(10)
+        ]
+        # Total: 10 * 500 = 5000 tokens. Limit 2000 means partial removal happens.
+        # With min_keep=2 and limit=2000, keep last 4 messages (4*500=2000, fits).
+        result = await c.compact(msgs, token_limit=2000)
+
+        # A summary system message + some recent messages, not only last 5
+        non_system = [m for m in result if _get_role(m) != "system"]
+        # Should keep roughly 2-4 messages (2000 / 500 = 4)
+        assert 1 <= len(non_system) <= 5
+        # Must have a summary system message
+        system_msgs = [m for m in result if _get_role(m) == "system"]
+        assert any(
+            "Previous conversation summary" in (m.content if isinstance(m.content, str) else "")
+            for m in system_msgs
+        )
+
+    @pytest.mark.asyncio
+    async def test_aggressive_removal_last_5_turns(self):
+        """When partial removal still can't fit, keep only last 5 turns."""
+        from duh.adapters.simple_compactor import SimpleCompactor
+        # min_keep=5 ensures aggressive stage always keeps 5
+        c = SimpleCompactor(bytes_per_token=1, min_keep=5)
+
+        # 20 messages, each 1000 chars. Total 20_000 tokens.
+        # Limit=5500 → even partial can barely fit 5 messages.
+        msgs = [
+            Message(
+                role="user" if i % 2 == 0 else "assistant",
+                content="Y" * 1_000,
+                id=f"m{i}", timestamp="t0",
+            )
+            for i in range(20)
+        ]
+        result = await c.compact(msgs, token_limit=5_500)
+
+        non_system = [m for m in result if _get_role(m) != "system"]
+        # Should keep exactly min_keep (5) recent messages
+        assert len(non_system) <= 5
+
+    @pytest.mark.asyncio
+    async def test_early_exit_after_image_strip_no_summary(self):
+        """When image strip brings us under limit, no summary system message is added."""
+        from duh.adapters.simple_compactor import SimpleCompactor
+        c = SimpleCompactor(bytes_per_token=1)
+
+        # 4 messages: first has huge image, rest have tiny text
+        # After stripping old image, total drops under limit
+        msgs = [
+            Message(
+                role="user",
+                content=[{"type": "image", "source": {"data": "I" * 5_000}}],
+                id="m0", timestamp="t0",
+            ),
+            Message(role="assistant", content="ok", id="m1", timestamp="t1"),
+            Message(role="user", content="ok", id="m2", timestamp="t2"),
+            Message(role="assistant", content="done", id="m3", timestamp="t3"),
+        ]
+        # After stripping m0's image (keep_recent=3 → m1,m2,m3 kept), m0 becomes ~60 chars.
+        # Total after strip ≈ 60 + 2 + 2 + 4 = ~68 tokens. Limit=500 → fits.
+        result = await c.compact(msgs, token_limit=500)
+
+        # No summary system msg should be added since we exited early after image strip
+        system_msgs = [m for m in result if _get_role(m) == "system"]
+        assert not any(
+            "Previous conversation summary" in (m.content if isinstance(m.content, str) else "")
+            for m in system_msgs
+        ), "Early exit after image strip should NOT produce a summary message"
+        # All 4 conversation messages still present
+        non_system = [m for m in result if _get_role(m) != "system"]
+        assert len(non_system) == 4
+
+
+def _get_role(msg):
+    """Helper for test assertions."""
+    if isinstance(msg, Message):
+        return msg.role
+    if isinstance(msg, dict):
+        return msg.get("role", "")
+    return ""

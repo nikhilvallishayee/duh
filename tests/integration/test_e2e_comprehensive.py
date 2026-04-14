@@ -478,30 +478,44 @@ class TestCompactionPipeline:
 
     @pytest.mark.asyncio
     async def test_image_stripping_in_compaction(self):
-        """Messages with image blocks -> images stripped."""
-        messages = [
-            Message(role="user", content=[
-                {"type": "text", "text": "look at this"},
-                {"type": "image", "source": {"type": "base64", "data": "abc123"}},
-            ]),
-            Message(role="assistant", content="I see it."),
-        ]
+        """Messages with image blocks -> older images stripped, recent images kept.
 
-        result = strip_images(messages)
+        ADR-035: strip_images keeps images in the last keep_recent messages.
+        Older messages have their images replaced with a text placeholder.
+        """
+        # Put the image message first (old), followed by 3 more (recent).
+        # With default keep_recent=3, the first message is "old" and gets stripped.
+        image_msg = Message(role="user", content=[
+            {"type": "text", "text": "look at this"},
+            {"type": "image", "source": {"type": "base64", "data": "abc123"}},
+        ])
+        recent_messages = [
+            Message(role="assistant", content="I see it."),
+            Message(role="user", content="ok"),
+            Message(role="assistant", content="done"),
+        ]
+        messages = [image_msg] + recent_messages
+
+        result = strip_images(messages)  # default keep_recent=3
+        # First message (old) should have its image stripped
         first_content = result[0].content
         assert isinstance(first_content, list)
         has_image = any(
             (isinstance(b, dict) and b.get("type") == "image")
             for b in first_content
         )
-        assert not has_image, "Image blocks should be stripped"
+        assert not has_image, "Old image blocks should be stripped"
 
         has_placeholder = any(
             (isinstance(b, TextBlock) and "image removed" in b.text.lower())
             or (isinstance(b, dict) and "image removed" in b.get("text", "").lower())
             for b in first_content
         )
-        assert has_placeholder
+        assert has_placeholder, "Stripped image should have placeholder text"
+
+        # Recent messages (last 3) should be untouched
+        for msg in result[1:]:
+            assert msg.content == msg.content  # unchanged (no images anyway)
 
     @pytest.mark.asyncio
     async def test_dedup_removes_duplicate_reads(self):

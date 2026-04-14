@@ -1,10 +1,6 @@
 # ADR-035: Advanced Context Compaction
 
-**Status:** Accepted — partial (`strip_images`, `partial_compact`, and `restore_context`
-all exist in `duh/adapters/simple_compactor.py`; however `strip_images` removes ALL
-images (no `keep_recent=3`) and the staged pipeline — image strip → partial removal →
-aggressive removal with early exit — is not implemented: `compact()` strips images
-then applies a tail-window truncation)
+**Status:** Accepted — implemented 2026-04-15
 **Date**: 2026-04-08
 
 ## Context

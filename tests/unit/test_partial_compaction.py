@@ -131,7 +131,8 @@ class TestStripImages:
             ],
             id="m1", timestamp="t1",
         )
-        result = strip_images([msg])
+        # keep_recent=0 forces all images to be stripped (no recency exception)
+        result = strip_images([msg], keep_recent=0)
         assert len(result) == 1
         content = result[0].content
         assert isinstance(content, list)
@@ -152,7 +153,8 @@ class TestStripImages:
             ],
             id="m1", timestamp="t1",
         )
-        result = strip_images([msg])
+        # keep_recent=0 forces all images to be stripped (no recency exception)
+        result = strip_images([msg], keep_recent=0)
         content = result[0].content
         assert isinstance(content, list)
         # Count image placeholders
@@ -190,7 +192,8 @@ class TestStripImages:
                 {"type": "image", "source": {"data": "abc"}},
             ],
         }
-        result = strip_images([msg])
+        # keep_recent=0 forces all images to be stripped (no recency exception)
+        result = strip_images([msg], keep_recent=0)
         content = result[0]["content"]
         texts = [b.get("text", "") for b in content]
         assert any("[image removed for compaction]" in t for t in texts)

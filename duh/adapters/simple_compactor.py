@@ -61,27 +61,27 @@ class SimpleCompactor:
     ) -> list[Any]:
         """Compact messages to fit within token limit.
 
-        Strategy:
-        0. Deduplicate: remove redundant file reads and tool results.
-        1. Separate system messages (always kept) from conversation.
-        2. Walk backward through non-system messages to find what fits.
-        3. Summarize dropped messages into a single system message
-           ("Previous conversation summary: ...").
-        4. Always keep at least ``min_keep`` recent non-system messages.
+        Implements the staged pipeline from ADR-035:
 
+        Stage 0: Deduplicate redundant file reads and tool results.
+        Stage 1: Strip images from old messages (keep_recent=3).
+                 Early exit if context is now under the limit.
+        Stage 2: Partial message removal (oldest first) with summarization.
+                 Early exit if context is now under the limit.
+        Stage 3: Aggressive removal — keep only the last ``min_keep`` turns.
+                 Always keeps at least ``min_keep`` recent messages.
+
+        System messages are never removed (only conversation messages).
         Returns a new list (does not mutate the input).
         """
         limit = token_limit or self._default_limit
         if not messages:
             return []
 
-        # Step 0a: remove duplicate file reads and redundant tool results
+        # Stage 0: Deduplicate file reads and redundant tool results
         messages = _deduplicate_messages(messages)
 
-        # Step 0b: strip image blocks to prevent prompt-too-long during summary
-        messages = strip_images(messages)
-
-        # Partition: system vs. conversation
+        # --- Partition: system vs. conversation (system is always preserved) ---
         system_msgs: list[Any] = []
         conversation: list[Any] = []
         for msg in messages:
@@ -94,14 +94,22 @@ class SimpleCompactor:
         if not conversation:
             return list(system_msgs)
 
-        # Budget = limit minus system token cost
         system_tokens = self.estimate_tokens(system_msgs)
         budget = max(0, limit - system_tokens)
 
-        # Walk backward, accumulating the tail window
+        # Stage 1: Strip images from old messages (keep_recent=3).
+        #          If this alone brings us under the limit, return early.
+        stripped_conversation = strip_images(conversation, keep_recent=3)
+        stripped_tokens = self.estimate_tokens(stripped_conversation)
+        if stripped_tokens <= budget:
+            # Image stripping was sufficient — no messages removed
+            return system_msgs + stripped_conversation
+
+        # Stage 2: Partial message removal (tail-window, oldest first).
+        #          Walk backward to find what fits within the budget.
         kept: list[Any] = []
         used = 0
-        for msg in reversed(conversation):
+        for msg in reversed(stripped_conversation):
             msg_tokens = self._estimate_single(msg)
             if used + msg_tokens > budget and len(kept) >= self._min_keep:
                 break
@@ -111,11 +119,11 @@ class SimpleCompactor:
         kept.reverse()
 
         # How many conversation messages were dropped?
-        dropped_count = len(conversation) - len(kept)
+        dropped_count = len(stripped_conversation) - len(kept)
 
         if dropped_count > 0:
             # Summarize dropped messages into a system message
-            dropped = conversation[:dropped_count]
+            dropped = stripped_conversation[:dropped_count]
             summary = _summarize_messages(dropped)
             summary_msg = Message(role="system", content=summary)
             return system_msgs + [summary_msg] + kept
@@ -355,11 +363,18 @@ def _replace_image_blocks(
 
     Returns (new_blocks, changed).  When *as_dataclass* is True the
     replacement is a TextBlock; otherwise a plain dict.
+
+    Handles both dict-style blocks ({"type": "image", ...}) and dataclass
+    instances (ImageBlock with type="image").
     """
     new_blocks: list[Any] = []
     changed = False
     for block in blocks:
-        if isinstance(block, dict) and block.get("type") == "image":
+        block_type = (
+            block.get("type", "") if isinstance(block, dict)
+            else getattr(block, "type", "")
+        )
+        if block_type == "image":
             if as_dataclass:
                 new_blocks.append(TextBlock(text=_IMAGE_PLACEHOLDER))
             else:
@@ -370,19 +385,39 @@ def _replace_image_blocks(
     return new_blocks, changed
 
 
-def strip_images(messages: list[Any]) -> list[Any]:
+def strip_images(messages: list[Any], keep_recent: int = 3) -> list[Any]:
     """Replace image content blocks with text placeholders.
 
     Image blocks (type="image") are replaced with a short placeholder
     to prevent prompt-too-long errors during compaction summarization.
 
+    Only messages older than the last ``keep_recent`` messages have their
+    images stripped.  The most recent ``keep_recent`` messages are left
+    untouched so the model retains access to recently-attached images.
+
+    Args:
+        messages: The message list (not mutated).
+        keep_recent: Number of trailing messages to preserve images in.
+                     Defaults to 3 (matching the ADR-035 spec).
+
     Returns a new list (does not mutate the input).
     """
+    if not messages:
+        return []
+
+    # Determine the split point: strip images from messages[:-keep_recent]
+    if keep_recent <= 0:
+        strip_boundary = len(messages)
+    else:
+        strip_boundary = max(0, len(messages) - keep_recent)
+
     result: list[Any] = []
-    for msg in messages:
+    for idx, msg in enumerate(messages):
+        should_strip = idx < strip_boundary
+
         if isinstance(msg, Message):
             content = msg.content
-            if isinstance(content, str):
+            if isinstance(content, str) or not should_strip:
                 result.append(msg)
                 continue
             new_blocks, changed = _replace_image_blocks(content, as_dataclass=True)
@@ -398,7 +433,7 @@ def strip_images(messages: list[Any]) -> list[Any]:
                 result.append(msg)
         elif isinstance(msg, dict):
             content = msg.get("content", "")
-            if isinstance(content, str):
+            if isinstance(content, str) or not should_strip:
                 result.append(msg)
                 continue
             new_blocks, changed = _replace_image_blocks(content, as_dataclass=False)

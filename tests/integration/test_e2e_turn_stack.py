@@ -823,27 +823,35 @@ class TestCompactionE2E:
         assert not dup1_found
 
     def test_image_blocks_stripped_with_placeholder(self):
-        """Messages with images → placeholder replaces the image block."""
-        messages = [
-            Message(role="user", content=[
-                {"type": "text", "text": "see this"},
-                {"type": "image", "source": {"type": "base64", "data": "xxx"}},
-            ]),
+        """Old messages with images → placeholder replaces the image block.
+
+        ADR-035: strip_images keeps images in the last keep_recent=3 messages.
+        The image message must be "old" (not in the last 3) to get stripped.
+        """
+        image_msg = Message(role="user", content=[
+            {"type": "text", "text": "see this"},
+            {"type": "image", "source": {"type": "base64", "data": "xxx"}},
+        ])
+        # Add 3 more messages so image_msg falls outside the keep_recent=3 window
+        messages = [image_msg] + [
+            Message(role="assistant", content="ok"),
+            Message(role="user", content="sure"),
+            Message(role="assistant", content="done"),
         ]
-        result = strip_images(messages)
-        assert len(result) == 1
-        content = result[0].content
+        result = strip_images(messages)  # default keep_recent=3
+        assert len(result) == 4
+        content = result[0].content  # image_msg is now "old"
         assert isinstance(content, list)
         has_image = any(
             isinstance(b, dict) and b.get("type") == "image" for b in content
         )
-        assert not has_image
+        assert not has_image, "Old image should be stripped"
         placeholder_found = any(
             (isinstance(b, TextBlock) and "image removed" in b.text.lower())
             or (isinstance(b, dict) and "image removed" in b.get("text", "").lower())
             for b in content
         )
-        assert placeholder_found
+        assert placeholder_found, "Stripped image should have placeholder"
 
     @pytest.mark.asyncio
     async def test_partial_compact_keeps_outer_messages_intact(self):

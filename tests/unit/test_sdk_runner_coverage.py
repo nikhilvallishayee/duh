@@ -235,6 +235,32 @@ class TestRunStreamJsonMode:
         assert "No provider" in result_msg["result"]
 
     @pytest.mark.asyncio
+    async def test_openai_provider_with_api_key(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+        captured_lines: list[dict[str, Any]] = []
+
+        def capture_write(obj, file=None):
+            captured_lines.append(obj)
+
+        mock_engine = MagicMock()
+        mock_engine.session_id = "test-session"
+        mock_engine.messages = []
+
+        args = _make_sdk_args(provider="openai", model="gpt-4o")
+
+        with patch("duh.cli.sdk_runner.ndjson_write", side_effect=capture_write), \
+             patch("duh.adapters.openai.OpenAIProvider"), \
+             patch("duh.cli.sdk_runner.NativeExecutor"), \
+             patch("duh.cli.sdk_runner.get_all_tools", return_value=[]), \
+             patch("duh.cli.sdk_runner.Engine", return_value=mock_engine), \
+             patch("sys.stdin", []):
+            code = await run_stream_json_mode(args)
+
+        assert code == 0
+
+    @pytest.mark.asyncio
     async def test_anthropic_no_api_key_emits_error(self, monkeypatch):
         """Provider=anthropic but no API key → error result."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)

@@ -109,12 +109,12 @@ class Tool(Protocol):
     @property
     def is_read_only(self) -> bool:
         """True if this tool only reads (safe for concurrent execution)."""
-        return False
+        return False  # pragma: no cover - Protocol default, tools override
 
     @property
     def is_destructive(self) -> bool:
         """True if this tool makes irreversible changes (needs explicit approval)."""
-        return False
+        return False  # pragma: no cover - Protocol default, tools override
 
     async def check_permissions(
         self, input: dict[str, Any], context: ToolContext

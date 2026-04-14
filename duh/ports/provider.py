@@ -45,4 +45,4 @@ class ModelProvider(Protocol):
         4. Handling provider-specific errors gracefully
         """
         ...
-        yield {}  # type: ignore  # Protocol stub
+        yield {}  # type: ignore  # pragma: no cover - Protocol stub

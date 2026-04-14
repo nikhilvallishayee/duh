@@ -119,6 +119,96 @@ class TestSlashCompact:
         assert "No compactor" in captured.out
 
 
+class TestSlashConnectAndModels:
+    def test_models_lists_openai(self, capsys):
+        engine = _make_engine()
+        keep, model = _handle_slash(
+            "/models", engine, "gpt-4o", _make_deps(), provider_name="openai"
+        )
+        assert keep is True
+        assert model == "gpt-4o"
+        captured = capsys.readouterr()
+        assert "Current provider: openai" in captured.out
+        assert "[openai]" in captured.out
+        assert "gpt-5.2-codex" in captured.out
+
+    def test_models_use_switches_model(self, capsys, monkeypatch):
+        from duh.cli import repl as repl_mod
+
+        monkeypatch.setattr(repl_mod, "resolve_openai_auth_mode", lambda _m: "chatgpt")
+        engine = _make_engine()
+        keep, model = _handle_slash(
+            "/models use gpt-5.2-codex",
+            engine,
+            "gpt-4o",
+            _make_deps(),
+            provider_name="openai",
+        )
+        assert keep is True
+        assert model == "gpt-5.2-codex"
+
+    def test_model_command_switches_provider(self, capsys, monkeypatch):
+        from duh.cli import repl as repl_mod
+
+        monkeypatch.setattr(repl_mod, "resolve_openai_auth_mode", lambda _m: "chatgpt")
+        engine = _make_engine()
+        deps = _make_deps()
+        keep, model = _handle_slash(
+            "/model codex", engine, "claude-sonnet-4-6", deps, provider_name="anthropic"
+        )
+        assert keep is True
+        assert model == "gpt-5.2-codex"
+
+    def test_models_lists_all_connected_providers(self, capsys, monkeypatch):
+        from duh.cli import repl as repl_mod
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+        monkeypatch.setattr(repl_mod, "has_openai_chatgpt_oauth", lambda: True)
+        monkeypatch.setattr(
+            repl_mod,
+            "available_models_for_provider",
+            lambda provider_name, current_model=None: (
+                ["claude-sonnet-4-6"] if provider_name == "anthropic" else ["gpt-5.2-codex"]
+            ),
+        )
+
+        class _FakeResponse:
+            status_code = 200
+
+        monkeypatch.setattr(
+            "httpx.get",
+            lambda *args, **kwargs: _FakeResponse(),
+        )
+
+        engine = _make_engine()
+        keep, model = _handle_slash(
+            "/models", engine, "gpt-5.2-codex", _make_deps(), provider_name="openai"
+        )
+        assert keep is True
+        assert model == "gpt-5.2-codex"
+        captured = capsys.readouterr()
+        assert "[anthropic]" in captured.out
+        assert "[openai]" in captured.out
+        assert "[ollama]" in captured.out
+
+    def test_connect_openai_chatgpt(self, capsys, monkeypatch):
+        from duh.cli import repl as repl_mod
+
+        monkeypatch.setattr(
+            repl_mod,
+            "connect_openai_chatgpt_subscription",
+            lambda input_fn=input: (True, "OpenAI ChatGPT subscription connected."),
+        )
+        engine = _make_engine()
+        keep, model = _handle_slash(
+            "/connect openai chatgpt", engine, "m", _make_deps()
+        )
+        assert keep is True
+        assert model == "m"
+        captured = capsys.readouterr()
+        assert "connected" in captured.out.lower()
+
+
 class TestMainReplRouting:
     def test_no_args_enters_repl(self, monkeypatch):
         """main() with no args should route to REPL, not print help."""

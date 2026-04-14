@@ -89,7 +89,7 @@ def generate_profile(policy: SandboxPolicy) -> str:
             else:
                 lines.append(f'    (subpath "{safe_wp}")')
         lines.append(")")
-    else:
+    else:  # pragma: no cover - always_writable keeps this branch unreachable
         lines.append("(deny file-write*)")
 
     lines.append("")

@@ -2,290 +2,101 @@
 
 [![CI](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml/badge.svg)](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/duh-cli?color=blue)](https://pypi.org/project/duh-cli/)
-[![Tests](https://img.shields.io/badge/tests-2346%20passing-brightgreen)]()
-[![Coverage](https://img.shields.io/badge/coverage-90%25-green)]()
+[![Tests](https://img.shields.io/badge/tests-3642%20passing-brightgreen)]()
+[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)]()
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-> An evolving, open-source alternative to Claude Code, OpenCode, Codex, and Cline.
+A universal, open-source AI coding agent. One harness, any provider — Anthropic Claude, OpenAI API, ChatGPT Plus/Pro subscription (Codex-family models), local Ollama, or a deterministic stub for tests. Drop-in compatible with the Claude Agent SDK NDJSON protocol, so it can replace `claude` wherever that binary is expected.
 
-Provider-agnostic AI coding harness. Use Claude, OpenAI (API key or ChatGPT subscription Codex login), or Ollama local models through one interface. Drop-in replacement for Claude Code in any Claude Agent SDK app.
-
-## Quick Start
+## Install
 
 ```bash
-pip install duh-cli
-export ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY, or just use Ollama
-duh -p "fix the bug in auth.py"       # print mode
-duh                                    # interactive REPL
+# From source (recommended during alpha)
+git clone https://github.com/nikhilvallishayee/duh
+cd duh
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+
+# From PyPI
+pip install duh-cli                    # core: Anthropic + Ollama + httpx
+pip install 'duh-cli[openai]'          # + OpenAI API key provider
+pip install 'duh-cli[rich]'            # + Rich TUI rendering
+pip install 'duh-cli[bridge]'          # + WebSocket remote bridge
+pip install 'duh-cli[attachments]'     # + PDF attachment support (pdfplumber)
+pip install 'duh-cli[all]'             # everything above
 ```
 
-## Benchmark: D.U.H. vs Claude Code
-
-Same model (Haiku 4.5), same prompt, same API, 3 runs each, isolated directories:
-
-| Metric | Claude Code | D.U.H. |
-|---|---|---|
-| **Avg time** | 63.2s | **45.7s** (-28%) |
-| **Avg tests generated** | 10.5 | **18** (+71%) |
-| **Success rate** | 2/3 (67%) | **3/3 (100%)** |
-| **Self-correction** | Minimal | **Active** (fixes own test failures) |
-
-Full methodology: [docs/benchmark-results.md](docs/benchmark-results.md)
-
-## Feature Comparison
-
-| Feature | D.U.H. | Claude Code | OpenCode | Codex | Cline |
-|---|---|---|---|---|---|
-| **Open source** | Apache 2.0 | No | Yes | No | Yes |
-| **Providers** | 3 (Claude, GPT, Ollama) | Anthropic only | 75+ | OpenAI only | Multi |
-| **SDK drop-in** | Yes | N/A | No | No | No |
-| **Skill format parity** | .claude/ + .duh/ | .claude/ | No | No | No |
-| **Multi-agent** | 4 types + model selection | 60+ types | No | Yes | No |
-| **MCP support** | Adapter (verified) | Full | No | Yes | Extension |
-| **Hooks** | 6 events + shell exec | Hooks | No | Yes | No |
-| **Safety layers** | 3 (schema + approval + 61 patterns) | 3 | 1 | Sandbox | 1 |
-| **Context management** | Auto-compact + dedup | 16 modules | Auto at 95% | Yes | Manual |
-| **TUI** | Rich markdown REPL | Ink (React) | Bubble Tea | Bubble Tea | IDE |
-| **Session persistence** | Auto-save per turn | Full | SQLite | Yes | IDE |
-| **Background jobs** | bg: prefix + /jobs | Full | No | Yes | No |
-| **Plan mode** | /plan (design-first) | Yes | No | Yes | No |
-| **Notebook editing** | .ipynb cells | Yes | No | No | No |
-| **Git worktrees** | EnterWorktree/Exit | Yes | No | No | No |
-| **File undo** | /undo stack | Limited | No | No | IDE |
-| **Cost control** | --max-cost + budget | Limited | No | No | No |
-| **Test impact** | TestImpact tool | No | No | No | No |
-| **LSP** | Static analysis | Full LSP | Yes | Yes | IDE |
-| **Docker** | DockerTool | No | No | No | No |
-| **Database** | SQL query tool | No | No | No | No |
-| **GitHub PR** | gh CLI integration | No | No | No | No |
-| **HTTP testing** | HTTPTool | No | No | No | No |
-| **Tests** | 2309 | Internal | Unknown | Unknown | Unknown |
-
-## What You Can Do
+## Quick start
 
 ```bash
-# Code generation and modification
-duh -p "add input validation to the API endpoints" --dangerously-skip-permissions
-
-# Interactive REPL with built-in connect/model discovery commands
-duh
-duh> /help                    # see all commands
-duh> /connect openai          # connect OpenAI (ChatGPT Plus/Pro login or API key)
-duh> /models                  # list models for current provider
-duh> /plan add user auth      # design first, then execute
-duh> /model claude-opus-4-6   # switch models mid-session
-duh> /brief on                # concise mode
-duh> /context                 # token usage dashboard
-duh> /search "auth"           # search conversation history
-duh> /undo                    # revert last file change
-duh> /tasks                   # track work items
-duh> /git                     # repo status
-duh> /pr list                 # GitHub PRs
-duh> /health                  # provider connectivity
-duh> /cost                    # estimated spend
-duh> /jobs                    # background tasks
-
-# Multi-agent with model selection
-duh -p "research the API, then implement" --max-turns 20
-# Model spawns researcher (haiku) and coder (sonnet) subagents
-
-# SDK compatibility — drop-in for Claude Code
-from claude_agent_sdk import ClaudeAgentOptions, query
-async for msg in query(
-    prompt="fix the bug",
-    options=ClaudeAgentOptions(cli_path="/path/to/duh-sdk-shim")
-):
-    print(msg)
-
-# Background jobs
-duh> bg: pytest tests/ -v     # runs tests in background
-duh> /jobs                    # check status
-
-# Template-driven prompts
-duh> /template code-review    # use a saved prompt pattern
-
-# Docker integration
-duh -p "build and test in Docker"
-
-# Database inspection
-duh -p "show me the schema and recent users"
-```
-
-## Architecture
-
-```
-duh/
-  kernel/          # Core loop (provider-agnostic, zero external imports)
-    loop.py        # prompt → model → tool → result (async generator)
-    engine.py      # session wrapper + auto-compaction + budget control
-    backoff.py     # exponential retry for transient API errors
-    tokens.py      # token estimation + cost calculation
-    tasks.py       # task tracking with checkbox display
-    plan_mode.py   # design-first two-phase workflows
-    undo.py        # file modification rollback
-    git_context.py # branch, status, warnings in system prompt
-    skill.py       # .claude/ + .duh/ skill loading
-    memory.py      # per-project persistent facts
-
-  adapters/        # Provider wrappers (translate to uniform events)
-    anthropic.py   # Claude (streaming + backoff)
-    openai.py      # GPT-4o, o1 (streaming + backoff)
-    ollama.py      # Local models (tool call extraction fallback)
-    mcp_executor.py    # MCP server connection + tool execution
-    structured_logging.py  # JSONL audit log
-
-  tools/           # 25+ tools
-    read, write, edit, multi_edit, bash, glob, grep,
-    skill, tool_search, web_fetch, web_search, task,
-    notebook_edit, memory (store + recall), test_impact,
-    lsp, worktree (enter + exit), github, http, docker,
-    database, agent, mcp_tool
-
-  cli/             # CLI interface
-    main.py        # Entry point + signal handling
-    parser.py      # 20+ flags including --brief, --max-cost, --log-json
-    runner.py      # Print mode
-    repl.py        # Rich REPL with 17 slash commands
-    sdk_runner.py  # Claude Agent SDK NDJSON protocol
-    ndjson.py      # Stream-JSON helpers
+duh -p "fix the bug in auth.py"                                  # print mode, auto-detect provider
+duh --provider anthropic --model claude-sonnet-4-6 -p "hello"    # force Claude
+duh --provider openai --model gpt-5.2-codex -p "refactor db"     # ChatGPT Plus/Pro Codex (OAuth)
+duh                                                              # interactive REPL
+duh doctor                                                       # diagnostics + health checks
 ```
 
 ## Providers
 
-| Provider | Status | Models | Auto-detect |
-|---|---|---|---|
-| **Anthropic** | Working | Sonnet 4.6, Opus 4.6, Haiku 4.5 | ANTHROPIC_API_KEY or --model claude-* |
-| **OpenAI** | Working | GPT-4o/o1/o3 + Codex family | `/connect openai` or OPENAI_API_KEY or --model gpt-* |
-| **Ollama** | Working | Any local model | Ollama running on localhost |
+| Provider | Auth | Example models |
+|---|---|---|
+| **Anthropic** | `ANTHROPIC_API_KEY` env var or `/connect anthropic` | `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5` |
+| **OpenAI API** | `OPENAI_API_KEY` env var or `/connect openai` (API key) | `gpt-4o`, `o1`, `o3` |
+| **OpenAI ChatGPT** (Codex) | `/connect openai` → PKCE OAuth against `auth.openai.com`; tokens stored in `~/.config/duh/auth.json` (0600). See [ADR-051](docs/adrs/ADR-051-oauth-provider-authentication.md), [ADR-052](docs/adrs/ADR-052-chatgpt-codex-adapter.md). | `gpt-5.2-codex`, `gpt-5.1-codex`, `gpt-5.1-codex-max`, `gpt-5.1-codex-mini` |
+| **Ollama** | Local daemon on `localhost:11434`, no key | Any locally-pulled model |
+| **Stub** | `DUH_STUB_PROVIDER=1` | Deterministic canned response for tests / offline runs |
 
-## Safety
+Provider and model auto-detect: give `--model gpt-5.2-codex` and D.U.H. will route to the ChatGPT/Codex Responses endpoint if OAuth exists; otherwise it falls back to the standard OpenAI Chat Completions adapter with your API key.
 
-3-layer defense:
-1. **Schema validation** — tool inputs checked before execution
-2. **Approval gates** — InteractiveApprover prompts for dangerous tools, RuleApprover for policy
-3. **Command security** — 61 patterns (26 dangerous + 10 moderate + 18 PS dangerous + 7 PS moderate)
+## Slash commands (REPL)
 
-Bash security blocks: `rm -rf /`, fork bombs, `dd`, `mkfs`, pipe-to-shell, `eval`, `sudo`, reverse shells, and more. PowerShell patterns included for Windows.
+`/help` `/model` `/connect` `/models` `/cost` `/status` `/context` `/changes` `/git` `/tasks` `/brief` `/search` `/template` `/plan` `/pr` `/undo` `/jobs` `/health` `/clear` `/compact` `/snapshot` `/exit`
 
-## Skills
+Run `/help` in the REPL for the full description of each command. Highlights: `/connect openai` runs the ChatGPT OAuth flow; `/snapshot` takes a ghost filesystem snapshot you can `apply` or `discard`; `/plan` switches to design-first two-phase execution; `/pr list|view|diff|checks` integrates with `gh`.
 
-D.U.H. loads skills from Claude Code directories natively:
+## Built-in tools
 
-```
-~/.claude/skills/          → Claude Code global skills
-~/.config/duh/skills/      → D.U.H. global skills
-.claude/skills/            → Claude Code project skills
-.duh/skills/               → D.U.H. project skills (highest priority)
-```
+`Read`, `Write`, `Edit`, `MultiEdit`, `Bash`, `Glob`, `Grep`, `Skill`, `ToolSearch`, `WebFetch`, `WebSearch`, `Task`, `EnterWorktree`, `ExitWorktree`, `NotebookEdit`, `TestImpact`, `MemoryStore`, `MemoryRecall`, `HTTP`, `Docker`, `Database`, `GitHub`, `TodoWrite`, `AskUserQuestion`, plus `LSP` (deferred, loaded via `ToolSearch`).
 
-Both `skill-name/SKILL.md` (directory) and `skill-name.md` (flat) layouts. All Claude Code frontmatter fields supported.
+## Sandboxing
 
-## CLI Reference
+Shell commands can be wrapped by the host OS sandbox: **macOS Seatbelt** (`sandbox-exec` profiles), **Linux Landlock** (syscall-level filesystem access control), and a network policy layer that blocks outbound traffic unless explicitly allowed (see `duh/adapters/sandbox/`). Approval behaviour is controlled with `--approval-mode suggest|auto-edit|full-auto` (reads only / reads+writes / everything), with `--dangerously-skip-permissions` as the hard bypass.
 
-```
-duh                                          # interactive REPL
-duh -p "prompt"                              # print mode
-duh -p "prompt" --model gpt-4o              # specific model
-duh -p "prompt" --provider openai           # force provider
-duh -p "prompt" --brief                     # concise responses
-duh -p "prompt" --max-cost 1.00             # budget limit ($1)
-duh -p "prompt" --max-turns 20              # iteration limit
-duh -p "prompt" --dangerously-skip-permissions
-duh -p "prompt" --fallback-model haiku      # auto-switch on overload
-duh -p "prompt" --output-format stream-json # NDJSON for SDK
-duh -p "prompt" --log-json                  # structured audit log
-duh --input-format stream-json              # SDK mode (stdin NDJSON)
-duh doctor                                   # diagnostics + connectivity
-duh --version
-```
+## MCP (Model Context Protocol)
 
-## Install from PyPI
+MCP servers connect via four transports: **stdio** (via the `mcp` SDK), **SSE**, **streamable HTTP**, and **WebSocket**. Configure with `--mcp-config <file-or-json>`. See [ADR-010](docs/adrs/ADR-010-mcp-integration.md) and [ADR-040](docs/adrs/ADR-040-multi-transport-mcp.md).
+
+## Hooks
+
+**28 lifecycle events** (6 original + 22 extended) including `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PermissionRequest`, `PreCompact`, `PostCompact`, `FileChanged`, `SubagentStart`, `Elicitation`, and more. Hooks support **glob matchers**, **blocking semantics** (a hook can refuse a tool call or rewrite its input), and both shell-command and Python-callable handlers. See [ADR-013](docs/adrs/ADR-013-hook-system.md), [ADR-036](docs/adrs/ADR-036-extended-hooks.md), [ADR-044](docs/adrs/ADR-044-hook-event-emission.md), [ADR-045](docs/adrs/ADR-045-hook-blocking-semantics.md).
+
+## Tests and coverage
+
+**3642 tests, 100% line coverage**, ~26s on a laptop. CI runs on GitHub Actions with a `--cov-fail-under=85` floor (current actual: 100%).
 
 ```bash
-pip install duh-cli                    # core (Anthropic + Ollama)
-pip install 'duh-cli[all]'             # includes OpenAI + Rich TUI
-pip install 'duh-cli[openai]'          # just OpenAI provider
-pip install 'duh-cli[rich]'            # just Rich TUI rendering
+.venv/bin/python -m pytest tests/                         # full suite
+.venv/bin/python -m pytest tests/ --cov=duh               # with coverage
+DUH_STUB_PROVIDER=1 .venv/bin/python -m pytest tests/     # force stub provider
 ```
 
-After install:
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...    # or OPENAI_API_KEY, or just Ollama
-duh -p "hello world"                   # verify it works
-duh doctor                             # check everything
-```
+## Selected ADRs
 
-## For claude-flow / RuFlow Users
+| # | Topic |
+|---|---|
+| [001](docs/adrs/ADR-001-project-vision.md) | Project vision: provider-agnostic, <5K LOC kernel |
+| [005](docs/adrs/ADR-005-safety-architecture.md) | Safety architecture (schema + approval + patterns) |
+| [009](docs/adrs/ADR-009-provider-adapters.md) | Provider adapter contract (`.stream()` async generator) |
+| [021](docs/adrs/ADR-021-sdk-protocol.md) | Claude Agent SDK NDJSON protocol compatibility |
+| [037](docs/adrs/ADR-037-platform-sandboxing.md) | Seatbelt / Landlock platform sandboxing |
+| [039](docs/adrs/ADR-039-ghost-snapshots.md) | Ghost snapshots for `/snapshot` |
+| [040](docs/adrs/ADR-040-multi-transport-mcp.md) | MCP stdio / SSE / HTTP / WebSocket transports |
+| [045](docs/adrs/ADR-045-hook-blocking-semantics.md) | Hook blocking + input rewriting |
+| [051](docs/adrs/ADR-051-oauth-provider-authentication.md) | OAuth provider authentication (ChatGPT Plus/Pro) |
+| [052](docs/adrs/ADR-052-chatgpt-codex-adapter.md) | ChatGPT Codex adapter (Responses API) |
 
-D.U.H. works as a drop-in backend for [claude-flow](https://github.com/ruvnet/claude-flow) by @ruvnet.
-
-**Quick setup:**
-
-```bash
-# 1. Install D.U.H.
-pip install 'duh-cli[all]'
-
-# 2. Create the SDK shim (one-time setup)
-mkdir -p ~/.local/bin
-cat > ~/.local/bin/duh-sdk-shim << 'SHIM'
-#!/bin/bash
-exec python3 -m duh "$@"
-SHIM
-chmod +x ~/.local/bin/duh-sdk-shim
-
-# 3. Configure claude-flow to use D.U.H.
-# In your claude-flow.config.json:
-```
-
-```json
-{
-  "swarm": {
-    "claudeExecutablePath": "~/.local/bin/duh-sdk-shim"
-  }
-}
-```
-
-```bash
-# 4. Alias claude → duh (optional, for full replacement)
-alias claude='python3 -m duh'
-
-# 5. Verify
-duh doctor
-npx @claude-flow/cli agent spawn -t coder --name test
-```
-
-**What you get:**
-- **Multi-provider**: Switch between Claude, GPT-4o, and local Ollama models without changing claude-flow config
-- **Cost control**: `--max-cost 5.00` prevents runaway sessions
-- **25+ tools**: Docker, GitHub PRs, HTTP testing, database queries — all available to your agents
-- **SDK compatible**: D.U.H. speaks the same NDJSON protocol as Claude Code
-
-**For the Universal Companion API:**
-```bash
-# Replace Claude Code with D.U.H. in UC API
-export DUH_CLI_PATH=~/.local/bin/duh-sdk-shim
-export CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK=1
-# Start your UC API server — it now uses D.U.H. as the backend
-```
-
-## Architecture Decisions (26 ADRs)
-
-Every design choice is documented:
-
-| # | Decision | Status |
-|---|----------|--------|
-| 001-010 | Vision, kernel, ports, tools, safety, context, sessions, CLI, providers, MCP | Implemented |
-| 011-018 | TUI, multi-agent, hooks, plugins, config, memory, skills, progressive disclosure | Implemented |
-| 019-020 | Phase plan, 5-wave roadmap | Complete |
-| 021 | NDJSON SDK protocol | Implemented |
-| 022 | Token counting, cost control, auto-compaction | Implemented |
-| 023 | Safety hardening (69 bash patterns, permissions, output limits) | Implemented |
-| 024 | Developer experience (REPL, TUI, undo, templates) | Implemented |
-| 025 | Ecosystem tools (GitHub, Docker, HTTP, DB, LSP) | Implemented |
-| 026 | Production readiness (logging, health, CI, PyPI) | Implemented |
-
-Full ADRs: [docs/adrs/](docs/adrs/)
+Full list: [docs/adrs/](docs/adrs/) (52 ADRs).
 
 ## Development
 
@@ -294,10 +105,35 @@ git clone https://github.com/nikhilvallishayee/duh
 cd duh
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest -q --tb=short                   # 2346 tests, ~23s
-pytest --cov=duh --cov-report=term     # 90% coverage
+
+# Run tests
+.venv/bin/python -m pytest tests/
+
+# Run with coverage
+.venv/bin/python -m pytest tests/ --cov=duh --cov-report=term
+
+# Offline / deterministic mode (no real provider calls)
+export DUH_STUB_PROVIDER=1
+duh -p "hello"     # → "stub-ok"
+```
+
+Source layout:
+
+```
+duh/
+  kernel/        # agentic loop, sessions, tasks, plan mode, undo, skills, memory
+  ports/         # abstract provider / tool / approver interfaces
+  adapters/      # anthropic, openai, openai_chatgpt, ollama, stub, mcp_executor, mcp_transports
+    sandbox/     # seatbelt, landlock, network policy
+  auth/          # credential store + OpenAI ChatGPT PKCE OAuth
+  providers/     # provider registry + model resolution
+  tools/         # 25+ built-in tools (see list above)
+  cli/           # parser, main, runner, repl, sdk_runner, ndjson
+  bridge/        # optional WebSocket remote bridge
+  ui/            # Rich TUI rendering
+  hooks.py       # 28-event hook system
 ```
 
 ## License
 
-Apache 2.0
+Apache 2.0 — see [LICENSE](LICENSE).

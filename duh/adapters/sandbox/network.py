@@ -46,7 +46,7 @@ class NetworkPolicy:
             parsed = urlparse(url)
             host = parsed.hostname or ""
             return host.lower()
-        except Exception:
+        except Exception:  # pragma: no cover - urlparse is very lenient
             return ""
 
     def is_request_allowed(self, method: str, url: str) -> bool:

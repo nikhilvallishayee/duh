@@ -92,8 +92,8 @@ def is_retryable(exc: BaseException) -> bool:
     if isinstance(exc, (ConnectionError, TimeoutError, OSError)):
         return True
 
-    # asyncio.TimeoutError
-    if isinstance(exc, asyncio.TimeoutError):
+    # asyncio.TimeoutError (subclass of TimeoutError on Python 3.11+)
+    if isinstance(exc, asyncio.TimeoutError):  # pragma: no cover - caught by TimeoutError above
         return True
 
     # Default: not retryable (fail fast on unknown errors)

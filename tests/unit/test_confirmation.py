@@ -50,6 +50,8 @@ def test_validate_rejects_garbage() -> None:
     m = ConfirmationMinter(session_key=b"x" * 32)
     assert m.validate("not-a-token", "s", "t", {}) is False
     assert m.validate("", "s", "t", {}) is False
+    # Token with correct prefix but non-integer timestamp — hits ValueError branch
+    assert m.validate("duh-confirm-NOTANINT-abc", "s", "t", {}) is False
 
 
 from duh.security.policy import DANGEROUS_TOOLS, any_tainted

@@ -1,8 +1,6 @@
 # ADR-033: QueryGuard State Machine
 
-**Status:** Accepted — partial (QueryGuard FSM implemented and wired into the REPL
-loop by ADR-043; wiring is synchronous and does not use `asyncio.Lock`, and the
-`cancel_on_new` option is not implemented)
+**Status:** Accepted — implemented 2026-04-15
 **Date**: 2026-04-08
 
 ## Context

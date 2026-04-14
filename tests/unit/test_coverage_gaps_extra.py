@@ -264,7 +264,8 @@ class TestBridgeServerLifecycle:
             await server.start()
         assert fake_serve.called
 
-    async def test_start_without_token_warns(self, caplog):
+    async def test_start_without_token_prints_auto_token(self, capfd):
+        """ADR-042: when no token supplied, auto-generate and print it."""
         from duh.bridge.server import BridgeServer
         fake_serve = AsyncMock(return_value=MagicMock())
         fake_ws_module = MagicMock()
@@ -272,11 +273,12 @@ class TestBridgeServerLifecycle:
 
         with patch("duh.bridge.server.websockets", fake_ws_module), \
              patch("duh.bridge.server._require_websockets"):
-            server = BridgeServer(host="localhost", port=1234)  # no token
-            import logging
-            with caplog.at_level(logging.WARNING):
-                await server.start()
-        assert any("WITHOUT authentication" in r.message for r in caplog.records)
+            server = BridgeServer(host="localhost", port=1234)  # no token → auto-generated
+            assert server._token, "Token must be auto-generated on construction"
+            await server.start()
+        out = capfd.readouterr().out
+        # The auto-generated token should be printed to stdout on start
+        assert server._token in out
 
     async def test_stop_closes_server(self):
         from duh.bridge.server import BridgeServer
@@ -1339,7 +1341,9 @@ class TestMCPExecutorGaps:
         assert call_count[0] == 2
 
     async def test_run_reconnect_after_max_errors(self):
-        """After MAX_ERRORS_BEFORE_RECONNECT consecutive errors, reconnect triggered."""
+        """After MAX_ERRORS_BEFORE_RECONNECT consecutive errors, server is marked
+        degraded and its tools are removed from the active schema (ADR-032 circuit
+        breaker — no reconnection attempt on the Nth failure)."""
         from duh.adapters.mcp_executor import (
             MCPExecutor,
             MCPConnection,
@@ -1362,23 +1366,24 @@ class TestMCPExecutorGaps:
         executor._connections["s"] = conn
         info = MCPToolInfo(name="tool", server_name="s")
         executor._tool_index["mcp__s__tool"] = info
-        # Pre-seed error count so the next failure triggers reconnect
+        # Pre-seed error count so the next failure trips the breaker
         executor._error_counts["s"] = MAX_ERRORS_BEFORE_RECONNECT - 1
 
-        reconnect_called = []
-        async def fake_reconnect(_name):
-            reconnect_called.append(_name)
-            return []
+        disconnect_called = []
 
         async def fake_disconnect(_name):
-            pass
+            disconnect_called.append(_name)
 
-        executor.connect = fake_reconnect  # type: ignore
         executor.disconnect = fake_disconnect  # type: ignore
 
         with pytest.raises(RuntimeError, match="MCP tool call failed"):
             await executor.run("mcp__s__tool", {})
-        assert "s" in reconnect_called
+
+        # Circuit breaker fired: server degraded, tools removed
+        assert executor.is_degraded("s")
+        assert "mcp__s__tool" not in executor.tool_names
+        # Disconnect was called to tear down the connection
+        assert "s" in disconnect_called
 
     async def test_run_reconnect_attempt_raises(self):
         """If reconnection after error fails, the original error still propagates."""

@@ -231,3 +231,123 @@ class TestAttachmentManagerPDF:
         # The text extraction should at least not crash
         text = mgr.extract_text(att)
         assert isinstance(text, str)
+
+
+# ---------------------------------------------------------------------------
+# Tests: ADR-041 gap fixes
+# ---------------------------------------------------------------------------
+
+class TestADR041MaxAttachmentSize:
+    """ADR-041 specifies MAX_IMAGE_SIZE = 20 MB (not 10 MB)."""
+
+    def test_max_attachment_size_is_20mb(self):
+        """MAX_ATTACHMENT_SIZE must be 20 MB as specified in ADR-041."""
+        assert MAX_ATTACHMENT_SIZE == 20 * 1024 * 1024, (
+            f"Expected 20 MB ({20 * 1024 * 1024:,} bytes) but got "
+            f"{MAX_ATTACHMENT_SIZE:,} bytes. ADR-041 specifies 20 MB limit."
+        )
+
+    def test_file_at_20mb_is_accepted(self, tmp_path: Path):
+        """A file of exactly 20 MB should be accepted."""
+        f = tmp_path / "exactly_20mb.bin"
+        twenty_mb = 20 * 1024 * 1024
+        # Write exactly 20 MB (within limit)
+        f.write_bytes(b"x" * twenty_mb)
+        mgr = AttachmentManager()
+        att = mgr.read_file(str(f))
+        assert att.size == twenty_mb
+
+    def test_file_just_over_20mb_is_rejected(self, tmp_path: Path):
+        """A file just over 20 MB should be rejected."""
+        f = tmp_path / "over_20mb.bin"
+        f.write_bytes(b"x" * (20 * 1024 * 1024 + 1))
+        mgr = AttachmentManager()
+        with pytest.raises(ValueError, match="exceeds.*limit"):
+            mgr.read_file(str(f))
+
+    def test_file_between_10mb_and_20mb_is_accepted(self, tmp_path: Path):
+        """A 15 MB file should be accepted (was rejected under old 10 MB limit)."""
+        f = tmp_path / "fifteen_mb.bin"
+        fifteen_mb = 15 * 1024 * 1024
+        f.write_bytes(b"x" * fifteen_mb)
+        mgr = AttachmentManager()
+        att = mgr.read_file(str(f))
+        assert att.size == fifteen_mb
+
+
+class TestADR041SlashAttachCommand:
+    """ADR-041 requires a /attach slash command in the REPL."""
+
+    def test_attach_command_in_slash_commands(self):
+        """'/attach' must appear in SLASH_COMMANDS dict."""
+        from duh.cli.repl import SLASH_COMMANDS
+        assert "/attach" in SLASH_COMMANDS, (
+            "/attach command not registered in SLASH_COMMANDS. "
+            "ADR-041 requires a /attach path/to/file.png command."
+        )
+
+    def test_attach_no_arg_prints_usage(self, tmp_path: Path, capsys):
+        """'/attach' with no argument should print usage, not crash."""
+        from duh.cli.repl import _handle_slash
+        from unittest.mock import MagicMock
+
+        engine = MagicMock()
+        engine.session_id = "test-session"
+        engine.turn_count = 0
+        engine.messages = []
+
+        deps = MagicMock()
+
+        keep_going, new_model = _handle_slash(
+            "/attach",
+            engine, "claude-3-5-sonnet", deps,
+        )
+        assert keep_going is True
+        captured = capsys.readouterr()
+        assert "Usage" in captured.out or "usage" in captured.out.lower()
+
+    def test_attach_nonexistent_file_prints_error(self, tmp_path: Path, capsys):
+        """'/attach /nonexistent/file.png' should print an error, not crash."""
+        from duh.cli.repl import _handle_slash
+        from unittest.mock import MagicMock
+
+        engine = MagicMock()
+        engine.session_id = "test-session"
+        engine.turn_count = 0
+        engine.messages = []
+
+        deps = MagicMock()
+
+        keep_going, new_model = _handle_slash(
+            "/attach /nonexistent/file.png",
+            engine, "claude-3-5-sonnet", deps,
+        )
+        assert keep_going is True
+        captured = capsys.readouterr()
+        # Should print an error about file not found
+        assert "not found" in captured.out.lower() or "error" in captured.out.lower()
+
+    def test_attach_valid_file_queues_attachment(self, tmp_path: Path, capsys):
+        """'/attach file.txt' with a valid file should queue it for the next message."""
+        from duh.cli.repl import _handle_slash
+        from unittest.mock import MagicMock
+
+        f = tmp_path / "note.txt"
+        f.write_text("hello attachment", encoding="utf-8")
+
+        engine = MagicMock()
+        engine.session_id = "test-session"
+        engine.turn_count = 0
+        engine.messages = []
+        engine._pending_attachments = []
+
+        deps = MagicMock()
+
+        keep_going, new_model = _handle_slash(
+            f"/attach {f}",
+            engine, "claude-3-5-sonnet", deps,
+        )
+        assert keep_going is True
+        captured = capsys.readouterr()
+        # Should confirm the attachment was added
+        assert "attach" in captured.out.lower() or "queued" in captured.out.lower() or "added" in captured.out.lower()

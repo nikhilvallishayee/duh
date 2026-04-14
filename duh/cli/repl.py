@@ -102,6 +102,8 @@ try:
     from rich.console import Console
     from rich.markdown import Markdown as RichMarkdown
     from rich.panel import Panel
+    from rich.spinner import Spinner as RichSpinner
+    from rich.syntax import Syntax as RichSyntax
     from rich.text import Text
     from rich.theme import Theme
     _HAS_RICH = True
@@ -314,6 +316,7 @@ SLASH_COMMANDS = {
     "/clear": "Clear conversation history",
     "/compact": "Compact older messages",
     "/snapshot": "Ghost snapshot (/snapshot, /snapshot apply, /snapshot discard)",
+    "/attach": "Attach a file to the next message (/attach path/to/file)",
     "/exit": "Exit the REPL",
 }
 
@@ -900,6 +903,32 @@ def _handle_slash(
     if name == "/snapshot":
         # Handled by REPL loop (see run_repl) -- return sentinel
         return True, f"\x00snapshot\x00{arg.strip()}"
+
+    if name == "/attach":
+        if not arg.strip():
+            sys.stdout.write(
+                "  Usage: /attach <path>  — attach a file to the next message\n"
+                "  Example: /attach screenshot.png\n"
+            )
+            return True, model
+        from duh.kernel.attachments import AttachmentManager
+        mgr = AttachmentManager()
+        try:
+            att = mgr.read_file(arg.strip())
+            # Store pending attachment on the engine so the REPL loop can inject it
+            if not hasattr(engine, "_pending_attachments"):
+                engine._pending_attachments = []
+            engine._pending_attachments.append(att)
+            sys.stdout.write(
+                f"  Attachment queued: {att.name} "
+                f"({att.content_type}, {att.size:,} bytes)\n"
+                "  It will be included with your next message.\n"
+            )
+        except FileNotFoundError as exc:
+            sys.stdout.write(f"  Error: {exc}\n")
+        except ValueError as exc:
+            sys.stdout.write(f"  Error: {exc}\n")
+        return True, model
 
     if name == "/exit":
         return False, model

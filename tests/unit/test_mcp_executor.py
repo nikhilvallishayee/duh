@@ -419,3 +419,165 @@ class TestMCPToolInfo:
         assert len(tools) == 2
         names = {t.name for t in tools}
         assert names == {"a", "b"}
+
+
+# ---------------------------------------------------------------------------
+# Tests: Circuit breaker (ADR-032 gap)
+# ---------------------------------------------------------------------------
+
+
+class TestCircuitBreaker:
+    """After N consecutive failures, server is marked degraded and its tools
+    are removed from the active schema."""
+
+    def _make_failing_session(self, error_msg: str = "Tool call failed: fail_tool") -> _FakeClientSession:
+        """A session whose call_tool always raises."""
+        session = _FakeClientSession()
+        session._tools = [_FakeToolInfo(name="fail_tool", description="Fails")]
+
+        async def always_fail(name: str, *, arguments=None):
+            raise RuntimeError(error_msg)
+
+        session.call_tool = always_fail  # type: ignore[method-assign]
+        return session
+
+    @pytest.mark.asyncio
+    async def test_server_marked_degraded_after_max_failures(self) -> None:
+        """After MAX_ERRORS_BEFORE_RECONNECT failures, server.degraded is True."""
+        from duh.adapters.mcp_executor import MAX_ERRORS_BEFORE_RECONNECT
+
+        executor = _make_executor(("srv", "echo", []))
+        session = self._make_failing_session()
+
+        async def fake_start(params) -> tuple:
+            return (MagicMock(), MagicMock(), MagicMock())
+
+        executor._start_stdio = fake_start  # type: ignore[assignment]
+
+        with patch("duh.adapters.mcp_executor.ClientSession", return_value=session):
+            await executor.connect("srv")
+
+        # Fail enough times to trip the breaker
+        for _ in range(MAX_ERRORS_BEFORE_RECONNECT):
+            with pytest.raises(RuntimeError):
+                await executor.run("mcp__srv__fail_tool", {})
+
+        assert executor.is_degraded("srv")
+
+    @pytest.mark.asyncio
+    async def test_tools_removed_from_schema_when_degraded(self) -> None:
+        """Degraded server's tools disappear from tool_names."""
+        from duh.adapters.mcp_executor import MAX_ERRORS_BEFORE_RECONNECT
+
+        executor = _make_executor(("srv", "echo", []))
+        session = self._make_failing_session()
+
+        async def fake_start(params) -> tuple:
+            return (MagicMock(), MagicMock(), MagicMock())
+
+        executor._start_stdio = fake_start  # type: ignore[assignment]
+
+        with patch("duh.adapters.mcp_executor.ClientSession", return_value=session):
+            await executor.connect("srv")
+
+        assert "mcp__srv__fail_tool" in executor.tool_names
+
+        for _ in range(MAX_ERRORS_BEFORE_RECONNECT):
+            with pytest.raises(RuntimeError):
+                await executor.run("mcp__srv__fail_tool", {})
+
+        # Tools must be removed from active schema
+        assert "mcp__srv__fail_tool" not in executor.tool_names
+
+    @pytest.mark.asyncio
+    async def test_degraded_server_raises_immediately_without_calling_session(self) -> None:
+        """Once degraded, run() raises immediately without hitting the session."""
+        from duh.adapters.mcp_executor import MAX_ERRORS_BEFORE_RECONNECT
+
+        executor = _make_executor(("srv", "echo", []))
+        session = self._make_failing_session()
+        call_count = 0
+
+        original_call = session.call_tool
+
+        async def counting_call(name, *, arguments=None):
+            nonlocal call_count
+            call_count += 1
+            return await original_call(name, arguments=arguments)
+
+        session.call_tool = counting_call  # type: ignore[method-assign]
+
+        async def fake_start(params) -> tuple:
+            return (MagicMock(), MagicMock(), MagicMock())
+
+        executor._start_stdio = fake_start  # type: ignore[assignment]
+
+        with patch("duh.adapters.mcp_executor.ClientSession", return_value=session):
+            await executor.connect("srv")
+
+        # Trip the breaker
+        for _ in range(MAX_ERRORS_BEFORE_RECONNECT):
+            with pytest.raises(RuntimeError):
+                await executor.run("mcp__srv__fail_tool", {})
+
+        # After degraded, tool is gone from index — raises KeyError (tool not found)
+        count_before = call_count
+        with pytest.raises((KeyError, RuntimeError)):
+            await executor.run("mcp__srv__fail_tool", {})
+        # No additional session calls
+        assert call_count == count_before
+
+    @pytest.mark.asyncio
+    async def test_successful_call_resets_failure_counter(self) -> None:
+        """A successful call resets consecutive failures, preventing false triggers."""
+        executor = _make_executor(("srv", "echo", []))
+        session = _make_session_with_tools(
+            [("good_tool", "Works", {})],
+            call_results={"good_tool": "ok"},
+        )
+
+        async def fake_start(params) -> tuple:
+            return (MagicMock(), MagicMock(), MagicMock())
+
+        executor._start_stdio = fake_start  # type: ignore[assignment]
+
+        with patch("duh.adapters.mcp_executor.ClientSession", return_value=session):
+            await executor.connect("srv")
+
+        # Partially accumulate failures
+        executor._error_counts["srv"] = 2  # one short of the threshold
+
+        # A success resets
+        result = await executor.run("mcp__srv__good_tool", {})
+        assert result == "ok"
+        assert executor._error_counts.get("srv", 0) == 0
+        assert not executor.is_degraded("srv")
+
+    @pytest.mark.asyncio
+    async def test_degraded_notification_message(self, capsys) -> None:
+        """When a server is marked degraded, a notification is logged."""
+        import logging
+        from duh.adapters.mcp_executor import MAX_ERRORS_BEFORE_RECONNECT
+
+        executor = _make_executor(("myserver", "echo", []))
+        session = self._make_failing_session()
+
+        async def fake_start(params) -> tuple:
+            return (MagicMock(), MagicMock(), MagicMock())
+
+        executor._start_stdio = fake_start  # type: ignore[assignment]
+
+        with patch("duh.adapters.mcp_executor.ClientSession", return_value=session):
+            await executor.connect("myserver")
+
+        with patch("duh.adapters.mcp_executor.logger") as mock_logger:
+            for _ in range(MAX_ERRORS_BEFORE_RECONNECT):
+                with pytest.raises(RuntimeError):
+                    await executor.run("mcp__myserver__fail_tool", {})
+
+            # Should have logged a degraded warning
+            assert any(
+                "degraded" in str(call).lower() or "unreachable" in str(call).lower()
+                for call in mock_logger.warning.call_args_list
+                + mock_logger.error.call_args_list
+            )

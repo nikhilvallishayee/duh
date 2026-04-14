@@ -13,6 +13,7 @@ Clients connect via WebSocket:
 from __future__ import annotations
 
 import logging
+import secrets
 import uuid
 from typing import Any
 
@@ -50,13 +51,20 @@ class BridgeServer:
     def __init__(
         self,
         host: str = "localhost",
-        port: int = 8765,
+        port: int = 9120,
         token: str = "",
         engine_factory: Any = None,
     ) -> None:
         self._host = host
         self._port = port
-        self._token = token
+        # ADR-042: auto-generate a random bearer token when none is supplied.
+        # This is printed on start so the local user can share it with remote clients.
+        if not token:
+            self._token = secrets.token_urlsafe(32)
+            self._token_auto_generated = True
+        else:
+            self._token = token
+            self._token_auto_generated = False
         self._engine_factory = engine_factory  # Callable that creates Engine instances
         self._relay = SessionRelay()
         self._server: Any = None  # websockets server
@@ -69,12 +77,10 @@ class BridgeServer:
     async def start(self) -> None:
         """Start the WebSocket server."""
         _require_websockets()
-        if not self._token:
-            logger.warning(
-                "Bridge server starting WITHOUT authentication token. "
-                "Anyone who can reach the port can control duh. "
-                "Set --token to require authentication."
-            )
+        if self._token_auto_generated:
+            # ADR-042: print the auto-generated token so the local user can share it
+            print(f"Remote bridge: ws://{self._host}:{self._port}")
+            print(f"Auth token:    {self._token}")
         logger.info("Bridge server starting on %s:%d", self._host, self._port)
         self._server = await websockets.serve(
             self._handle_connection,

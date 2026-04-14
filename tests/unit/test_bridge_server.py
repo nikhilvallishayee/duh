@@ -138,8 +138,9 @@ class TestBridgeServer:
         assert server._token == "secret"
 
     def test_default_port(self):
+        # ADR-042: default port is 9120 (updated from legacy 8765)
         server = BridgeServer()
-        assert server._port == 8765
+        assert server._port == 9120
 
     @pytest.mark.asyncio
     async def test_handle_connect_valid_token(self):
@@ -166,6 +167,14 @@ class TestBridgeServer:
 
         from duh.bridge.protocol import validate_token
         assert not validate_token("wrong", "secret")
+
+    def test_default_port_is_9120(self):
+        """ADR-042 specifies default port 9120, not 8765."""
+        server = BridgeServer()
+        assert server._port == 9120, (
+            f"Expected default port 9120 (per ADR-042) but got {server._port}. "
+            "Update BridgeServer default port."
+        )
 
     @pytest.mark.asyncio
     async def test_relay_engine_events(self):
@@ -194,3 +203,65 @@ class TestBridgeServer:
             parsed = json.loads(raw)
             assert parsed["type"] == "event"
             assert parsed["event_type"] == events[i]["type"]
+
+
+# ---------------------------------------------------------------------------
+# Tests: ADR-042 gap fixes
+# ---------------------------------------------------------------------------
+
+class TestADR042DefaultPort:
+    """ADR-042 specifies default port 9120."""
+
+    def test_default_port_via_constructor(self):
+        server = BridgeServer()
+        assert server._port == 9120
+
+    def test_custom_port_still_works(self):
+        server = BridgeServer(port=8765)
+        assert server._port == 8765
+
+    def test_parser_bridge_default_port(self):
+        """CLI parser default for bridge start port must be 9120."""
+        from duh.cli.parser import build_parser
+        parser = build_parser()
+        # Parse 'bridge start' with no --port flag
+        args = parser.parse_args(["bridge", "start"])
+        assert args.port == 9120, (
+            f"CLI parser default port is {args.port}, expected 9120 per ADR-042."
+        )
+
+
+class TestADR042AutoTokenGeneration:
+    """ADR-042: token must be auto-generated when none is supplied."""
+
+    def test_bridge_server_no_token_generates_one(self):
+        """When no token is supplied, BridgeServer should generate a random token."""
+        server = BridgeServer()
+        # After construction with no token, _token should NOT be empty
+        assert server._token, (
+            "BridgeServer() with no token should auto-generate a random bearer token. "
+            "Got empty string instead."
+        )
+
+    def test_bridge_server_auto_token_is_random(self):
+        """Two BridgeServer instances with no token should have different tokens."""
+        s1 = BridgeServer()
+        s2 = BridgeServer()
+        assert s1._token != s2._token, (
+            "Auto-generated tokens must be random — two instances had the same token."
+        )
+
+    def test_bridge_server_auto_token_min_length(self):
+        """The auto-generated token must be at least 32 characters (URL-safe base64)."""
+        server = BridgeServer()
+        assert len(server._token) >= 32
+
+    def test_bridge_server_explicit_token_preserved(self):
+        """When an explicit token is supplied, it must be used as-is."""
+        server = BridgeServer(token="my-secret-token")
+        assert server._token == "my-secret-token"
+
+    def test_bridge_server_empty_string_token_generates_auto(self):
+        """Passing token='' (empty string) triggers auto-generation."""
+        server = BridgeServer(token="")
+        assert server._token, "Empty string token should trigger auto-generation"

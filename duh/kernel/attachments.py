@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024  # 20 MB (ADR-041)
 
 # Magic bytes for common image formats
 _MAGIC_SIGNATURES: list[tuple[bytes, str]] = [

@@ -1,8 +1,6 @@
 # ADR-032: MCP Session Management
 
-**Status:** Accepted — partial (session-expiry detection and single-retry reconnect
-work; consecutive-failure circuit breaker does not mark servers as `degraded` or remove
-their tools from the active schema)
+**Status:** Accepted — implemented 2026-04-15
 **Date**: 2026-04-08
 
 ## Context

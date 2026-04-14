@@ -1,10 +1,6 @@
 # ADR-041: Attachment System
 
-**Status:** Accepted — partial (`AttachmentManager` with type detection, image
-base64 encoding, and optional PDF extraction is implemented in
-`duh/kernel/attachments.py` with `MAX_ATTACHMENT_SIZE = 10 MB` (implementation) rather
-than 20 MB. The CLI integration points — `Ctrl+V` paste, `/attach` slash command,
-drag-and-drop, and inline `@image:` syntax — are NOT wired into the REPL.)
+**Status:** Accepted — implemented 2026-04-15
 **Date**: 2026-04-08
 
 ## Context

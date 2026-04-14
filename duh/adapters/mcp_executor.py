@@ -287,6 +287,7 @@ class MCPExecutor:
         self._connections: dict[str, MCPConnection] = {}
         self._tool_index: dict[str, MCPToolInfo] = {}
         self._error_counts: dict[str, int] = {}  # server_name -> consecutive errors
+        self._degraded: set[str] = set()  # server names that have been circuit-broken
 
     # -- Connection lifecycle -----------------------------------------------
 
@@ -480,6 +481,32 @@ class MCPExecutor:
         """All discovered tools across all connected servers."""
         return list(self._tool_index.values())
 
+    # -- Circuit breaker helpers -------------------------------------------
+
+    def is_degraded(self, server_name: str) -> bool:
+        """Return True if the server has been circuit-broken."""
+        return server_name in self._degraded
+
+    def _mark_degraded(self, server_name: str) -> None:
+        """Mark a server as degraded and remove its tools from the active schema.
+
+        Called after MAX_ERRORS_BEFORE_RECONNECT consecutive failures.
+        Logs a user-visible warning per ADR-032.
+        """
+        self._degraded.add(server_name)
+        # Remove all tools belonging to this server from the active index
+        to_remove = [
+            k for k, v in self._tool_index.items() if v.server_name == server_name
+        ]
+        for k in to_remove:
+            del self._tool_index[k]
+        logger.warning(
+            "MCP server '%s' is unreachable after %d reconnection attempts. "
+            "Excluding its tools until manually restarted.",
+            server_name,
+            MAX_ERRORS_BEFORE_RECONNECT,
+        )
+
     # -- Tool execution (ToolExecutor port) ---------------------------------
 
     async def run(
@@ -499,6 +526,12 @@ class MCPExecutor:
         info = self._tool_index.get(tool_name)
         if info is None:
             raise KeyError(f"MCP tool not found: {tool_name}")
+
+        # Refuse calls to degraded servers immediately
+        if info.server_name in self._degraded:
+            raise RuntimeError(
+                f"MCP server '{info.server_name}' is degraded and not accepting calls"
+            )
 
         conn = self._connections.get(info.server_name)
         if conn is None or conn.session is None:
@@ -538,18 +571,10 @@ class MCPExecutor:
                         ) from exc
                     continue
 
-                # Too many consecutive errors: reconnect
+                # Too many consecutive errors: mark degraded and stop routing
                 if count >= MAX_ERRORS_BEFORE_RECONNECT:
-                    logger.warning(
-                        "MCP server %s: %d consecutive errors, reconnecting",
-                        info.server_name, count,
-                    )
-                    self._error_counts[info.server_name] = 0
+                    self._mark_degraded(info.server_name)
                     await self.disconnect(info.server_name)
-                    try:
-                        await self.connect(info.server_name)
-                    except Exception:
-                        pass  # reconnect is best-effort
 
                 raise RuntimeError(
                     f"MCP tool call failed ({tool_name}): {exc}"

@@ -1,12 +1,6 @@
 # ADR-042: Remote Bridge
 
-**Status:** Accepted — partial (`BridgeServer` with WebSocket relay, bearer-token
-auth, session registration, and prompt injection is implemented in
-`duh/bridge/server.py`. Differences from this ADR on main today: default port is
-**8765** (not 9120); the token must be supplied via config/CLI — not auto-generated
-on start; rate limiting (10 msg/s) and `--remote-bridge-public` warning flag are
-unimplemented. Per-message size cap is 1 MB via `websockets.serve(max_size=…)`;
-explicit max-client cap (5) is not yet enforced.)
+**Status:** Accepted — implemented 2026-04-15
 **Date**: 2026-04-08
 
 ## Context

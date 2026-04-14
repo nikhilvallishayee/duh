@@ -771,7 +771,12 @@ class TestMCPTransportFactoryE2E:
 
     @pytest.mark.asyncio
     async def test_max_errors_triggers_reconnect(self):
-        """MAX_ERRORS_BEFORE_RECONNECT consecutive errors → reconnect."""
+        """MAX_ERRORS_BEFORE_RECONNECT consecutive errors → circuit breaker fires.
+
+        ADR-032: on the Nth consecutive failure the server is marked *degraded*
+        and its tools are removed from the active schema.  The old reconnect
+        logic has been replaced by the circuit-breaker pattern.
+        """
         cfg = MCPServerConfig(command="echo", args=[])
         executor = MCPExecutor({"srv": cfg})
         info = MCPToolInfo(name="ping", server_name="srv")
@@ -790,25 +795,23 @@ class TestMCPTransportFactoryE2E:
             _cleanup=None,
         )
 
-        reconnect_calls = {"disconnect": 0, "connect": 0}
+        disconnect_calls: list[str] = []
 
         async def fake_disconnect(name: str) -> None:
-            reconnect_calls["disconnect"] += 1
-
-        async def fake_connect(name: str) -> list[MCPToolInfo]:
-            reconnect_calls["connect"] += 1
-            return [info]
+            disconnect_calls.append(name)
 
         executor.disconnect = fake_disconnect  # type: ignore[assignment]
-        executor.connect = fake_connect  # type: ignore[assignment]
 
-        # Need MAX_ERRORS_BEFORE_RECONNECT failures to trip reconnect.
-        for i in range(MAX_ERRORS_BEFORE_RECONNECT):
+        # Trip the breaker: MAX_ERRORS_BEFORE_RECONNECT consecutive failures.
+        for _ in range(MAX_ERRORS_BEFORE_RECONNECT):
             with pytest.raises(RuntimeError):
                 await executor.run("mcp__srv__ping", {})
-        # On the MAX_ERRORS_BEFORE_RECONNECT-th failure we reconnected once.
-        assert reconnect_calls["disconnect"] >= 1
-        assert reconnect_calls["connect"] >= 1
+
+        # Circuit breaker must have fired: server is degraded, tool is gone.
+        assert executor.is_degraded("srv")
+        assert "mcp__srv__ping" not in executor.tool_names
+        # Disconnect was called to clean up the connection
+        assert "srv" in disconnect_calls
 
 
 # ===========================================================================

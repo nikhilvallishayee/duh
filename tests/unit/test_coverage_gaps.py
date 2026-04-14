@@ -423,10 +423,10 @@ class TestBridgeServerHandleConnection:
     @pytest.mark.asyncio
     async def test_full_connect_disconnect_flow(self):
         """Connect, then disconnect should register and unregister session."""
-        server = BridgeServer(token="")
+        server = BridgeServer()  # auto-generates token (ADR-042)
         ws = FakeWebSocket()
 
-        connect = encode_message(ConnectMessage(token="", session_id="s1"))
+        connect = encode_message(ConnectMessage(token=server._token, session_id="s1"))
         disconnect = encode_message(DisconnectMessage(session_id="s1"))
         ws.feed(connect)
         ws.feed(disconnect)
@@ -463,7 +463,7 @@ class TestBridgeServerHandleConnection:
     @pytest.mark.asyncio
     async def test_prompt_without_connect_sends_error(self):
         """Sending a prompt before connecting should send a 403 error."""
-        server = BridgeServer(token="")
+        server = BridgeServer()  # auto-generates token (ADR-042)
         ws = FakeWebSocket()
 
         prompt = encode_message(PromptMessage(session_id="s1", content="hello"))
@@ -479,7 +479,7 @@ class TestBridgeServerHandleConnection:
     @pytest.mark.asyncio
     async def test_invalid_json_sends_error(self):
         """Malformed JSON should send a 400 error."""
-        server = BridgeServer(token="")
+        server = BridgeServer()  # auto-generates token (ADR-042)
         ws = FakeWebSocket()
 
         ws.feed("not valid json {{{")
@@ -494,10 +494,10 @@ class TestBridgeServerHandleConnection:
     @pytest.mark.asyncio
     async def test_connect_auto_generates_session_id(self):
         """Connect without session_id should auto-generate one."""
-        server = BridgeServer(token="")
+        server = BridgeServer()  # auto-generates token (ADR-042)
         ws = FakeWebSocket()
 
-        connect = encode_message(ConnectMessage(token=""))
+        connect = encode_message(ConnectMessage(token=server._token))
         ws.feed(connect)
 
         await server._handle_connection(ws)
@@ -509,10 +509,10 @@ class TestBridgeServerHandleConnection:
     @pytest.mark.asyncio
     async def test_prompt_with_no_engine_sends_error(self):
         """Prompt when no engine_factory is configured should send 500 error."""
-        server = BridgeServer(token="", engine_factory=None)
+        server = BridgeServer(engine_factory=None)  # auto-generates token (ADR-042)
         ws = FakeWebSocket()
 
-        connect = encode_message(ConnectMessage(token="", session_id="s1"))
+        connect = encode_message(ConnectMessage(token=server._token, session_id="s1"))
         prompt = encode_message(PromptMessage(session_id="s1", content="hello"))
         ws.feed(connect)
         ws.feed(prompt)
@@ -539,10 +539,10 @@ class TestBridgeServerHandleConnection:
             engine.run = fake_run
             return engine
 
-        server = BridgeServer(token="", engine_factory=fake_engine_factory)
+        server = BridgeServer(engine_factory=fake_engine_factory)  # auto-generates token (ADR-042)
         ws = FakeWebSocket()
 
-        connect = encode_message(ConnectMessage(token="", session_id="s1"))
+        connect = encode_message(ConnectMessage(token=server._token, session_id="s1"))
         prompt = encode_message(PromptMessage(session_id="s1", content="hello"))
         ws.feed(connect)
         ws.feed(prompt)

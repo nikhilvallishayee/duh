@@ -112,8 +112,8 @@ def build_parser() -> argparse.ArgumentParser:
     start_parser = bridge_sub.add_parser("start", help="Start the WebSocket bridge server.")
     start_parser.add_argument("--host", type=str, default="localhost",
                               help="Host to bind to (default: localhost).")
-    start_parser.add_argument("--port", type=int, default=8765,
-                              help="Port to bind to (default: 8765).")
+    start_parser.add_argument("--port", type=int, default=9120,
+                              help="Port to bind to (default: 9120).")
     start_parser.add_argument("--token", type=str, default="",
                               help="Bearer token for authentication (empty = open).")
 

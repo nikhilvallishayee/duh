@@ -1,7 +1,7 @@
 # ADR-051: OAuth Provider Authentication
 
 ## Status
-Accepted — 2026-04-14
+Accepted — implemented 2026-04-15
 
 ## Context
 Until this point, provider authentication in D.U.H. was limited to API-key

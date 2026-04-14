@@ -1,7 +1,7 @@
 # ADR-052: ChatGPT Codex Adapter
 
 ## Status
-Accepted — 2026-04-14
+Accepted — implemented 2026-04-15
 
 ## Context
 Codex-family models (`gpt-5.2-codex`, `gpt-5.1-codex`, `gpt-5.1-codex-max`,

@@ -1,7 +1,6 @@
 # ADR-011: TUI Architecture
 
-**Status:** Accepted — partial (Tier 0 Bare + Tier 1 Rich shipped; Tier 2 full-TUI not
-implemented — REPL uses streaming + Rich rendering, no widget/component tree)
+**Status:** Accepted — Tier 0 (bare readline) + Tier 1 (Rich rendering with status bar, collapsible tool output, syntax highlighting) shipped. Tier 2 (full widget tree) deferred.
 **Date**: 2026-04-06
 
 ## Context

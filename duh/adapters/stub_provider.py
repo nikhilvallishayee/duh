@@ -22,6 +22,14 @@ from typing import Any, AsyncGenerator
 
 from duh.adapters.anthropic import ParsedToolUse
 from duh.kernel.messages import Message
+from duh.kernel.untrusted import TaintSource, UntrustedStr
+
+
+def _wrap_model_output(text: str) -> UntrustedStr:
+    """Tag stub provider output as MODEL_OUTPUT."""
+    if isinstance(text, UntrustedStr):
+        return text
+    return UntrustedStr(text, TaintSource.MODEL_OUTPUT)
 
 
 STUB_PROVIDER_ENV = "DUH_STUB_PROVIDER"

@@ -22,6 +22,14 @@ import httpx
 
 from duh.adapters.anthropic import ParsedToolUse
 from duh.kernel.messages import Message
+from duh.kernel.untrusted import TaintSource, UntrustedStr
+
+
+def _wrap_model_output(text: str) -> UntrustedStr:
+    """Tag Ollama provider output as MODEL_OUTPUT."""
+    if isinstance(text, UntrustedStr):
+        return text
+    return UntrustedStr(text, TaintSource.MODEL_OUTPUT)
 
 
 class OllamaProvider:

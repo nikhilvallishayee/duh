@@ -15,6 +15,14 @@ import httpx
 from duh.adapters.anthropic import ParsedToolUse
 from duh.auth.openai_chatgpt import get_valid_openai_chatgpt_oauth
 from duh.kernel.messages import Message
+from duh.kernel.untrusted import TaintSource, UntrustedStr
+
+
+def _wrap_model_output(text: str) -> UntrustedStr:
+    """Tag OpenAI ChatGPT provider output as MODEL_OUTPUT."""
+    if isinstance(text, UntrustedStr):
+        return text
+    return UntrustedStr(text, TaintSource.MODEL_OUTPUT)
 
 
 class OpenAIChatGPTProvider:

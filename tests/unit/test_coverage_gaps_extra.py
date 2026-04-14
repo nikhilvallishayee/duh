@@ -178,14 +178,25 @@ class TestLandlockAvailable:
     def test_landlock_available_exception(self, monkeypatch):
         """When ctypes fails, _landlock_available returns False."""
         from duh.adapters.sandbox import policy
-        with patch("ctypes.CDLL", side_effect=OSError("no libc")):
+        # Patch find_library too — see note in test_sandbox_policy_landlock_
+        # success_path. Without this, Linux CI shells out to ldconfig.
+        with patch("ctypes.util.find_library", return_value="libc.so.6"), \
+             patch("ctypes.CDLL", side_effect=OSError("no libc")):
             assert policy._landlock_available() is False
 
-    def test_landlock_available_runs(self):
-        """Exercise the real function; result depends on platform."""
+    def test_landlock_available_runs(self, monkeypatch):
+        """Exercise the function; result depends on platform.
+
+        We mock find_library + CDLL so the test is hermetic — calling the
+        real ctypes path can hang on CI runners where ldconfig is slow.
+        """
+        from unittest.mock import MagicMock
         from duh.adapters.sandbox.policy import _landlock_available
-        # Should return bool without exception
-        result = _landlock_available()
+        fake_libc = MagicMock()
+        fake_libc.syscall.return_value = -1  # exercise the failure branch
+        with patch("ctypes.util.find_library", return_value="libc.so.6"), \
+             patch("ctypes.CDLL", return_value=fake_libc):
+            result = _landlock_available()
         assert isinstance(result, bool)
 
     def test_build_unknown_sandbox_type_fallback(self):
@@ -1878,10 +1889,15 @@ class TestMoreGaps:
         """Simulate a successful landlock syscall returning a valid fd."""
         from duh.adapters.sandbox import policy
 
-        # We can't easily test the syscall success — but we can mock libc
+        # We can't easily test the syscall success — but we can mock libc.
+        # IMPORTANT: also stub ctypes.util.find_library, otherwise on Linux CI
+        # it shells out to /sbin/ldconfig which can hang the test (verified
+        # in CI run 24389848437 — `find_library('c')` hung the runner for
+        # the entire 10-minute step timeout).
         fake_libc = MagicMock()
         fake_libc.syscall.return_value = 5  # pretend fd=5 was returned
-        with patch("ctypes.CDLL", return_value=fake_libc), \
+        with patch("ctypes.util.find_library", return_value="libc.so.6"), \
+             patch("ctypes.CDLL", return_value=fake_libc), \
              patch("os.close") as close_mock:
             result = policy._landlock_available()
         # Either True (success path) or False (EINVAL fallback), but importantly

@@ -26,7 +26,13 @@ from duh.kernel.confirmation import ConfirmationMinter
 from duh.kernel.deps import Deps
 from duh.kernel.loop import query
 from duh.kernel.messages import Message, UserMessage
-from duh.kernel.tokens import count_tokens, estimate_cost, format_cost, get_context_limit
+from duh.kernel.tokens import (
+    count_tokens,
+    count_tokens_for_model,
+    estimate_cost,
+    format_cost,
+    get_context_limit,
+)
 from duh.ports.store import SessionStore
 from duh.security.trifecta import check_trifecta, compute_session_capabilities
 
@@ -98,6 +104,8 @@ class Engine:
         self._turn_count = 0
         self._total_input_tokens = 0
         self._total_output_tokens = 0
+        # Per-turn token history: list of (input_tokens, output_tokens) tuples
+        self._turn_token_history: list[tuple[int, int]] = []
         self._session_store = session_store
         self._budget_warned_80 = False
         self._setup_emitted = False  # SETUP fires only once per session
@@ -186,14 +194,23 @@ class Engine:
         return events
 
     def cost_summary(self, model: str | None = None) -> str:
-        """Return a human-readable cost summary string."""
+        """Return a human-readable cost summary string with per-turn breakdown."""
         m = model or self._config.model
         cost = self.estimated_cost(m)
         lines = [
-            f"Input tokens:  ~{self._total_input_tokens:,}",
-            f"Output tokens: ~{self._total_output_tokens:,}",
+            f"Input tokens:  {self._total_input_tokens:,}",
+            f"Output tokens: {self._total_output_tokens:,}",
             f"Estimated cost: {format_cost(cost)} ({m})",
         ]
+        # Per-turn breakdown (only shown when multiple turns exist)
+        if self._turn_token_history:
+            lines.append("")
+            lines.append("Per-turn breakdown:")
+            for i, (inp, out) in enumerate(self._turn_token_history, start=1):
+                turn_cost = estimate_cost(m, inp, out)
+                lines.append(
+                    f"  Turn {i:>2d}: in={inp:>6,}  out={out:>6,}  cost={format_cost(turn_cost)}"
+                )
         remaining = self.budget_remaining(m)
         if remaining is not None:
             lines.append(f"Budget remaining: {format_cost(remaining)} of {format_cost(self._config.max_cost or 0.0)}")
@@ -235,19 +252,28 @@ class Engine:
         self._turn_count += 1
 
         # Estimate input tokens (all messages + system prompt sent to model)
+        # Use model-calibrated chars/token ratio for better accuracy.
+        effective_model_for_count = model or self._config.model
         prompt_text = prompt if isinstance(prompt, str) else str(prompt)
         sys_text = (
             self._config.system_prompt
             if isinstance(self._config.system_prompt, str)
             else " ".join(self._config.system_prompt)
         )
-        input_estimate = count_tokens(prompt_text) + count_tokens(sys_text)
+        input_estimate = (
+            count_tokens_for_model(prompt_text, effective_model_for_count)
+            + count_tokens_for_model(sys_text, effective_model_for_count)
+        )
         # Include prior message context sent with this turn
         for m in self._messages[:-1]:
-            input_estimate += count_tokens(
-                m.text if isinstance(m, Message) else str(m)
+            input_estimate += count_tokens_for_model(
+                m.text if isinstance(m, Message) else str(m),
+                effective_model_for_count,
             )
         self._total_input_tokens += input_estimate
+        # Track per-turn: start with estimated input; output updated below after response
+        _turn_input_tokens = input_estimate
+        _turn_output_tokens = 0
 
         yield {
             "type": "session",
@@ -335,12 +361,33 @@ class Engine:
             ):
                 event_type = event.get("type", "")
 
-                # Track assistant messages in history and count output tokens
+                # Track assistant messages in history and count output tokens.
+                # Prefer real usage from provider metadata when available;
+                # fall back to model-calibrated heuristic otherwise.
                 if event_type == "assistant":
                     msg = event.get("message")
                     if isinstance(msg, Message):
                         self._messages.append(msg)
-                        self._total_output_tokens += count_tokens(msg.text)
+                        usage = msg.metadata.get("usage", {}) if msg.metadata else {}
+                        real_input = usage.get("input_tokens", 0)
+                        real_output = usage.get("output_tokens", 0)
+                        if real_output > 0:
+                            # Real usage data from provider — use it and correct
+                            # the input estimate if provider also reported input tokens.
+                            out_tokens = real_output
+                            if real_input > 0:
+                                # Replace the heuristic input estimate with real data.
+                                # Adjust cumulative total: remove estimate, add real.
+                                delta = real_input - _turn_input_tokens
+                                self._total_input_tokens += delta
+                                _turn_input_tokens = real_input
+                        else:
+                            # No real usage — use calibrated heuristic
+                            out_tokens = count_tokens_for_model(
+                                msg.text, effective_model
+                            )
+                        self._total_output_tokens += out_tokens
+                        _turn_output_tokens += out_tokens
                     if self._slog:
                         self._slog.model_response(model=effective_model, turn=self._turn_count)
 
@@ -394,6 +441,10 @@ class Engine:
                             "stop_reason": event.get("stop_reason", "end_turn"),
                         },
                     )
+
+                # Record per-turn token snapshot when the turn completes
+                if event_type == "done":
+                    self._turn_token_history.append((_turn_input_tokens, _turn_output_tokens))
 
                 # --- Budget enforcement after each turn ---
                 if event_type == "done":
@@ -473,9 +524,19 @@ class Engine:
                     msg = event.get("message")
                     if isinstance(msg, Message):
                         self._messages.append(msg)
-                        self._total_output_tokens += count_tokens(msg.text)
+                        usage = msg.metadata.get("usage", {}) if msg.metadata else {}
+                        real_output = usage.get("output_tokens", 0)
+                        out_tokens = real_output if real_output > 0 else count_tokens_for_model(
+                            msg.text, fallback_model or effective_model
+                        )
+                        self._total_output_tokens += out_tokens
+                        _turn_output_tokens += out_tokens
 
                 yield event
+
+                # Record per-turn token snapshot for fallback turn
+                if event_type == "done":
+                    self._turn_token_history.append((_turn_input_tokens, _turn_output_tokens))
 
                 # --- Budget enforcement in fallback loop ---
                 if event_type == "done":

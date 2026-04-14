@@ -69,8 +69,8 @@ _PINS: Final[tuple[PinnedAction, ...]] = (
     ),
     PinnedAction(
         name="zizmorcore/zizmor-action",
-        sha="TODO",  # TODO: pin SHA at adoption time (flagged in research)
-        version="v0.1.0",
+        sha="b1d7e1fb5de872772f31590499237e7cce841e8e",
+        version="v0.5.3",
     ),
     PinnedAction(
         name="actions/setup-python",

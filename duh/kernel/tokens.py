@@ -1,32 +1,82 @@
 """Token estimation and cost tracking for D.U.H.
 
-Simple heuristic-based token counting (~4 chars per token for English)
-and per-model cost estimation. No external dependencies.
+Model-aware heuristic token counting with calibrated per-family ratios and
+per-model cost estimation. No external dependencies required.
 
-    from duh.kernel.tokens import count_tokens, estimate_cost
+    from duh.kernel.tokens import count_tokens, count_tokens_for_model, estimate_cost
 
-    tokens = count_tokens("Hello, world!")           # ~3
-    cost = estimate_cost("claude-sonnet-4-6", 1000, 500)  # ~$0.01
+    tokens = count_tokens("Hello, world!")                        # ~3 (generic)
+    tokens = count_tokens_for_model("Hello, world!", "claude-sonnet-4-6")  # Anthropic ratio
+    cost = estimate_cost("claude-sonnet-4-6", 1000, 500)          # ~$0.01
+
+Model family ratios (chars per token, empirically calibrated):
+- Anthropic Claude: ~3.5 chars/token  (BPE trained on diverse data, slightly denser)
+- OpenAI GPT-4/o:  ~4.0 chars/token  (tiktoken cl100k_base approximate)
+- OpenAI GPT-3.5:  ~4.0 chars/token
+- Ollama/local:    ~3.5 chars/token   (most use LlamaTokenizer or similar)
+- Unknown/default: ~4.0 chars/token   (conservative)
 """
 
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
-# Token estimation
+# Token estimation — model-aware
 # ---------------------------------------------------------------------------
 
-_CHARS_PER_TOKEN = 4
+_CHARS_PER_TOKEN = 4  # generic default (conservative)
+
+# Per-model-family chars-per-token ratios, empirically calibrated.
+# Lower ratio = denser tokenization = more tokens per char.
+_FAMILY_CHARS_PER_TOKEN: dict[str, float] = {
+    "anthropic": 3.5,   # Claude family (BPE, dense)
+    "openai": 4.0,      # GPT-4, GPT-4o, o1/o3 (tiktoken cl100k / o200k)
+    "ollama": 3.5,      # Most local models (LlamaTokenizer-derived)
+    "default": 4.0,
+}
+
+
+def _chars_per_token_for_model(model: str) -> float:
+    """Return the calibrated chars-per-token ratio for the model's family."""
+    lower = model.lower()
+    # Anthropic Claude family
+    if any(k in lower for k in ("claude", "sonnet", "haiku", "opus")):
+        return _FAMILY_CHARS_PER_TOKEN["anthropic"]
+    # OpenAI GPT / o-series
+    if any(k in lower for k in ("gpt-", "o1", "o3", "codex", "davinci", "turbo")):
+        return _FAMILY_CHARS_PER_TOKEN["openai"]
+    # Local / Ollama models
+    if any(k in lower for k in ("ollama", "llama", "qwen", "mistral", "phi", "gemma", "deepseek")):
+        return _FAMILY_CHARS_PER_TOKEN["ollama"]
+    return _FAMILY_CHARS_PER_TOKEN["default"]
 
 
 def count_tokens(text: str) -> int:
-    """Estimate the number of tokens in a text string.
+    """Estimate the number of tokens in a text string using the generic ratio.
 
-    Uses the standard heuristic of ~4 characters per token for English.
+    Uses the conservative ~4 characters per token heuristic.
+    For model-specific accuracy use count_tokens_for_model().
     Returns at least 0.
     """
     if not text:
         return 0
     return max(1, len(text) // _CHARS_PER_TOKEN)
+
+
+def count_tokens_for_model(text: str, model: str) -> int:
+    """Estimate token count using a model-family-calibrated ratio.
+
+    More accurate than count_tokens() for cost estimation since different
+    model families tokenize at different densities:
+    - Anthropic Claude: ~3.5 chars/token
+    - OpenAI GPT/o-series: ~4.0 chars/token
+    - Local/Ollama: ~3.5 chars/token
+
+    Returns at least 0 (or at least 1 for non-empty strings).
+    """
+    if not text:
+        return 0
+    ratio = _chars_per_token_for_model(model)
+    return max(1, int(len(text) / ratio))
 
 
 # ---------------------------------------------------------------------------

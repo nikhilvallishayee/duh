@@ -4,10 +4,12 @@ import pytest
 
 from duh.kernel.tokens import (
     count_tokens,
+    count_tokens_for_model,
     estimate_cost,
     format_cost,
     get_context_limit,
     _resolve_pricing,
+    _chars_per_token_for_model,
     _CHARS_PER_TOKEN,
     _DEFAULT_CONTEXT_LIMIT,
     _MODEL_PRICING,
@@ -53,6 +55,79 @@ class TestCountTokens:
         assert count_tokens("a") == 1
         assert count_tokens("ab") == 1
         assert count_tokens("abc") == 1
+
+
+# ---------------------------------------------------------------------------
+# _chars_per_token_for_model
+# ---------------------------------------------------------------------------
+
+class TestCharsPerTokenForModel:
+    def test_anthropic_claude_ratio(self):
+        assert _chars_per_token_for_model("claude-sonnet-4-6") == 3.5
+
+    def test_anthropic_opus_ratio(self):
+        assert _chars_per_token_for_model("claude-opus-4-6") == 3.5
+
+    def test_anthropic_haiku_ratio(self):
+        assert _chars_per_token_for_model("claude-haiku-3-5") == 3.5
+
+    def test_openai_gpt4o_ratio(self):
+        assert _chars_per_token_for_model("gpt-4o") == 4.0
+
+    def test_openai_gpt4o_mini_ratio(self):
+        assert _chars_per_token_for_model("gpt-4o-mini") == 4.0
+
+    def test_openai_o1_ratio(self):
+        assert _chars_per_token_for_model("o1") == 4.0
+
+    def test_ollama_llama_ratio(self):
+        assert _chars_per_token_for_model("llama3.1:8b") == 3.5
+
+    def test_ollama_qwen_ratio(self):
+        assert _chars_per_token_for_model("qwen2.5-coder:1.5b") == 3.5
+
+    def test_unknown_defaults_to_4(self):
+        assert _chars_per_token_for_model("totally-unknown-xyz") == 4.0
+
+
+# ---------------------------------------------------------------------------
+# count_tokens_for_model
+# ---------------------------------------------------------------------------
+
+class TestCountTokensForModel:
+    def test_empty_string(self):
+        assert count_tokens_for_model("", "claude-sonnet-4-6") == 0
+
+    def test_anthropic_denser_than_generic(self):
+        text = "a" * 700  # 700 chars
+        generic = count_tokens(text)        # 700 // 4 = 175
+        claude = count_tokens_for_model(text, "claude-sonnet-4-6")  # int(700/3.5)=200
+        assert claude > generic
+
+    def test_openai_same_as_generic_for_4x_ratio(self):
+        text = "a" * 400
+        generic = count_tokens(text)
+        gpt = count_tokens_for_model(text, "gpt-4o")
+        # Both use ratio 4.0
+        assert gpt == generic
+
+    def test_minimum_one_for_nonempty(self):
+        assert count_tokens_for_model("x", "claude-sonnet-4-6") == 1
+        assert count_tokens_for_model("x", "gpt-4o") == 1
+
+    def test_returns_int(self):
+        result = count_tokens_for_model("hello world", "claude-sonnet-4-6")
+        assert isinstance(result, int)
+
+    def test_calibration_anthropic(self):
+        # 140 chars / 3.5 = 40 tokens
+        text = "a" * 140
+        assert count_tokens_for_model(text, "claude-sonnet-4-6") == 40
+
+    def test_calibration_openai(self):
+        # 160 chars / 4.0 = 40 tokens
+        text = "a" * 160
+        assert count_tokens_for_model(text, "gpt-4o") == 40
 
 
 # ---------------------------------------------------------------------------
@@ -517,3 +592,142 @@ class TestAutoCompaction:
 
         assert len(compact_called_with) == 1
         assert compact_called_with[0][1] == int(128_000 * 0.80)
+
+
+# ---------------------------------------------------------------------------
+# Per-turn token tracking and real usage extraction
+# ---------------------------------------------------------------------------
+
+class TestPerTurnTokenTracking:
+    """Test that Engine records per-turn token data in _turn_token_history."""
+
+    async def test_single_turn_history_recorded(self):
+        from typing import AsyncGenerator
+        from duh.kernel.deps import Deps
+        from duh.kernel.engine import Engine, EngineConfig
+        from duh.kernel.messages import Message
+
+        async def fake_model(**kwargs) -> AsyncGenerator[dict, None]:
+            yield {"type": "assistant", "message": Message(
+                role="assistant", content="Hello there",
+            )}
+            yield {"type": "done", "stop_reason": "end_turn"}
+
+        deps = Deps(call_model=fake_model)
+        engine = Engine(deps=deps, config=EngineConfig(model="claude-sonnet-4-6"))
+
+        async for _ in engine.run("Hi"):
+            pass
+
+        assert len(engine._turn_token_history) == 1
+        inp, out = engine._turn_token_history[0]
+        assert inp > 0
+        assert out > 0
+
+    async def test_multi_turn_history_grows(self):
+        from typing import AsyncGenerator
+        from duh.kernel.deps import Deps
+        from duh.kernel.engine import Engine, EngineConfig
+        from duh.kernel.messages import Message
+
+        async def fake_model(**kwargs) -> AsyncGenerator[dict, None]:
+            yield {"type": "assistant", "message": Message(
+                role="assistant", content="Reply",
+            )}
+            yield {"type": "done", "stop_reason": "end_turn"}
+
+        deps = Deps(call_model=fake_model)
+        engine = Engine(deps=deps, config=EngineConfig(model="claude-sonnet-4-6"))
+
+        async for _ in engine.run("turn 1"):
+            pass
+        async for _ in engine.run("turn 2"):
+            pass
+        async for _ in engine.run("turn 3"):
+            pass
+
+        assert len(engine._turn_token_history) == 3
+
+    async def test_cost_summary_shows_per_turn_breakdown(self):
+        from typing import AsyncGenerator
+        from duh.kernel.deps import Deps
+        from duh.kernel.engine import Engine, EngineConfig
+        from duh.kernel.messages import Message
+
+        async def fake_model(**kwargs) -> AsyncGenerator[dict, None]:
+            yield {"type": "assistant", "message": Message(
+                role="assistant", content="Reply",
+            )}
+            yield {"type": "done", "stop_reason": "end_turn"}
+
+        deps = Deps(call_model=fake_model)
+        engine = Engine(deps=deps, config=EngineConfig(model="claude-sonnet-4-6"))
+
+        async for _ in engine.run("first"):
+            pass
+        async for _ in engine.run("second"):
+            pass
+
+        summary = engine.cost_summary()
+        assert "Per-turn breakdown:" in summary
+        assert "Turn  1:" in summary
+        assert "Turn  2:" in summary
+
+    async def test_real_usage_from_provider_metadata(self):
+        """When provider sets usage in message metadata, engine uses real token counts."""
+        from typing import AsyncGenerator
+        from duh.kernel.deps import Deps
+        from duh.kernel.engine import Engine, EngineConfig
+        from duh.kernel.messages import Message
+
+        REAL_INPUT = 1234
+        REAL_OUTPUT = 567
+
+        async def fake_model(**kwargs) -> AsyncGenerator[dict, None]:
+            yield {"type": "assistant", "message": Message(
+                role="assistant",
+                content="Short reply",  # very short, heuristic would give ~3 tokens
+                metadata={
+                    "usage": {
+                        "input_tokens": REAL_INPUT,
+                        "output_tokens": REAL_OUTPUT,
+                    }
+                },
+            )}
+            yield {"type": "done", "stop_reason": "end_turn"}
+
+        deps = Deps(call_model=fake_model)
+        engine = Engine(deps=deps, config=EngineConfig(model="claude-sonnet-4-6"))
+
+        async for _ in engine.run("test prompt"):
+            pass
+
+        # Output tokens should match the real provider data (567), not the heuristic (~3)
+        assert engine.total_output_tokens == REAL_OUTPUT
+
+        # Input tokens should be corrected to real data (1234)
+        assert engine.total_input_tokens == REAL_INPUT
+
+    async def test_heuristic_fallback_when_no_usage_metadata(self):
+        """Without provider usage data, heuristic-based counts are used."""
+        from typing import AsyncGenerator
+        from duh.kernel.deps import Deps
+        from duh.kernel.engine import Engine, EngineConfig
+        from duh.kernel.messages import Message
+
+        async def fake_model(**kwargs) -> AsyncGenerator[dict, None]:
+            yield {"type": "assistant", "message": Message(
+                role="assistant",
+                content="a" * 350,  # int(350/3.5) = 100 tokens for claude
+                metadata={},  # empty usage
+            )}
+            yield {"type": "done", "stop_reason": "end_turn"}
+
+        deps = Deps(call_model=fake_model)
+        engine = Engine(deps=deps, config=EngineConfig(model="claude-sonnet-4-6"))
+
+        async for _ in engine.run("test"):
+            pass
+
+        # Should use calibrated heuristic: 350 chars / 3.5 = 100 tokens
+        assert engine.total_output_tokens == 100

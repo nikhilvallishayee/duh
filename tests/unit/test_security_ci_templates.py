@@ -19,11 +19,16 @@ def test_every_pinned_action_has_40char_sha() -> None:
     sha_re = re.compile(r"^[0-9a-f]{40}$")
     for name, pin in PINNED_ACTIONS.items():
         assert isinstance(pin, PinnedAction), name
-        # TODO-SHA placeholders are explicitly allowed for zizmor only.
-        if pin.sha == "TODO":
-            assert name == "zizmorcore/zizmor-action", name
-            continue
         assert sha_re.match(pin.sha), f"{name}: {pin.sha!r} is not a 40-char SHA"
+
+
+def test_zizmor_action_is_pinned_to_real_sha() -> None:
+    """Regression: zizmor-action must have a real SHA, not a TODO placeholder."""
+    pin = PINNED_ACTIONS["zizmorcore/zizmor-action"]
+    assert pin.sha != "TODO", "zizmor-action SHA is still a TODO placeholder"
+    assert len(pin.sha) == 40, f"zizmor-action SHA is not 40 chars: {pin.sha!r}"
+    assert pin.sha == "b1d7e1fb5de872772f31590499237e7cce841e8e"
+    assert pin.version == "v0.5.3"
 
 
 def test_every_pinned_action_has_version_comment() -> None:
@@ -77,16 +82,11 @@ def test_generate_workflow_minimal_has_required_jobs() -> None:
 
 def test_generate_workflow_minimal_pins_all_actions_with_40char_sha() -> None:
     body = generate_workflow(template=WorkflowTemplate.MINIMAL)
-    # Every `uses:` line should be either pinned with a 40-char SHA or a
-    # flagged TODO placeholder (zizmor only). Reuse the regex from the pin
-    # test to assert strict SHA format on everything else.
+    # Every `uses:` line must be pinned with a 40-char SHA — no TODO placeholders.
     import re
     sha_re = re.compile(r"uses:\s+([^\s]+)@([^\s]+)")
     for match in sha_re.finditer(body):
         ref = match.group(2)
-        if ref == "TODO":
-            assert "zizmor" in match.group(1)
-            continue
         assert re.fullmatch(r"[0-9a-f]{40}", ref), f"unpinned: {match.group(0)}"
 
 

@@ -107,7 +107,14 @@ class SandboxLintScanner(InProcessScanner):
         *,
         changed_files: list[Path] | None,
     ) -> list[Finding]:
-        files = list(changed_files) if changed_files else list(target.rglob("*.py"))
+        _EXCLUDE = {".venv", "venv", ".tox", "node_modules", "__pycache__", ".git"}
+        if changed_files is not None:
+            files = list(changed_files)
+        else:
+            files = [
+                p for p in target.rglob("*.py")
+                if not any(part in _EXCLUDE for part in p.parts)
+            ]
         out: list[Finding] = []
         for path in files:
             try:

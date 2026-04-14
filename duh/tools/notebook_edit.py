@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +85,7 @@ class NotebookEditTool:
     """Edit, insert, or delete cells in Jupyter notebooks."""
 
     name = "NotebookEdit"
+    capabilities = Capability.FS_WRITE | Capability.EXEC
     description = (
         "Edit a cell in a Jupyter .ipynb notebook. "
         "Modify existing cells, insert new cells (cell_index=-1 to append), "

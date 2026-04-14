@@ -18,6 +18,7 @@ import sqlite3
 from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 # Maximum rows returned from a query before truncation.
 MAX_ROWS = 100
@@ -86,6 +87,7 @@ class DatabaseTool:
     """Execute read-only SQL queries against a SQLite database."""
 
     name = "Database"
+    capabilities = Capability.READ_PRIVATE
     description = (
         "Query a SQLite database. Supports three actions: "
         "'query' (read-only SELECT), 'schema' (table columns/types), "

@@ -15,6 +15,7 @@ import subprocess
 from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 _GH_MISSING_MSG = (
     "GitHub CLI (gh) is not installed or not on PATH.\n"
@@ -51,6 +52,7 @@ class GitHubTool:
     """Interact with GitHub pull requests via the gh CLI."""
 
     name = "GitHub"
+    capabilities = Capability.NETWORK_EGRESS
     description = (
         "Interact with GitHub pull requests using the gh CLI. "
         "Supports listing, creating, viewing, diffing, and checking PRs."

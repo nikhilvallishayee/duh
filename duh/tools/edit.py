@@ -9,6 +9,7 @@ from typing import Any
 
 from duh.kernel.git_context import _run_git
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 
 def _make_diff(old: str, new: str, path: str, *, context: int = 3) -> str:
@@ -32,6 +33,7 @@ class EditTool:
     """Perform an exact string replacement in a file."""
 
     name = "Edit"
+    capabilities = Capability.FS_WRITE
     description = (
         "Replace an exact occurrence of old_string with new_string in a file. "
         "Fails if old_string is not found or is not unique."

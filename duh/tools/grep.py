@@ -8,6 +8,7 @@ from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
 from duh.kernel.untrusted import TaintSource, UntrustedStr
+from duh.security.trifecta import Capability
 
 
 def _wrap_file_content(text: str) -> UntrustedStr:
@@ -21,6 +22,7 @@ class GrepTool:
     """Search file contents using a regular expression."""
 
     name = "Grep"
+    capabilities = Capability.READ_PRIVATE
     description = "Search for a regex pattern in files. Returns matching lines."
     input_schema: dict[str, Any] = {
         "type": "object",

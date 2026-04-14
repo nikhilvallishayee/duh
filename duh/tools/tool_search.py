@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 
 # ---------------------------------------------------------------------------
@@ -55,6 +56,7 @@ class ToolSearchTool:
     """
 
     name = "ToolSearch"
+    capabilities = Capability.NONE
     description = (
         "Search for available tools by keyword, or select specific tools "
         "by name to load their full schema. Use this to discover deferred "

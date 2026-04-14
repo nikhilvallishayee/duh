@@ -7,6 +7,7 @@ from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
 from duh.kernel.untrusted import TaintSource, UntrustedStr
+from duh.security.trifecta import Capability
 
 
 def _wrap_file_content(text: str) -> UntrustedStr:
@@ -20,6 +21,7 @@ class GlobTool:
     """Find files matching a glob pattern."""
 
     name = "Glob"
+    capabilities = Capability.READ_PRIVATE
     description = "Find files by glob pattern. Returns matching file paths."
     input_schema: dict[str, Any] = {
         "type": "object",

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 _WORKTREE_BASE = "/tmp/duh-worktrees"
 
@@ -58,6 +59,7 @@ class EnterWorktreeTool:
     """Create a git worktree and switch the engine's working directory into it."""
 
     name = "EnterWorktree"
+    capabilities = Capability.FS_WRITE | Capability.EXEC
     description = (
         "Create a new git worktree with an isolated branch and switch into it. "
         "Stores worktree state in context metadata so other tools are aware."
@@ -155,6 +157,7 @@ class ExitWorktreeTool:
     """Leave a git worktree and restore the original working directory."""
 
     name = "ExitWorktree"
+    capabilities = Capability.FS_WRITE | Capability.EXEC
     description = (
         "Restore the original working directory and optionally remove the worktree. "
         "Only works when inside a worktree created by EnterWorktree."

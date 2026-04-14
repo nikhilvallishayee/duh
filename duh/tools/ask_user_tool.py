@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 AskFn = Callable[[str], Awaitable[str]]
 
@@ -23,6 +24,7 @@ class AskUserQuestionTool:
     """Blocks execution and prompts the user for a response."""
 
     name = "AskUserQuestion"
+    capabilities = Capability.NONE
     description = (
         "Ask the user a question and wait for their response. "
         "Use when you need clarification or a decision from the user."

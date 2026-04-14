@@ -12,6 +12,7 @@ from typing import Any
 
 from duh.kernel.tool import MAX_TOOL_OUTPUT, ToolContext, ToolResult
 from duh.kernel.untrusted import TaintSource, UntrustedStr
+from duh.security.trifecta import Capability
 
 
 def _wrap_file_content(text: str) -> UntrustedStr:
@@ -30,6 +31,7 @@ class ReadTool:
     """Read a file and return its contents with line numbers."""
 
     name = "Read"
+    capabilities = Capability.READ_PRIVATE
     description = "Read a file from disk. Returns contents prefixed with line numbers."
     input_schema: dict[str, Any] = {
         "type": "object",

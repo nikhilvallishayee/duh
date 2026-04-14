@@ -8,6 +8,7 @@ from typing import Any
 
 from duh.kernel.git_context import _run_git
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 # Maximum content size for writing (50 MB).
 MAX_FILE_WRITE_BYTES = 50 * 1024 * 1024  # 50 MB
@@ -17,6 +18,7 @@ class WriteTool:
     """Write content to a file. Creates parent directories if they don't exist."""
 
     name = "Write"
+    capabilities = Capability.FS_WRITE
     description = "Write content to a file. Creates parent directories as needed."
     input_schema: dict[str, Any] = {
         "type": "object",

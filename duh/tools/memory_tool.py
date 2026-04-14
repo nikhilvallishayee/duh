@@ -11,12 +11,14 @@ from __future__ import annotations
 from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 
 class MemoryStoreTool:
     """Save a fact about the codebase for future sessions."""
 
     name = "MemoryStore"
+    capabilities = Capability.NONE
     description = (
         "Save a key learning or fact about the codebase. "
         "Persists across sessions so future conversations start informed."
@@ -81,6 +83,7 @@ class MemoryRecallTool:
     """Search saved facts about the codebase by keyword."""
 
     name = "MemoryRecall"
+    capabilities = Capability.READ_PRIVATE
     description = (
         "Search previously saved facts and learnings about the codebase. "
         "Use to recall patterns, decisions, or context from past sessions."

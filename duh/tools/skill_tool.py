@@ -13,6 +13,7 @@ from typing import Any
 
 from duh.kernel.skill import SkillDef
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 
 class SkillTool:
@@ -26,6 +27,7 @@ class SkillTool:
     """
 
     name = "Skill"
+    capabilities = Capability.EXEC
     description = (
         "Invoke a skill by name. Skills are reusable prompt templates "
         "for common workflows (e.g., commit, review-pr). Use the skill "

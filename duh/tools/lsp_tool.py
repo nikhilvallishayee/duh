@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 
 # ---------------------------------------------------------------------------
@@ -327,6 +328,7 @@ class LSPTool:
     """
 
     name = "LSP"
+    capabilities = Capability.READ_PRIVATE
     description = (
         "Query language server for go-to-definition, find-references, "
         "hover info, and symbol listing.  Uses static analysis (ast/regex) "

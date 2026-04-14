@@ -2,9 +2,11 @@
 from __future__ import annotations
 from typing import Any
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 class AgentTool:
     name = "Agent"
+    capabilities = Capability.EXEC
     description = "Spawn a subagent to handle a task independently. Use for research, coding, or planning subtasks."
     input_schema = {
         "type": "object",

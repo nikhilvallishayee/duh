@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 _STUB_MESSAGE = (
     "WebSearch requires configuration. "
@@ -23,6 +24,7 @@ class WebSearchTool:
     """
 
     name = "WebSearch"
+    capabilities = Capability.READ_UNTRUSTED | Capability.NETWORK_EGRESS
     description = "Search the web. Requires SERPER_API_KEY or TAVILY_API_KEY."
     input_schema: dict[str, Any] = {
         "type": "object",

@@ -11,12 +11,14 @@ from typing import Any
 
 from duh.kernel.tasks import TaskManager, VALID_STATUSES
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 
 class TaskTool:
     """In-session task/todo management."""
 
     name = "Task"
+    capabilities = Capability.EXEC
     description = (
         "Create, update, or list tasks. Use this to track work during "
         "a session as a visible checklist."

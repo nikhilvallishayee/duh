@@ -13,6 +13,7 @@ import subprocess
 from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 _DEFAULT_TIMEOUT = 120  # seconds
 _TAIL_LINES = 50
@@ -43,6 +44,7 @@ class DockerTool:
     """Manage Docker containers via the ``docker`` CLI."""
 
     name = "Docker"
+    capabilities = Capability.EXEC | Capability.NETWORK_EGRESS
     description = (
         "Run Docker CLI commands: build, run, ps, logs, exec, images."
     )

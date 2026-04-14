@@ -8,6 +8,7 @@ from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
 from duh.tools.edit import _make_diff
+from duh.security.trifecta import Capability
 
 
 class MultiEditTool:
@@ -19,6 +20,7 @@ class MultiEditTool:
     """
 
     name = "MultiEdit"
+    capabilities = Capability.FS_WRITE
     description = (
         "Apply multiple edits to one or more files in a single call. "
         "Each edit replaces an exact occurrence of old_string with new_string. "

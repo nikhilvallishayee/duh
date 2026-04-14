@@ -15,6 +15,7 @@ import logging
 from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,8 @@ class MCPToolWrapper:
         description: From the MCP tool's description.
         input_schema: From the MCP tool's JSON Schema.
     """
+
+    capabilities = Capability.READ_UNTRUSTED | Capability.NETWORK_EGRESS
 
     def __init__(self, *, info: Any, executor: Any) -> None:
         """Create a wrapper for one MCP tool.

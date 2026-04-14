@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 _MAX_BODY_BYTES = 10_000  # 10 KB — truncate response bodies beyond this
 _DEFAULT_TIMEOUT = 30  # seconds
@@ -62,6 +63,7 @@ class HTTPTool:
     """Send an HTTP request and return the response."""
 
     name = "HTTP"
+    capabilities = Capability.NETWORK_EGRESS
     description = (
         "Send an HTTP request (GET/POST/PUT/DELETE/PATCH) and return the "
         "status code, key headers, and response body.  Useful for testing "

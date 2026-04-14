@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 _VALID_STATUSES = frozenset({"pending", "in_progress", "done", "blocked", "cancelled"})
 
@@ -35,6 +36,7 @@ class TodoWriteTool:
     """Structured checklist management tool."""
 
     name = "TodoWrite"
+    capabilities = Capability.NONE
     description = (
         "Create or update a structured todo checklist. "
         "Each todo has an id, text, and status "

@@ -23,6 +23,7 @@ from typing import Any
 from duh.kernel.tool import MAX_TOOL_OUTPUT, TOOL_TIMEOUTS, ToolContext, ToolResult
 from duh.tools.bash_security import classify_command
 from duh.adapters.sandbox.policy import SandboxCommand, detect_sandbox_type
+from duh.security.trifecta import Capability
 
 _DEFAULT_TIMEOUT = TOOL_TIMEOUTS.get("Bash", 300)  # from central config
 
@@ -80,6 +81,7 @@ class BashTool:
     """Execute a shell command and return its output."""
 
     name = "Bash"
+    capabilities = Capability.EXEC | Capability.NETWORK_EGRESS | Capability.FS_WRITE
     description = "Execute a bash command and return stdout/stderr."
     input_schema: dict[str, Any] = {
         "type": "object",

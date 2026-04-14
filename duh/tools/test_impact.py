@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from duh.kernel.tool import ToolContext, ToolResult
+from duh.security.trifecta import Capability
 
 
 def _module_names_from_path(filepath: str) -> list[str]:
@@ -122,6 +123,7 @@ class TestImpactTool:
     """Analyze which test files are affected by changed source files."""
 
     name = "TestImpact"
+    capabilities = Capability.READ_PRIVATE
     description = (
         "Analyze which test files are likely affected by changed source files. "
         "Auto-detects changes from git diff or accepts an explicit file list. "

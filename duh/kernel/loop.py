@@ -220,6 +220,23 @@ async def query(
                            "output": result.content, "is_error": True}
                     continue
 
+            # Check confirmation gate (7.2) — block tainted dangerous tools
+            if deps.confirm_gate:
+                gate_decision = deps.confirm_gate(
+                    tool_name=tool_name,
+                    tool_input=tool_input,
+                )
+                if gate_decision is not None and gate_decision.action == "block":
+                    result = ToolResultBlock(
+                        tool_use_id=tool_id,
+                        content=f"Tool blocked: {gate_decision.reason}",
+                        is_error=True,
+                    )
+                    tool_results.append(result)
+                    yield {"type": "tool_result", "tool_use_id": tool_id,
+                           "output": result.content, "is_error": True}
+                    continue
+
             # Execute
             if deps.run_tool:
                 try:

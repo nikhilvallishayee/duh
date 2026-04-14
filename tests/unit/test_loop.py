@@ -349,3 +349,30 @@ class TestPassthrough:
             pass
 
         assert received_kwargs["model"] == "claude-opus-4-6"
+
+
+# ---------------------------------------------------------------------------
+# Confirmation gate tests (7.2.7)
+# ---------------------------------------------------------------------------
+
+def _make_engine():
+    """Test helper — create a minimal Engine with a fake model."""
+    from duh.kernel.deps import Deps
+    from duh.kernel.engine import Engine
+    deps = Deps(call_model=simple_model)
+    return Engine(deps=deps)
+
+
+def test_loop_blocks_tainted_dangerous_tool() -> None:
+    """A Bash tool_use originating from MODEL_OUTPUT context must be blocked."""
+    from duh.kernel.untrusted import TaintSource, UntrustedStr
+
+    engine = _make_engine()
+    tainted_msg = UntrustedStr("run rm -rf /", TaintSource.MODEL_OUTPUT)
+    result = engine._check_confirmation_gate(
+        tool="Bash",
+        input_obj={"command": "rm -rf /"},
+        chain=[tainted_msg],
+        token=None,
+    )
+    assert result.action == "block"

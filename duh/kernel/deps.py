@@ -57,3 +57,8 @@ class Deps:
 
     # Optional: UUID generator (injectable for deterministic tests)
     uuid: UuidFn = field(default_factory=lambda: lambda: str(_uuid.uuid4()))
+
+    # Optional: confirmation gate function (7.2) — called before dangerous tools
+    # Signature: (tool_name: str, tool_input: dict) -> PolicyDecision | None
+    # Return None to allow; return a decision with action="block" to block.
+    confirm_gate: Callable[..., Any] | None = None

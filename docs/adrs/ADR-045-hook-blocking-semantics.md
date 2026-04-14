@@ -1,7 +1,7 @@
 # ADR-045: Hook Blocking Semantics
 
-**Status**: Proposed  
-**Date**: 2026-04-11  
+**Status:** Accepted — implemented 2026-04-14
+**Date**: 2026-04-11
 **Depends on**: ADR-013 (Hook System), ADR-044 (Hook Event Emission)
 
 ## Context
@@ -64,3 +64,10 @@ This lets hook scripts make decisions without parsing stdin JSON.
 ### Risks
 - A slow blocking hook could stall the agent loop. Mitigated by the existing per-hook timeout (default 30s).
 - Malicious hooks could block all execution. Mitigated by hooks being user-configured (you only block yourself).
+
+## Implementation Notes
+
+- `duh/hooks.py` — `HookResponse` dataclass, `HookResponse.from_json()`,
+  `execute_hooks_with_blocking()`, glob matcher via `fnmatch.fnmatch()`.
+- Shell hooks receive `TOOL_NAME`, `TOOL_INPUT`, and `SESSION_ID` environment
+  variables alongside the JSON on stdin.

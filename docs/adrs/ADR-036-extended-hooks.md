@@ -1,9 +1,13 @@
 # ADR-036: Extended Hook Events
 
-**Status**: Accepted  
-**Date**: 2026-04-08  
-**Implemented**: 2026-04-08  
-**Note**: 22 new HookEvent enum members added to hooks.py. However, hook emit calls not wired into engine.py or repl.py for most new events (PERMISSION_REQUEST, PRE_COMPACT, POST_COMPACT, USER_PROMPT_SUBMIT, STATUS_LINE, etc.).
+**Status:** Accepted — partial (enum members added to `duh/hooks.py`; the high-value
+events are now emitted — `PERMISSION_REQUEST` / `PERMISSION_DENIED` /
+`POST_TOOL_USE_FAILURE` from `loop.py`, `PRE_COMPACT` / `POST_COMPACT` from `engine.py`,
+and `USER_PROMPT_SUBMIT` / `STATUS_LINE` / `SESSION_START` / `SESSION_END` from
+`repl.py` via ADR-044. Several rarer events in the table below — e.g. `MODEL_SWITCH`,
+`TOOL_TIMEOUT`, `IDLE_TIMEOUT`, IDE integration events — are defined in the enum but
+have no emit sites yet.)
+**Date**: 2026-04-08
 
 ## Context
 
@@ -91,3 +95,15 @@ All new events use the same `HookDispatcher.emit(event, payload)` mechanism from
 
 ### Risks
 - Hook payload shape becomes an implicit API contract — breaking changes to payloads affect plugins. Mitigated by versioning payloads.
+
+## Implementation Notes
+
+- `duh/hooks.py` — `HookEvent` enum now carries the core six (ADR-013) plus 22 extended
+  events (PERMISSION_REQUEST, PRE_COMPACT, POST_COMPACT, USER_PROMPT_SUBMIT, STATUS_LINE,
+  CWD_CHANGED, POST_TOOL_USE_FAILURE, SUBAGENT_START/STOP, TASK_CREATED/COMPLETED,
+  ELICITATION, ELICITATION_RESULT, FILE_CHANGED, FILE_SUGGESTION, WORKTREE_CREATE/REMOVE,
+  CONFIG_CHANGE, INSTRUCTIONS_LOADED, SETUP, TEAMMATE_IDLE, etc.).
+- Emit sites were added by ADR-044 in `duh/kernel/loop.py`, `duh/kernel/engine.py`, and
+  `duh/cli/repl.py`.
+
+Related: ADR-013 (hook system), ADR-044 (emission), ADR-045 (blocking semantics).

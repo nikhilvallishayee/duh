@@ -1,6 +1,6 @@
 # ADR-017: Skills System
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-06
 
 ## Context
@@ -145,3 +145,10 @@ CLI startup
 - The model discovers skills via the system prompt, invokes via the Skill tool
 - No new dependencies required (frontmatter parsing is minimal YAML subset)
 - Future: skill directories, skill includes, skill composition
+
+## Implementation Notes
+
+- `duh/kernel/skill.py` — `SkillDef`, frontmatter parser, `load_all_skills()`.
+  Supports both `.duh/skills/` and `.claude/skills/` plus directory layout
+  (`skill-name/SKILL.md`).
+- `duh/tools/skill_tool.py` — `SkillTool` for model-triggered invocation.

@@ -1,9 +1,9 @@
 # ADR-029: Large File Safety Caps
 
-**Status**: Accepted  
-**Date**: 2026-04-08  
-**Implemented**: 2026-04-08  
-**Note**: Session state cap (MAX_SESSION_BYTES) defined but not enforced during save.
+**Status:** Accepted — partial (Read/Write 50 MB caps enforced; session-state cap
+`MAX_SESSION_BYTES` (64 MB) is declared in `duh/adapters/file_store.py` but still not
+checked inside `FileStore.save()` — tracked as a known gap)
+**Date**: 2026-04-08
 
 ## Context
 
@@ -56,3 +56,14 @@ Additionally, files that appear to be binary (null bytes in first 8KB) are rejec
 
 ### Risks
 - Session cap interacts with compaction — needs integration testing with ADR-035
+
+## Implementation Notes
+
+- Read cap: `duh/tools/read.py` (`MAX_FILE_READ_BYTES = 50 * 1024 * 1024`). Binary
+  detection rejects files with null bytes in the first 8 KB.
+- Write cap: `duh/tools/write.py` (`MAX_FILE_WRITE_BYTES = 50 * 1024 * 1024`).
+- Session cap: `duh/adapters/file_store.py` (`MAX_SESSION_BYTES = 64 * 1024 * 1024`).
+  Constant is defined but `FileStore.save()` does not consult it today — see status
+  note above.
+
+Related: ADR-035 (compaction pipeline that should be triggered before truncation).

@@ -1,9 +1,10 @@
 # ADR-030: Graceful Shutdown
 
-**Status**: Accepted  
-**Date**: 2026-04-08  
-**Implemented**: 2026-04-08  
-**Note**: Second-signal force exit and SIGQUIT stack dump not implemented.
+**Status:** Accepted — partial (core SIGINT/SIGTERM handler with timeout-bounded
+cleanup is implemented; second-signal force exit, SIGQUIT stack dump, and LIFO
+callback ordering are not — the current handler runs callbacks in FIFO order with a
+default timeout of 1.5 s rather than the 5 s described below)
+**Date**: 2026-04-08
 
 ## Context
 
@@ -77,3 +78,12 @@ Default 5 seconds total. Each callback gets the remaining time, not the full tim
 ### Risks
 - Cleanup callbacks that block longer than expected delay shutdown — mitigated by per-callback timeout
 - Registration order bugs could cause saves before connections close — mitigated by LIFO ordering
+
+## Implementation Notes
+
+- `duh/kernel/signals.py` — `ShutdownHandler` with `on_shutdown()`, `run_cleanup()`, and
+  `install()` registering SIGINT/SIGTERM signal handlers on the event loop.
+- Default timeout: `DEFAULT_SHUTDOWN_TIMEOUT = 1.5` (matches Claude Code TS session-end
+  budget, differs from the 5.0 s proposed above).
+- Callbacks execute in registration order (FIFO). LIFO ordering, second-signal force
+  exit, and SIGQUIT stack dump remain TODO.

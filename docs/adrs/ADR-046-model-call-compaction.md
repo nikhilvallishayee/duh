@@ -1,7 +1,7 @@
 # ADR-046: Model-Call Compaction
 
-**Status**: Proposed  
-**Date**: 2026-04-11  
+**Status:** Accepted — implemented 2026-04-14
+**Date**: 2026-04-11
 **Depends on**: ADR-035 (Advanced Compaction)
 
 ## Context
@@ -48,3 +48,9 @@ A `compactor_strategy` config option controls which compactor is used:
 
 ### Risks
 - Recursive prompt-too-long: the messages being summarized might themselves be too large for the model. Mitigated by truncating individual messages to 500 chars before sending to the summarizer, and capping total input to 10K chars.
+
+## Implementation Notes
+
+- `duh/adapters/model_compactor.py` — `ModelCompactor(call_model=...)` implements the
+  `CompactFn` signature, partitions system + tail-window + older messages, calls the
+  model for summarization, and falls back to `SimpleCompactor` on failure.

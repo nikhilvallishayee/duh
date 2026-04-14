@@ -1,8 +1,7 @@
 # ADR-040: Multi-Transport MCP
 
-**Status**: Accepted  
-**Date**: 2026-04-08  
-**Implemented**: 2026-04-08
+**Status:** Accepted — implemented 2026-04-14
+**Date**: 2026-04-08
 
 ## Context
 
@@ -98,3 +97,12 @@ SSE transport follows the MCP specification:
 ### Risks
 - Remote MCP servers introduce a data exfiltration path — mitigated by sandboxing (ADR-037) network policy and explicit user configuration
 - SSE reconnection storms under poor network — mitigated by exponential backoff in ADR-032
+
+## Implementation Notes
+
+- `duh/adapters/mcp_transports.py` — `StdioTransport`, `SSETransport`, `HTTPTransport`,
+  `WebSocketTransport` behind a common `MCPTransport` protocol.
+- `duh/adapters/mcp_executor.py` — transport factory that dispatches based on the
+  configured transport (`stdio` / `sse` / `http` / `websocket`).
+
+Related: ADR-010 (MCP integration), ADR-032 (session management).

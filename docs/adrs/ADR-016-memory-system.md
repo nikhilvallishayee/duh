@@ -1,6 +1,6 @@
 # ADR-016: Memory System
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-06
 
 ## Context
@@ -145,3 +145,10 @@ CLI startup
 - The port/adapter split allows swapping storage backends later (e.g., SQLite)
 - Memory types provide structure without over-constraining content
 - Future: a background agent can auto-extract memory entries from conversations
+
+## Implementation Notes
+
+- `duh/ports/memory.py` — `MemoryStore` protocol and `MemoryHeader`.
+- `duh/adapters/memory_store.py` — `FileMemoryStore` implementation.
+- `duh/kernel/memory.py` — `build_memory_prompt()` and helpers.
+- `duh/tools/memory_tool.py` — user-facing Memory tool (recall/store).

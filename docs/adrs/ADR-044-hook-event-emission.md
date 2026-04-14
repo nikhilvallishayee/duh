@@ -1,7 +1,7 @@
 # ADR-044: Emit Hook Events Across Engine, Loop, and REPL
 
-**Status**: Proposed  
-**Date**: 2026-04-11  
+**Status:** Accepted — implemented 2026-04-14
+**Date**: 2026-04-11
 **Depends on**: ADR-013 (Hook System), ADR-036 (Extended Hook Events)
 
 ## Context
@@ -51,3 +51,15 @@ All emit calls are guarded with `if deps.hook_registry:` so they are no-ops when
 
 ### Risks
 - Slow shell hooks could delay the query loop. Mitigated by the existing per-hook timeout (default 30s) and error isolation.
+
+## Implementation Notes
+
+- `Deps.hook_registry` field added in `duh/kernel/deps.py`.
+- `duh/kernel/loop.py` emits `PERMISSION_REQUEST`, `PERMISSION_DENIED`, and
+  `POST_TOOL_USE_FAILURE`.
+- `duh/kernel/engine.py` emits `PRE_COMPACT` and `POST_COMPACT` around the PTL
+  retry compaction path.
+- `duh/cli/repl.py` emits `USER_PROMPT_SUBMIT`, `STATUS_LINE`, `SESSION_START`,
+  `SESSION_END`.
+- All emit sites are guarded by `if deps.hook_registry is not None:` so the cost is
+  near-zero when no hooks are configured.

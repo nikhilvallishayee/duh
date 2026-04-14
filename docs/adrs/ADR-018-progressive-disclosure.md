@@ -1,6 +1,6 @@
 # ADR-018: Progressive Tool Disclosure
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-06
 
 ## Context
@@ -130,3 +130,9 @@ CLI startup
 - No new dependencies required
 - The pattern scales to hundreds of tools without prompt bloat
 - Future: tool categories, usage-based preloading, tool recommendations
+
+## Implementation Notes
+
+- `duh/tools/tool_search.py` — `ToolSearchTool`, `DeferredTool`, search + select modes.
+- Registration of deferred tools (MCP, plugin) is handled in `duh/tools/registry.py`
+  and `duh/plugins.py`.

@@ -1,9 +1,9 @@
 # ADR-032: MCP Session Management
 
-**Status**: Accepted  
-**Date**: 2026-04-08  
-**Implemented**: 2026-04-08  
-**Note**: Circuit breaker reconnects but does not mark servers as degraded or remove tools from schema.
+**Status:** Accepted — partial (session-expiry detection and single-retry reconnect
+work; consecutive-failure circuit breaker does not mark servers as `degraded` or remove
+their tools from the active schema)
+**Date**: 2026-04-08
 
 ## Context
 
@@ -75,3 +75,11 @@ Reconnection attempts use a simple backoff: 0s, 1s, 2s. This prevents hammering 
 
 ### Risks
 - Some MCP servers may have side effects on re-initialization — mitigated by only reconnecting on confirmed session errors, not on arbitrary failures
+
+## Implementation Notes
+
+- `duh/adapters/mcp_executor.py` — session-expiry detection + auto-reconnect + single
+  retry per failed call. Degraded-state bookkeeping (removing tools from the active
+  schema after 3 consecutive failures) is not implemented.
+
+Related: ADR-010 (MCP integration), ADR-040 (multi-transport).

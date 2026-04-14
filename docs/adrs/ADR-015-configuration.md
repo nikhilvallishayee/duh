@@ -1,6 +1,6 @@
 # ADR-015: Configuration
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-06
 
 ## Context
@@ -233,3 +233,9 @@ CLI startup
 - No admin/policy layer simplifies the code significantly
 - Pydantic validation catches config errors early with clear messages
 - Future: add `@include` directives, local settings, managed settings when needed
+
+## Implementation Notes
+
+- `duh/config.py` — `Config` dataclass, precedence chain, env-var overrides.
+- Instruction loading (`DUH.md` / `AGENTS.md` / `.duh/rules/*.md`) is wired in
+  `duh/cli/runner.py` and built into the system prompt.

@@ -1,9 +1,13 @@
 # ADR-042: Remote Bridge
 
-**Status**: Accepted  
-**Date**: 2026-04-08  
-**Implemented**: 2026-04-08  
-**Note**: Default port is 8765 (implementation) vs 9120 (ADR). Rate limiting (10 msg/s) and max clients (5) not implemented. Token generation on startup not automated (must be passed manually).
+**Status:** Accepted — partial (`BridgeServer` with WebSocket relay, bearer-token
+auth, session registration, and prompt injection is implemented in
+`duh/bridge/server.py`. Differences from this ADR on main today: default port is
+**8765** (not 9120); the token must be supplied via config/CLI — not auto-generated
+on start; rate limiting (10 msg/s) and `--remote-bridge-public` warning flag are
+unimplemented. Per-message size cap is 1 MB via `websockets.serve(max_size=…)`;
+explicit max-client cap (5) is not yet enforced.)
+**Date**: 2026-04-08
 
 ## Context
 
@@ -113,3 +117,13 @@ The bridge is off by default. Enable via:
 - Accidental binding to `0.0.0.0` exposes the session to the network — mitigated by requiring explicit flag and printing a warning
 - Injected input from remote clients could bypass approval gates — mitigated by routing all input through the same engine path that handles local input
 - Future OAuth/TLS needs may require significant rework — mitigated by the simple bridge interface that can be swapped
+
+## Implementation Notes
+
+- `duh/bridge/protocol.py` — message dataclasses (`ConnectMessage`, `PromptMessage`,
+  `EventMessage`, `DisconnectMessage`, `ErrorMessage`), `encode_message` /
+  `decode_message`, and `validate_token`.
+- `duh/bridge/session_relay.py` — `SessionRelay` mapping session IDs to websockets.
+- `duh/bridge/server.py` — `BridgeServer(host="localhost", port=8765, token=..., engine_factory=...)`.
+- CLI entry: `duh bridge serve` in `duh/cli/parser.py` + `duh/cli/main.py`.
+- Optional dep: `websockets` (see `duh/_optional_deps.py`).

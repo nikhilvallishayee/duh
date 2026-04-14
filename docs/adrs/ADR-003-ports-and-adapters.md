@@ -1,6 +1,6 @@
 # ADR-003: Ports and Adapters
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-07
 
 ## Context
@@ -113,3 +113,12 @@ class AnthropicProvider:
 - Each adapter can be developed, tested, and released independently
 - Provider-specific quirks (tool calling format, thinking tokens, beta headers) are isolated in adapters
 - Users choose their provider at runtime, not compile time
+
+## Implementation Notes
+
+Ports live in `duh/ports/` (provider, executor, approver, store, context, memory, renderer).
+Adapters live in `duh/adapters/` and cover: Anthropic, OpenAI, OpenAI ChatGPT/Codex (ADR-052),
+Ollama, StubProvider, NativeExecutor, MCPExecutor, FileStore, FileMemoryStore,
+SimpleCompactor, ModelCompactor (ADR-046), AutoApprover, InteractiveApprover, RuleApprover,
+TieredApprover (ADR-038), structured logging, and rendering. The kernel never imports any
+provider SDK.

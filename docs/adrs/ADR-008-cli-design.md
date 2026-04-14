@@ -1,6 +1,6 @@
 # ADR-008: CLI Design
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-07
 
 ## Context
@@ -126,3 +126,13 @@ _ERROR_HINTS = {
 - Provider auto-detection works out of the box (set key → it works)
 - Debug mode gives full visibility without cluttering normal output
 - Doctor subcommand provides instant diagnostics
+
+## Implementation Notes
+
+- Argument parsing: `duh/cli/parser.py`
+- Print-mode runner: `duh/cli/runner.py`
+- Interactive REPL: `duh/cli/repl.py` (ADR-024)
+- SDK / NDJSON protocol: `duh/cli/sdk_runner.py` + `duh/cli/ndjson.py` (ADR-021)
+- Doctor subcommand: `duh/cli/doctor.py`
+- Entry point: `duh/cli/main.py` (plus `duh/__main__.py`)
+- Connection pre-warming: `duh/cli/prewarm.py` (ADR-050)

@@ -1,6 +1,6 @@
 # ADR-004: Tool Protocol
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-07
 
 ## Context
@@ -75,3 +75,11 @@ class ToolContext:
 - Safety classification is declarative (is_read_only, is_destructive)
 - UI rendering, telemetry, search are NOT the tool's responsibility
 - MCP tools can be wrapped as Tool implementations trivially
+
+## Implementation Notes
+
+- Tool protocol: `duh/kernel/tool.py` (`Tool`, `ToolResult`, `ToolContext`, `TOOL_TIMEOUTS`)
+- Tool registry: `duh/tools/registry.py`
+- Concrete tools in `duh/tools/`: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, WebFetch,
+  WebSearch, Agent, Skill, ToolSearch, Task, Todo, AskUser (ADR-048), Memory, GitHub,
+  Docker, HTTP, Database, LSP, Notebook, Worktree, TestImpact.

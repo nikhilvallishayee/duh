@@ -1,6 +1,6 @@
 # ADR-012: Multi-Agent
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-06
 
 ## Context
@@ -121,3 +121,9 @@ Parent Engine
 - The model decides when to spawn agents (it calls the tool)
 - Agent execution is synchronous from the parent's perspective (the tool call blocks until done)
 - Background agents are future work (asyncio.create_task wrapping the engine run)
+
+## Implementation Notes
+
+- `duh/tools/agent_tool.py` — `AgentTool` that spawns a child `Engine`.
+- `duh/tools/worktree.py` — git-worktree isolation helpers.
+- `duh/kernel/job_queue.py` — supports background jobs driven by `/jobs` REPL command.

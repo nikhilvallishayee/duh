@@ -1,9 +1,12 @@
 # ADR-038: Three-Tier Approval Model
 
-**Status**: Accepted  
-**Date**: 2026-04-08  
-**Implemented**: 2026-04-08  
-**Note**: Git safety check (blocking force push, hard reset) not implemented as a separate shared check across tiers. Mode names differ: ADR says Suggest/AutoEdit/FullAuto; impl uses SUGGEST/AUTO_EDIT/FULL_AUTO.
+**Status:** Accepted — partial (`TieredApprover` with `SUGGEST` / `AUTO_EDIT` /
+`FULL_AUTO` tiers is implemented and wired through `--approval-mode` in `repl.py`.
+Mode names use underscored enum values rather than the CamelCase names in this ADR.
+The shared git safety check (blocking `git push --force` / `git reset --hard` across
+all tiers) is not implemented — dangerous-git detection currently lives only in the
+bash security classifier, not the approver.)
+**Date**: 2026-04-08
 
 ## Context
 
@@ -89,3 +92,15 @@ Set via CLI flag (`--approval suggest|autoedit|fullauto`) or config file. Can be
 ### Risks
 - FullAuto with network disabled may break legitimate workflows (npm install, git push) — users must explicitly enable network for FullAuto if needed
 - AutoEdit's "within project" check depends on correct project root detection
+
+## Implementation Notes
+
+- `duh/adapters/approvers.py` — `TieredApprover` + `ApprovalMode` enum
+  (`SUGGEST` / `AUTO_EDIT` / `FULL_AUTO`).
+- `TieredApprover.__init__` emits a `UserWarning` if `AUTO_EDIT` or `FULL_AUTO` is used
+  outside a git repository.
+- `--approval-mode` CLI flag: `duh/cli/parser.py`; config field: `duh/config.py`;
+  wired into `duh/cli/repl.py` and `duh/cli/runner.py`.
+- The separate git safety check ("block force push / hard reset across all tiers") is
+  still a TODO — dangerous git commands are caught today via
+  `duh/tools/bash_security.py` only.

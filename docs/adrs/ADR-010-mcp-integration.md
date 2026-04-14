@@ -1,6 +1,6 @@
 # ADR-010: MCP Integration
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-06
 
 ## Context
@@ -108,3 +108,13 @@ Kernel
 - The kernel never knows or cares about MCP internals
 - Optional dependency: `pip install duh-cli[mcp]` for MCP support
 - Future transports (SSE, HTTP) are additive, not breaking
+
+## Implementation Notes
+
+- `duh/adapters/mcp_executor.py` implements the `ToolExecutor` port; connects to stdio
+  servers, discovers tools, and dispatches `run()` calls. Session expiry detection and
+  single-retry reconnect are implemented (ADR-032).
+- `duh/adapters/mcp_transports.py` adds SSE, HTTP, and WebSocket transports (ADR-040).
+- `duh/tools/mcp_tool.py` wraps discovered MCP tools as `Tool` protocol implementations.
+
+See ADR-032 (session management) and ADR-040 (multi-transport).

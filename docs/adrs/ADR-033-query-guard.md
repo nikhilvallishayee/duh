@@ -1,9 +1,9 @@
 # ADR-033: QueryGuard State Machine
 
-**Status**: Accepted  
-**Date**: 2026-04-08  
-**Implemented**: 2026-04-08  
-**Note**: QueryGuard implemented but not wired into the REPL or engine loop. cancel_on_new option not implemented.
+**Status:** Accepted — partial (QueryGuard FSM implemented and wired into the REPL
+loop by ADR-043; wiring is synchronous and does not use `asyncio.Lock`, and the
+`cancel_on_new` option is not implemented)
+**Date**: 2026-04-08
 
 ## Context
 
@@ -89,3 +89,13 @@ When a new query arrives while one is running, the guard can optionally cancel t
 ### Risks
 - Lock contention under rapid input — mitigated by the lock only being held for state transitions, never during provider calls
 - Abort without cleanup could leak provider connections — mitigated by provider adapter's own connection management
+
+## Implementation Notes
+
+- `duh/kernel/query_guard.py` — `QueryGuard` with `reserve()` / `try_start()` /
+  `end()` / `force_end()` transitions and generation tracking. Implementation is
+  synchronous (no `asyncio.Lock`).
+- Wired into `duh/cli/repl.py` via ADR-043: the REPL reserves before dispatch,
+  starts when streaming begins, and force-ends on Ctrl-C / EOF.
+
+Superseded wiring details: see ADR-043.

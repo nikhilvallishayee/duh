@@ -1,7 +1,7 @@
 # ADR-048: TodoWrite and AskUserQuestion Tools
 
-**Status**: Proposed  
-**Date**: 2026-04-11  
+**Status:** Accepted — implemented 2026-04-14
+**Date**: 2026-04-11
 **Depends on**: ADR-004 (Tool Protocol)
 
 ## Context
@@ -57,3 +57,12 @@ except ImportError:
 
 ### Risks
 - The model could abuse AskUserQuestion to ask excessive questions. Mitigated by the approval gate (the user sees each tool call) and by prompt engineering in the system prompt.
+
+## Implementation Notes
+
+- `duh/tools/todo_tool.py` — `TodoWriteTool` with in-memory `TodoItem` state and a
+  `summary()` helper used by the REPL's `/tasks` slash command.
+- `duh/tools/ask_user_tool.py` — `AskUserQuestionTool` with an injectable `ask_fn`
+  callback.
+- Both registered in `duh/tools/registry.py` with the standard try/except-import
+  pattern.

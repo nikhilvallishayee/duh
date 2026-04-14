@@ -1,6 +1,6 @@
 # ADR-009: Provider Adapters
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-07
 
 ## Context
@@ -156,3 +156,15 @@ This prevents D.U.H. metadata fields (id, timestamp, etc.) from leaking into API
 - Error messages are actionable — each adapter translates errors into "what to do" hints
 - The same tool definitions work across all providers (translated per-adapter)
 - Testing an adapter requires only mocking its SDK client, not the kernel
+
+## Implementation Notes
+
+Concrete provider adapters on main:
+- `duh/adapters/anthropic.py` — Anthropic Messages API (streaming, thinking, tool use)
+- `duh/adapters/openai.py` — OpenAI Chat Completions / Azure / any OpenAI-compatible `base_url`
+- `duh/adapters/openai_chatgpt.py` — ChatGPT/Codex Responses API (ADR-052)
+- `duh/adapters/ollama.py` — Ollama local HTTP
+- `duh/adapters/stub_provider.py` — deterministic stub for tests
+
+Selection and authentication are handled by `duh/providers/registry.py` in conjunction
+with `duh/auth/` (ADR-051).

@@ -1,6 +1,6 @@
 # ADR-007: Session Persistence
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-07
 
 ## Context
@@ -28,7 +28,7 @@ Use the `FileStore` adapter (already implemented) with the `SessionStore` port f
 ### Storage Location
 
 ```
-~/.duh/sessions/
+~/.config/duh/sessions/
   abc-123.jsonl      # one file per session
   def-456.jsonl
 ```
@@ -79,3 +79,9 @@ Each session carries metadata embedded in the JSONL itself — the first message
 - Loading is fast — stream-parse JSONL, no full-file-in-memory required for large sessions
 - `FileStore` has 100% test coverage across all branches
 - Resume works via `--continue` (most recent) or `--resume <id>` (specific)
+
+## Implementation Notes
+
+- `duh/adapters/file_store.py` (`FileStore`) implements `SessionStore` at
+  `~/.config/duh/sessions/`. `MAX_SESSION_BYTES = 64 MB` is declared (ADR-029) but not
+  yet enforced in `save()` — tracked as a known gap.

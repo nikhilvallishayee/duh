@@ -1,6 +1,6 @@
 # ADR-022: Token Counting, Cost Control & Auto-Compaction
 
-**Status**: Implemented  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-07
 
 ## Decision

@@ -1,6 +1,6 @@
 # ADR-002: Kernel Design
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-07
 
 ## Context
@@ -64,3 +64,16 @@ class Tool(Protocol):
 - Adding a provider = writing an adapter, not modifying the kernel
 - The kernel is small enough to read in one sitting
 - Tests run in 0.05s (no I/O, no imports of heavy libraries)
+
+## Implementation Notes
+
+Core 5-file kernel (~1,016 LOC) on main:
+- `duh/kernel/loop.py` — async-generator agentic cycle
+- `duh/kernel/engine.py` — session lifecycle, PTL retry, budget enforcement, hook emission
+- `duh/kernel/tool.py` — Tool protocol and `ToolContext`
+- `duh/kernel/messages.py` — `Message` dataclass and content blocks
+- `duh/kernel/deps.py` — `Deps` dependency-injection container
+
+Additional kernel modules added over time (tokens, signals, snapshot, query_guard, redact,
+plan_mode, memory, skill, attachments, etc.) sit alongside the 5 core files but do not
+touch the agentic loop itself.

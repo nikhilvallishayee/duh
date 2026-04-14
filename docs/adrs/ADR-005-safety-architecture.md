@@ -1,6 +1,6 @@
 # ADR-005: Safety Architecture
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-07
 
 ## Context
@@ -65,3 +65,13 @@ class BashTool:
 - Each layer is independently testable
 - New approval strategies = new ApprovalGate adapter
 - Plan mode physically cannot write (schema filtering)
+
+## Implementation Notes
+
+- Layer 1 (schema filtering): plan mode in `duh/kernel/plan_mode.py`; read-only classification
+  via `duh/kernel/tool_categories.py` (READ_TOOLS/WRITE_TOOLS/COMMAND_TOOLS/MUTATING_TOOLS).
+- Layer 2 (approval gate): `duh/adapters/approvers.py` — AutoApprover, InteractiveApprover,
+  RuleApprover, TieredApprover (ADR-038 three-tier model).
+- Layer 3 (tool-level validation): `duh/tools/bash_security.py` (ADR-023/028/034/047),
+  `duh/tools/read.py` / `write.py` / `edit.py` (file caps from ADR-029).
+- Platform sandboxing: `duh/adapters/sandbox/` (ADR-037 — seatbelt/landlock/network policy).

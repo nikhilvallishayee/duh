@@ -1,6 +1,6 @@
 # ADR-019: Next Phase Plan
 
-**Status**: Complete  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-07
 
 ## Context

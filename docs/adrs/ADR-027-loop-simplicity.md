@@ -1,6 +1,6 @@
 # ADR-027: Loop Simplicity Refactor
 
-**Status**: Implemented  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-07
 
 ## Context

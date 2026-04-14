@@ -1,6 +1,6 @@
 # ADR-024: Developer Experience — REPL, TUI, Undo, Templates
 
-**Status**: Implemented  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-07
 
 ## Decision

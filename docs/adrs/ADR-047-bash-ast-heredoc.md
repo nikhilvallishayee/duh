@@ -1,7 +1,7 @@
 # ADR-047: Bash AST Heredoc and Process Substitution
 
-**Status**: Proposed  
-**Date**: 2026-04-11  
+**Status:** Accepted — implemented 2026-04-14
+**Date**: 2026-04-11
 **Depends on**: ADR-034 (Bash AST Parser)
 
 ## Context
@@ -60,3 +60,9 @@ The tokenizer pipeline becomes:
 
 ### Risks
 - Nested heredocs (heredoc inside a process substitution inside a heredoc) are rare but theoretically possible. The current implementation handles one level of nesting. Deeper nesting falls back to conservative classification.
+
+## Implementation Notes
+
+- `duh/tools/bash_ast.py` — `_extract_heredocs()`, `_extract_process_subs()`,
+  `_ANSI_C_RE`, and the updated `_mask_quotes()` pipeline. Integrated via
+  `tokenize()` / `classify_compound()` used by `duh/tools/bash_security.py`.

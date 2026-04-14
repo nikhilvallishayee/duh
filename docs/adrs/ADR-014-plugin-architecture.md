@@ -1,6 +1,6 @@
 # ADR-014: Plugin Architecture
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-06
 
 ## Context
@@ -142,3 +142,9 @@ CLI startup
 - Python's package ecosystem handles versioning, dependencies, distribution
 - Directory-based plugins enable rapid local development
 - Future: plugin can provide slash commands, agent types, provider adapters
+
+## Implementation Notes
+
+- `duh/plugins.py` — `PluginSpec`, entry-point discovery, directory-based discovery,
+  registration into the tool pool. Directory plugins declared in `plugin.json` become
+  `DeferredTool` entries (ADR-018).

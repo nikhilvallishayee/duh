@@ -1,9 +1,9 @@
 # ADR-031: Prompt-Too-Long Retry
 
-**Status**: Accepted  
-**Date**: 2026-04-08  
-**Implemented**: 2026-04-08  
-**Note**: Progressive compaction targets (70%/50%/30%) not implemented; uses fixed 70% on each retry.
+**Status:** Accepted — partial (PTL detection + retry loop work and fire PRE_COMPACT /
+POST_COMPACT hooks; retries use a fixed 70 % target rather than the progressive
+70/50/30 sequence described below)
+**Date**: 2026-04-08
 
 ## Context
 
@@ -73,3 +73,11 @@ On each compaction, display a status message: `"Context compacted to {pct}% ({n}
 ### Risks
 - Compaction might remove tool results the model needs for its next response — mitigated by ADR-035's smart compaction preserving recent tool outputs
 - Provider error messages may change format — mitigated by loose substring matching
+
+## Implementation Notes
+
+- `duh/kernel/engine.py` — `_is_ptl_error()`, `MAX_PTL_RETRIES`, retry loop that
+  compacts via `deps.compact()` and fires `PRE_COMPACT` / `POST_COMPACT` hooks
+  (ADR-036/044). The current implementation uses a fixed target of
+  `int(context_limit * 0.70)` on every retry; the progressive 70/50/30 schedule from
+  this ADR has not been implemented.

@@ -1,6 +1,6 @@
 # ADR-050: Connection Pre-warming
 
-**Status**: Proposed  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-11  
 
 ## Context
@@ -55,3 +55,11 @@ The pre-warm prompt generates ~1-2 output tokens. At Anthropic's pricing, this c
 
 ### Risks
 - Pre-warming a model that is not the one the user ends up using (if they `/model` switch before their first prompt). This wastes one connection warm-up but causes no harm — the HTTP client maintains connections per-host, so switching between Anthropic models still benefits from the warm Anthropic connection.
+
+## Implementation Notes
+
+- `duh/cli/prewarm.py` — `prewarm_connection(call_model)` coroutine and
+  `PrewarmResult` dataclass. Never raises — all exceptions are caught and logged at
+  DEBUG.
+- Launched in `duh/cli/repl.py` via `asyncio.ensure_future(prewarm_connection(...))`
+  immediately after provider setup.

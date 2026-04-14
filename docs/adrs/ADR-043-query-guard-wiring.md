@@ -1,7 +1,7 @@
 # ADR-043: Wire QueryGuard into the REPL
 
-**Status**: Proposed  
-**Date**: 2026-04-11  
+**Status:** Accepted — implemented 2026-04-14
+**Date**: 2026-04-11
 **Depends on**: ADR-033 (QueryGuard State Machine)
 
 ## Context
@@ -36,3 +36,14 @@ The guard is not placed inside the engine itself. The REPL owns the user-interac
 
 ### Risks
 - None significant. The guard is a thin state machine with no I/O.
+
+## Implementation Notes
+
+- `duh/cli/repl.py` — imports `QueryGuard` from `duh/kernel/query_guard.py`,
+  instantiates one per `run_repl()` session, and calls
+  `reserve()` / `try_start()` / `end()` / `force_end()` around each
+  `engine.run()` dispatch.
+- `duh/kernel/query_guard.py` — synchronous FSM (no `asyncio.Lock`), generation
+  counter bumped on both `reserve()` and `force_end()`.
+
+Related: ADR-033.

@@ -1,9 +1,12 @@
 # ADR-039: Ghost Snapshot Mode
 
-**Status**: Accepted  
-**Date**: 2026-04-08  
-**Implemented**: 2026-04-08  
-**Note**: Implemented as ReadOnlyExecutor (blocks writes) rather than GhostExecutor with filesystem overlay. No overlay dict, no merge path for applying ghost writes to disk. Turn limits (50 max, warning at 40) and file/size caps on overlay not implemented.
+**Status:** Accepted — partial (shipped as a `ReadOnlyExecutor` that blocks all
+mutating tools plus a `SnapshotSession` that deep-copies conversation state. The
+filesystem-overlay design described below — `GhostExecutor` with an in-memory dict of
+virtual writes, merge-to-disk path, 20-file / 10 MB overlay caps, 50-turn / 40-turn
+warning limits — is NOT implemented. `/snapshot` is registered in the REPL for
+apply/discard of the conversation fork, but speculative write-and-merge is not wired.)
+**Date**: 2026-04-08
 
 ## Context
 
@@ -81,3 +84,12 @@ When the user is done exploring, two options:
 ### Risks
 - Bash tool in ghost mode could execute real side effects (network calls, process spawning) — mitigated by running bash in dry-run mode or blocking it entirely in ghost mode
 - Users may forget they're in ghost mode — mitigated by persistent UI indicator and turn-count warning
+
+## Implementation Notes
+
+- `duh/kernel/snapshot.py` — `ReadOnlyExecutor` (uses
+  `duh/kernel/tool_categories.py::READ_TOOLS`/`MUTATING_TOOLS`) and `SnapshotSession`
+  with `add_message`, `get_new_messages`, and `discard`.
+- `/snapshot`, `/snapshot apply`, `/snapshot discard` slash commands live in
+  `duh/cli/repl.py`.
+- The filesystem overlay and merge-to-disk design is still TODO.

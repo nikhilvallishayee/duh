@@ -1,6 +1,6 @@
 # ADR-023: Safety Hardening — Bash Security, Permissions, Output Limits
 
-**Status**: Implemented  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-07
 
 ## Decision

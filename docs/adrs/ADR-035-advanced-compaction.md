@@ -1,9 +1,11 @@
 # ADR-035: Advanced Context Compaction
 
-**Status**: Accepted  
-**Date**: 2026-04-08  
-**Implemented**: 2026-04-08  
-**Note**: strip_images removes ALL images (no keep_recent=3 parameter). Compaction order is simplified: strip all images then tail-window, not the staged pipeline described.
+**Status:** Accepted — partial (`strip_images`, `partial_compact`, and `restore_context`
+all exist in `duh/adapters/simple_compactor.py`; however `strip_images` removes ALL
+images (no `keep_recent=3`) and the staged pipeline — image strip → partial removal →
+aggressive removal with early exit — is not implemented: `compact()` strips images
+then applies a tail-window truncation)
+**Date**: 2026-04-08
 
 ## Context
 
@@ -70,3 +72,13 @@ The stages run in order, stopping as soon as context is under the target:
 ### Risks
 - Image stripping may remove images the model needs to reference — mitigated by keeping the last 3 turns intact
 - Restoration may re-add enough context to push back over the limit — mitigated by reserving 5% headroom for restored content
+
+## Implementation Notes
+
+- `duh/adapters/simple_compactor.py` — `SimpleCompactor.compact()`, `partial_compact()`,
+  `strip_images()`, `restore_context()`, plus `POST_COMPACT_MAX_FILES` /
+  `POST_COMPACT_TOKEN_BUDGET` constants.
+- `duh/adapters/model_compactor.py` — `ModelCompactor` adapter that uses the model
+  itself to summarize old turns, with fallback to `SimpleCompactor` (ADR-046).
+
+Related: ADR-031 (PTL retry), ADR-046 (model-call compaction).

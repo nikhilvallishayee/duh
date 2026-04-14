@@ -1,8 +1,7 @@
 # ADR-037: Platform Sandboxing
 
-**Status**: Accepted  
-**Date**: 2026-04-08  
-**Implemented**: 2026-04-08
+**Status:** Accepted — implemented 2026-04-14
+**Date**: 2026-04-08
 
 ## Context
 
@@ -87,3 +86,13 @@ On platforms without native sandboxing support (older Linux, Windows), log a war
 ### Risks
 - Overly restrictive policies break legitimate tool operations — mitigated by defaulting to project directory access
 - Seatbelt deprecation may require migration to a different macOS mechanism — mitigated by the abstract policy layer
+
+## Implementation Notes
+
+- `duh/adapters/sandbox/policy.py` — `SandboxPolicy` dataclass.
+- `duh/adapters/sandbox/seatbelt.py` — macOS Seatbelt profile generation and
+  `sandbox-exec` invocation.
+- `duh/adapters/sandbox/landlock.py` — Linux Landlock ruleset via ctypes.
+- `duh/adapters/sandbox/network.py` — network policy helpers.
+- Wired into `duh/tools/bash.py` through `ToolContext.sandbox_policy` and
+  `--approval-mode` on the CLI.

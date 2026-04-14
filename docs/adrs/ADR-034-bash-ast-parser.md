@@ -1,8 +1,7 @@
 # ADR-034: Bash AST Parser
 
-**Status**: Accepted  
-**Date**: 2026-04-08  
-**Implemented**: 2026-04-08
+**Status:** Accepted — implemented 2026-04-14
+**Date**: 2026-04-08
 
 ## Context
 
@@ -76,3 +75,13 @@ This is explicitly not a full bash parser. It handles the 95% case: pipes, semic
 ### Risks
 - Parser bugs could misclassify segments — mitigated by defaulting unknown patterns to `needs_review`
 - Performance overhead on very long commands — mitigated by the fanout cap short-circuiting
+
+## Implementation Notes
+
+- `duh/tools/bash_ast.py` — tokenizer with quote masking, comment stripping, heredoc
+  extraction (ADR-047), process substitution (ADR-047), subshell extraction, fanout
+  cap, and per-segment classification. Integrated into
+  `duh/tools/bash_security.py::classify_command()`.
+
+Related: ADR-028 (env-var allowlist), ADR-047 (heredoc + process substitution +
+ANSI-C quoting extensions).

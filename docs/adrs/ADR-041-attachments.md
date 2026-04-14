@@ -1,9 +1,11 @@
 # ADR-041: Attachment System
 
-**Status**: Accepted  
-**Date**: 2026-04-08  
-**Implemented**: 2026-04-08  
-**Note**: MAX_ATTACHMENT_SIZE is 10MB (implementation) vs 20MB (ADR). CLI integration points (Ctrl+V paste, /attach command, drag-drop, @image: syntax) not implemented.
+**Status:** Accepted — partial (`AttachmentManager` with type detection, image
+base64 encoding, and optional PDF extraction is implemented in
+`duh/kernel/attachments.py` with `MAX_ATTACHMENT_SIZE = 10 MB` (implementation) rather
+than 20 MB. The CLI integration points — `Ctrl+V` paste, `/attach` slash command,
+drag-and-drop, and inline `@image:` syntax — are NOT wired into the REPL.)
+**Date**: 2026-04-08
 
 ## Context
 
@@ -94,3 +96,11 @@ Attachments are converted to provider-specific format in the provider adapter:
 ### Risks
 - Large images can trigger PTL errors — mitigated by integration with compaction (ADR-035) which strips old images first
 - Not all providers support vision — mitigated by text fallback in the adapter
+
+## Implementation Notes
+
+- `duh/kernel/attachments.py` — `Attachment`, `AttachmentManager`,
+  `MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024`. Type detection, image base64 encoding,
+  PDF text extraction via `pymupdf` (optional).
+- `ImageBlock` in `duh/kernel/messages.py` for provider-adapter translation.
+- REPL and CLI entry points for attachments are still TODO.

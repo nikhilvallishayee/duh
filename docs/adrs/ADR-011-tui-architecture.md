@@ -1,6 +1,7 @@
 # ADR-011: TUI Architecture
 
-**Status**: Accepted  
+**Status:** Accepted — partial (Tier 0 Bare + Tier 1 Rich shipped; Tier 2 full-TUI not
+implemented — REPL uses streaming + Rich rendering, no widget/component tree)
 **Date**: 2026-04-06
 
 ## Context
@@ -108,3 +109,11 @@ Engine (yields events)
 - Full TUI can be added later as another renderer
 - Machine-readable JSON output is just another renderer
 - Testing renderers is easy: feed events, check output
+
+## Implementation Notes
+
+- Renderers: `duh/adapters/renderers.py` (Bare and Rich).
+- Renderer port: `duh/ports/renderer.py`.
+- REPL consumes renderer + engine events: `duh/cli/repl.py` (ADR-024).
+- JSON / NDJSON output: `duh/cli/runner.py`, `duh/cli/ndjson.py`, `duh/cli/sdk_runner.py`.
+- Tier 2 full-TUI (textual) remains future work.

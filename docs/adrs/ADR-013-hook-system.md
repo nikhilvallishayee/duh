@@ -1,6 +1,6 @@
 # ADR-013: Hook System
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-06
 
 ## Context
@@ -148,3 +148,13 @@ Kernel (engine.py)
 - No per-event boilerplate functions
 - Config format is compatible with other harnesses (subset of the standard shape)
 - Function hooks enable in-process validation without subprocess overhead
+
+## Implementation Notes
+
+- `duh/hooks.py` — `HookEvent` enum (28+ events including ADR-036 extensions),
+  `HookRegistry`, `execute_hooks()`, `execute_hooks_with_blocking()` (ADR-045),
+  `HookResponse`, shell and function executors.
+- Emit points: engine (`PRE_COMPACT`/`POST_COMPACT`), loop
+  (`PERMISSION_REQUEST`/`PERMISSION_DENIED`/`POST_TOOL_USE_FAILURE`), REPL
+  (`USER_PROMPT_SUBMIT`/`STATUS_LINE`/`SESSION_START`/`SESSION_END`). See ADR-044.
+- Blocking semantics and glob matchers: ADR-045.

@@ -1,6 +1,6 @@
 # ADR-006: Context Engineering
 
-**Status**: Accepted  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-07
 
 ## Context
@@ -73,3 +73,14 @@ When the simple compactor proves insufficient:
 - The `ContextManager` port allows swapping in a smarter compactor later
 - System messages are never lost during compaction
 - The most recent context is always preserved (recency bias matches human conversation)
+
+## Implementation Notes
+
+- `duh/adapters/simple_compactor.py` implements `compact()`, `partial_compact()`,
+  `strip_images()`, and `restore_context()` (ADR-035).
+- `duh/adapters/model_compactor.py` adds model-summarized compaction with fallback
+  to simple compaction (ADR-046).
+- Auto-compaction is driven by the engine's PTL retry path in `duh/kernel/engine.py`
+  and fires `PRE_COMPACT` / `POST_COMPACT` hook events (ADR-036/044).
+
+See ADR-031 (PTL retry), ADR-035 (advanced compaction), ADR-046 (model-call compaction).

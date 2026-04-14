@@ -1,6 +1,6 @@
 # ADR-049: Secrets Redaction
 
-**Status**: Proposed  
+**Status:** Accepted — implemented 2026-04-14
 **Date**: 2026-04-11  
 
 ## Context
@@ -57,3 +57,11 @@ Integration is deferred to the implementation task; this ADR covers the redactio
 
 ### Risks
 - Over-redaction could remove important information from tool output. Mitigated by specific patterns (20+ char minimum for API keys) and by ordering patterns from most to least specific.
+
+## Implementation Notes
+
+- `duh/kernel/redact.py` — `redact_secrets(text)` with ordered compiled patterns. A
+  later fix screens the generic `sk-…` pattern with a substring pre-check to avoid
+  catastrophic regex backtracking on large tool outputs.
+- Applied in `duh/adapters/native_executor.py` on every string tool output before it
+  returns to the loop.

@@ -1,8 +1,7 @@
 # ADR-028: Env Var Allowlist and Binary Hijack Detection
 
-**Status**: Accepted  
-**Date**: 2026-04-08  
-**Implemented**: 2026-04-08
+**Status:** Accepted — implemented 2026-04-14
+**Date**: 2026-04-08
 
 ## Context
 
@@ -48,3 +47,11 @@ Before command classification, scan for env var assignments (both `export FOO=ba
 ### Risks
 - Allowlist may be incomplete for niche toolchains — mitigated by project-level overrides in config
 - Inline env var parsing may miss complex shell quoting — mitigated by the AST parser (ADR-034)
+
+## Implementation Notes
+
+- `duh/tools/bash_security.py` — `SAFE_ENV_VARS` allowlist, `HIJACK_PATTERNS` regex, and
+  env-var scanning integrated into `classify_command()`.
+- Bash AST tokenisation lives in `duh/tools/bash_ast.py` (ADR-034, extended by ADR-047).
+
+Related: ADR-034 (AST parser), ADR-047 (heredocs/process substitution).

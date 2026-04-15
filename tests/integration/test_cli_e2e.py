@@ -40,7 +40,7 @@ class TestVersionE2E:
     def test_version_output(self):
         result = run_duh("--version")
         assert result.returncode == 0
-        assert "0.4.2" in result.stdout
+        assert "0.5.0" in result.stdout
 
 
 class TestHelpE2E:

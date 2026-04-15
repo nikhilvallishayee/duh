@@ -261,7 +261,9 @@ class DuhApp(App[int]):
                         self._active_tool = None
 
                 elif event_type == "assistant":
-                    # Full assistant message arrived — streaming done for this segment
+                    # Full assistant message arrived — final markdown render
+                    if self._active_assistant is not None:
+                        self._active_assistant.finish()
                     self._active_assistant = None
 
                 elif event_type == "error":

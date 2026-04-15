@@ -73,6 +73,13 @@ Screen {
 .message-body {
     padding: 0;
     margin: 0;
+    width: 100%;
+    overflow: hidden;
+}
+
+Markdown {
+    margin: 0 0;
+    padding: 0 0;
 }
 
 /* ── Tool call widget ───────────────────────────────────────── */

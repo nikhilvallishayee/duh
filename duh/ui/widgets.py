@@ -67,10 +67,16 @@ class MessageWidget(Widget):
     def compose(self) -> ComposeResult:
         label_text = "You" if self._role == "user" else "Assistant"
         yield Label(label_text, classes="message-role-label")
-        yield Static(self._content, classes="message-body", markup=False)
+        if self._role == "user":
+            yield Static(self._content, classes="message-body", markup=False)
+        else:
+            yield Markdown(self._content, classes="message-body")
 
     def on_mount(self) -> None:
-        self._body = self.query_one(".message-body", Static)
+        if self._role == "user":
+            self._body = self.query_one(".message-body", Static)
+        else:
+            self._md_body = self.query_one(".message-body", Markdown)
 
     # ------------------------------------------------------------------
     # Public API
@@ -79,11 +85,17 @@ class MessageWidget(Widget):
     def append(self, delta: str) -> None:
         """Append streaming text delta to the message body."""
         self._content += delta
-        if self._body is not None:
-            self._body.update(self._content)
+        if self._role == "user":
+            if self._body is not None:
+                self._body.update(self._content)
+        else:
+            if hasattr(self, "_md_body") and self._md_body is not None:
+                self._md_body.update(self._content)
 
     def finish(self) -> None:
-        """Called when streaming is complete.  Nothing special needed yet."""
+        """Called when streaming is complete — do a final markdown render."""
+        if self._role != "user" and hasattr(self, "_md_body") and self._md_body is not None:
+            self._md_body.update(self._content)
 
 
 # ---------------------------------------------------------------------------

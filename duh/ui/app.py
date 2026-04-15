@@ -46,6 +46,7 @@ from textual.containers import ScrollableContainer, Horizontal, Vertical
 from textual.widgets import Button, Footer, Header, Input, Label, Static
 
 from duh.ui.theme import APP_CSS
+from duh.ui.logo import LOGO_COMPACT
 from duh.ui.widgets import MessageWidget, ThinkingWidget, ToolCallWidget
 
 
@@ -119,22 +120,29 @@ class DuhApp(App[int]):
     # ----------------------------------------------------------------- sidebar
 
     def _make_sidebar(self) -> Vertical:
-        sidebar = Vertical(id="sidebar")
+        sidebar = Vertical(
+            Static(
+                "[bold magenta]D[/].U.[bold magenta]H[/].\n"
+                "[dim]Universal Harness[/]",
+                id="sidebar-logo",
+            ),
+            id="sidebar",
+        )
         return sidebar
 
     # ----------------------------------------------------------------- header / status
 
     def _header_text(self) -> str:
         sid = f"  [{self._session_id[:8]}]" if self._session_id else ""
-        return f" D.U.H. | {self._model}{sid}"
+        return f" [bold magenta]D[/].U.[bold magenta]H[/]. | {self._model}{sid}"
 
     def _status_text(self) -> str:
         tok = ""
         if self._input_tokens or self._output_tokens:
             tok = f"  in={self._input_tokens:,} out={self._output_tokens:,}"
         cost = f"  ${self._cost:.4f}" if self._cost else ""
-        conn = "connected" if self._connected else "disconnected"
-        return f" [{self._model}] turn {self._turn}{tok}{cost}  {conn}"
+        conn = "[green]connected[/]" if self._connected else "[red]disconnected[/]"
+        return f" [bold magenta]D[/].[bold magenta]U[/].[bold magenta]H[/]. [{self._model}] turn {self._turn}{tok}{cost}  {conn}"
 
     def _refresh_status(self) -> None:
         self.query_one("#header", Static).update(self._header_text())

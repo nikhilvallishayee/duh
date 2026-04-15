@@ -25,25 +25,21 @@ _ACC = f"{_BRIGHT_MAGENTA}{_BOLD}"
 # ─── Large hero logo (12 lines) ────────────────────────────────────
 
 LOGO_LARGE = r"""
-    ██████╗        ██╗   ██╗       ██╗  ██╗
-    ██╔══██╗       ██║   ██║       ██║  ██║
-    ██║  ██║       ██║   ██║       ██████╔╝
-    ██║  ██║  ██╗  ██║   ██║  ██╗  ██╔══██╗
-    ██████╔╝  ╚═╝  ╚██████╔╝  ╚═╝  ██║  ██║
-    ╚═════╝        ╚═════╝        ╚═╝  ╚═╝
-    ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
-     D.U.H. is a Universal Harness
+  ____        _   _       _   _
+ |  _ \   _  | | | |  _  | | | |
+ | | | | (_) | | | | (_) | |_| |
+ | | | |     | | | |     |  _  |
+ | |_| |  _  | |_| |  _  | | | |
+ |____/  (_)  \___/  (_) |_| |_|
+
+  D.U.H. is a Universal Harness
 """
 
 # ─── Compact logo (6 lines) ────────────────────────────────────────
 
 LOGO_COMPACT = r"""
-  ╔═══╗  ╔╗ ╔╗  ╔╗  ╔╗
-  ║╔═╗║  ║║ ║║  ║╚══╝║
-  ║║ ║║  ║║ ║║  ║╔══╗║
-  ║╚═╝║  ║╚═╝║  ║║  ║║
-  ╚═══╝  ╚═══╝  ╚╝  ╚╝
-  D.U.H. is a Universal Harness
+  D . U . H .
+  Duh is a Universal Harness
 """
 
 # ─── Mini one-liner ─────────────────────────────────────────────────
@@ -53,23 +49,19 @@ LOGO_MINI = "◆ D.U.H. — Duh is a Universal Harness"
 # ─── Colored versions ──────────────────────────────────────────────
 
 _LOGO_LARGE_COLOR = f"""\
-{_ACC}    ██████╗        ██╗   ██╗       ██╗  ██╗{_RESET}
-{_ACC}    ██╔══██╗       ██║   ██║       ██║  ██║{_RESET}
-{_BRIGHT_MAGENTA}{_BOLD}    ██║  ██║       ██║   ██║       ██████╔╝{_RESET}
-{_BRIGHT_MAGENTA}{_BOLD}    ██║  ██║  {_GRAY}██╗{_BRIGHT_MAGENTA}{_BOLD}  ██║   ██║  {_GRAY}██╗{_BRIGHT_MAGENTA}{_BOLD}  ██╔══██╗{_RESET}
-{_MAGENTA}    ██████╔╝  {_GRAY}╚═╝{_MAGENTA}  ╚██████╔╝  {_GRAY}╚═╝{_MAGENTA}  ██║  ██║{_RESET}
-{_MAGENTA}    ╚═════╝        ╚═════╝        ╚═╝  ╚═╝{_RESET}
-{_DIM}    ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄{_RESET}
+{_ACC}  ____        _   _       _   _ {_RESET}
+{_ACC} |  _ \\   {_GRAY}_{_ACC}  | | | |  {_GRAY}_{_ACC}  | | | |{_RESET}
+{_BRIGHT_MAGENTA}{_BOLD} | | | | {_GRAY}(_){_BRIGHT_MAGENTA} | | | | {_GRAY}(_){_BRIGHT_MAGENTA} | |_| |{_RESET}
+{_BRIGHT_MAGENTA}{_BOLD} | | | |     | | | |     |  _  |{_RESET}
+{_MAGENTA} | |_| |  {_GRAY}_{_MAGENTA}  | |_| |  {_GRAY}_{_MAGENTA}  | | | |{_RESET}
+{_MAGENTA} |____/  {_GRAY}(_){_MAGENTA}  \\___/  {_GRAY}(_){_MAGENTA} |_| |_|{_RESET}
+
      {_ACC}D{_RESET}{_BRIGHT_WHITE}.{_ACC}U{_RESET}{_BRIGHT_WHITE}.{_ACC}H{_RESET}{_BRIGHT_WHITE}. is a {_ACC}U{_RESET}{_BRIGHT_WHITE}niversal {_ACC}H{_RESET}{_BRIGHT_WHITE}arness{_RESET}
 """
 
 _LOGO_COMPACT_COLOR = f"""\
-{_ACC}  ╔═══╗  ╔╗ ╔╗  ╔╗  ╔╗{_RESET}
-{_BRIGHT_MAGENTA}{_BOLD}  ║╔═╗║  ║║ ║║  ║╚══╝║{_RESET}
-{_BRIGHT_MAGENTA}{_BOLD}  ║║ ║║  ║║ ║║  ║╔══╗║{_RESET}
-{_MAGENTA}  ║╚═╝║  ║╚═╝║  ║║  ║║{_RESET}
-{_MAGENTA}  ╚═══╝  ╚═══╝  ╚╝  ╚╝{_RESET}
-  {_ACC}D{_RESET}{_BRIGHT_WHITE}.{_ACC}U{_RESET}{_BRIGHT_WHITE}.{_ACC}H{_RESET}{_BRIGHT_WHITE}. is a {_ACC}U{_RESET}{_BRIGHT_WHITE}niversal {_ACC}H{_RESET}{_BRIGHT_WHITE}arness{_RESET}
+  {_ACC}D{_RESET}{_DIM} . {_ACC}U{_RESET}{_DIM} . {_ACC}H{_RESET}{_DIM} .{_RESET}
+  {_ACC}D{_RESET}{_BRIGHT_WHITE}uh is a {_ACC}U{_RESET}{_BRIGHT_WHITE}niversal {_ACC}H{_RESET}{_BRIGHT_WHITE}arness{_RESET}
 """
 
 _LOGO_MINI_COLOR = (

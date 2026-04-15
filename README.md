@@ -1,25 +1,29 @@
+<div align="center">
+
 ```
-    ██████╗        ██╗   ██╗       ██╗  ██╗
-    ██╔══██╗       ██║   ██║       ██║  ██║
-    ██║  ██║       ██║   ██║       ██████╔╝
-    ██║  ██║  ██╗  ██║   ██║  ██╗  ██╔══██╗
-    ██████╔╝  ╚═╝  ╚██████╔╝  ╚═╝  ██║  ██║
-    ╚═════╝        ╚═════╝        ╚═╝  ╚═╝
-    ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
-     D.U.H. is a Universal Harness
+ ____        _   _       _   _ 
+|  _ \   _  | | | |  _  | | | |
+| | | | (_) | | | | (_) | |_| |
+| | | |     | | | |     |  _  |
+| |_| |  _  | |_| |  _  | | | |
+|____/  (_)  \___/  (_) |_| |_|
 ```
 
-# D.U.H. — **D**uh is a **U**niversal **H**arness
+### **D**.U.H. is a **U**niversal **H**arness
+
+*One harness. Any model. Your machine.*
 
 [![CI](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml/badge.svg)](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/duh-cli?color=blue)](https://pypi.org/project/duh-cli/)
-[![Tests](https://img.shields.io/badge/tests-4160%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-4471%20passing-brightgreen)]()
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)]()
 [![Security](https://img.shields.io/badge/security-ADR--053%20%2B%20ADR--054-blueviolet)]()
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)]()
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-**[Website](https://nikhilvallishayee.github.io/duh/site/)** | **[Comparisons](https://nikhilvallishayee.github.io/duh/site/comparisons.html)** | **[Security](https://nikhilvallishayee.github.io/duh/site/security.html)**
+**[Website](https://nikhilvallishayee.github.io/duh/site/)** | **[Comparisons](https://nikhilvallishayee.github.io/duh/site/comparisons.html)** | **[Getting Started](https://nikhilvallishayee.github.io/duh/site/getting-started.html)** | **[Security](https://nikhilvallishayee.github.io/duh/site/security.html)**
+
+</div>
 
 ---
 

@@ -14,12 +14,12 @@ from duh.ui.logo import (
 
 def test_large_logo_is_nonempty() -> None:
     assert len(LOGO_LARGE.strip()) > 50
-    assert "██" in LOGO_LARGE
+    assert "____" in LOGO_LARGE
     assert "Universal" in LOGO_LARGE
 
 
 def test_compact_logo_is_nonempty() -> None:
-    assert len(LOGO_COMPACT.strip()) > 30
+    assert len(LOGO_COMPACT.strip()) > 10
     assert "Universal" in LOGO_COMPACT
 
 
@@ -32,7 +32,7 @@ def test_print_logo_large_no_color() -> None:
     buf = io.StringIO()
     print_logo("large", color=False, file=buf)
     out = buf.getvalue()
-    assert "██" in out
+    assert "____" in out
     assert "\033[" not in out  # no ANSI
 
 
@@ -77,7 +77,7 @@ def test_print_logo_large_color_on_tty() -> None:
     print_logo("large", color=True, file=buf)
     out = buf.getvalue()
     assert "\033[" in out
-    assert "██" in out
+    assert "____" in out
 
 
 def test_print_logo_mini_color_on_tty() -> None:
@@ -94,4 +94,4 @@ def test_default_style_is_compact() -> None:
     buf = io.StringIO()
     print_logo(file=buf, color=False)
     out = buf.getvalue()
-    assert "╔═══╗" in out  # compact uses box-drawing
+    assert "Universal" in out

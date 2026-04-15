@@ -492,6 +492,19 @@ def run_tui(args: argparse.Namespace) -> int:
                 engine._session_id = session_id_to_load
                 logger.info("Resumed session %s with %d messages", session_id_to_load, len(loaded))
 
+                # Force compact the resumed session to fit context window
+                if deps.compact and len(engine._messages) > 4:
+                    from duh.kernel.tokens import get_context_limit
+                    ctx_limit = get_context_limit(model)
+                    threshold = int(ctx_limit * 0.70)  # aggressive for resume
+                    try:
+                        engine._messages = _aio.run(
+                            deps.compact(engine._messages, token_limit=threshold)
+                        )
+                        logger.info("Post-resume compact: %d messages remaining", len(engine._messages))
+                    except Exception as e:
+                        logger.warning("Post-resume compact failed: %s", e)
+
     app = DuhApp(
         engine=engine,
         model=model,

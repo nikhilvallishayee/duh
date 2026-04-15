@@ -221,9 +221,14 @@ class DuhApp(App[int]):
         self._active_thinking = None
         self._active_tool = None
 
+        import logging
+        _log = logging.getLogger("duh.tui.query")
+        _log.info("Starting query: %s", prompt[:80])
+
         try:
             async for event in self._engine.run(prompt):
                 event_type = event.get("type", "")
+                _log.debug("Event: %s", event_type)
 
                 if event_type == "text_delta":
                     text = event.get("text", "")
@@ -274,6 +279,7 @@ class DuhApp(App[int]):
         except asyncio.CancelledError:
             pass
         except Exception as exc:
+            _log.exception("Query error: %s", exc)
             await self._add_error_message(str(exc))
         finally:
             # Update token counts from engine
@@ -316,7 +322,19 @@ def run_tui(args: argparse.Namespace) -> int:
     This mirrors the structure of ``run_repl`` in ``duh/cli/repl.py``:
     same provider resolution, same engine setup, different frontend.
     """
+    import logging
     import os
+
+    # Enable logging to file for TUI debugging
+    log_file = os.path.expanduser("~/.config/duh/logs/tui.log")
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    logging.basicConfig(
+        filename=log_file,
+        level=logging.DEBUG if getattr(args, "debug", False) else logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    logger = logging.getLogger("duh.tui")
+    logger.info("TUI starting")
 
     from duh.adapters.approvers import ApprovalMode, AutoApprover, InteractiveApprover, TieredApprover
     from duh.adapters.native_executor import NativeExecutor
@@ -384,13 +402,13 @@ def run_tui(args: argparse.Namespace) -> int:
 
     executor = NativeExecutor(tools=tools, cwd=cwd)
 
+    # TUI mode: InteractiveApprover blocks on stdin (impossible in Textual).
+    # Default to AutoApprover; user can still restrict via --approval-mode.
     approval_mode_str = getattr(args, "approval_mode", None)
     if approval_mode_str:
         approver: Any = TieredApprover(mode=ApprovalMode(approval_mode_str), cwd=cwd)
-    elif getattr(args, "dangerously_skip_permissions", False):
-        approver = AutoApprover()
     else:
-        approver = InteractiveApprover()
+        approver = AutoApprover()
 
     compactor = SimpleCompactor()
     store = FileStore()

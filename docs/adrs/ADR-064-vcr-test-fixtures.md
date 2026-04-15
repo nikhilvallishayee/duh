@@ -6,7 +6,7 @@
 
 ## Context
 
-CC TS has `src/services/vcr.ts` which records API responses and replays them during tests. This enables:
+The VCR pattern (record/replay API responses) is widely used in agent CLI testing. This enables:
 - Deterministic tests that don't hit the real API
 - Fast test execution (no network latency)
 - Fixture-based regression testing

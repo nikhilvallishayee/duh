@@ -1789,7 +1789,7 @@ class HookEvent(str, Enum):
     """Lifecycle events that can trigger hooks.
 
     Original 6 events from Phase 1, plus 23 new events added in Phase 2
-    to match the Claude Code TS hook surface area.
+    to match the industry-standard hook surface area.
     """
 
     # --- Original 6 ---
@@ -1904,7 +1904,7 @@ Expected: All PASS
 ```bash
 cd /Users/nomind/Code/duh
 git add duh/hooks.py tests/unit/test_hook_events_extended.py
-git commit -m "feat(hooks): add 23 missing hook events to match Claude Code TS surface area"
+git commit -m "feat(hooks): add 23 missing hook events to match industry-standard surface area"
 ```
 
 ---

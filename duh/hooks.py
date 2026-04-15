@@ -52,7 +52,7 @@ class HookEvent(str, Enum):
     """Lifecycle events that can trigger hooks.
 
     Original 6 events from Phase 1, plus 22 new events added in Phase 2
-    to match the Claude Code TS hook surface area.
+    for full lifecycle coverage.
     """
 
     # --- Original 6 ---

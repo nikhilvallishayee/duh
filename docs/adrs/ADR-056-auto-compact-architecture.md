@@ -15,7 +15,7 @@ at 70/50/30%. Two problems remain:
    shed enough tokens before hitting the model again, especially when large
    tool results (Read, Bash) dominate the context.
 2. **Missing microcompact tier.** There is no cheap pre-pass that clears
-   stale tool results *before* heavier compaction runs. Claude Code clears
+   stale tool results *before* heavier compaction runs. Leading agent CLIs clear
    old Read/Bash/Grep outputs incrementally (time-based, keeping only the
    last N results), which prevents the need for expensive compaction in most
    sessions.
@@ -24,7 +24,7 @@ at 70/50/30%. Two problems remain:
 4. **No post-compact restoration.** After aggressive compaction drops
    messages, recently accessed files and active context are lost.
 
-Research from Claude Code (tengu-legacy) reveals a multi-tier approach:
+Research into leading agent CLI architectures reveals a multi-tier approach:
 
 - **Microcompact** — incremental tool-result clearing (<1ms, no model call)
 - **Session memory compaction** — extract key decisions into summary

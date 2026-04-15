@@ -120,7 +120,12 @@ class TestSlashCompact:
 
 
 class TestSlashConnectAndModels:
-    def test_models_lists_openai(self, capsys):
+    def test_models_lists_openai(self, capsys, monkeypatch):
+        from duh.cli import repl as repl_mod
+
+        monkeypatch.setattr(repl_mod, "has_anthropic_available", lambda: False)
+        monkeypatch.setattr(repl_mod, "has_openai_available", lambda: True)
+        monkeypatch.setattr(repl_mod, "has_openai_chatgpt_oauth", lambda: False)
         engine = _make_engine()
         keep, model = _handle_slash(
             "/models", engine, "gpt-4o", _make_deps(), provider_name="openai"

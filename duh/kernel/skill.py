@@ -244,6 +244,10 @@ def load_skills_dir(path: str | Path) -> list[SkillDef]:
     - Flat: ``path/my-skill.md``
     - Directory: ``path/my-skill/SKILL.md`` (Claude Code convention)
 
+    Subdirectories without a ``SKILL.md`` at their root are treated as
+    namespace directories and recursed into, allowing nested layouts such as:
+    ``path/category/my-skill/SKILL.md``
+
     Args:
         path: Directory to scan for skill files.
 
@@ -263,13 +267,16 @@ def load_skills_dir(path: str | Path) -> list[SkillDef]:
             if skill is not None:
                 skills.append(skill)
 
-        # Directory with SKILL.md inside
+        # Directory — check for SKILL.md, else recurse as namespace
         elif entry.is_dir():
             skill_md = entry / "SKILL.md"
             if skill_md.is_file():
                 skill = _skill_from_file(skill_md)
                 if skill is not None:
                     skills.append(skill)
+            else:
+                # Namespace directory — recurse into it
+                skills.extend(load_skills_dir(entry))
 
     return skills
 

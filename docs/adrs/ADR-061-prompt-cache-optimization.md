@@ -6,10 +6,10 @@
 
 ## Context
 
-Anthropic's API supports prompt caching: the first request pays `cache_creation` tokens, subsequent requests with the same prefix pay only `cache_read` tokens at 90% discount. CC TS has sophisticated cache optimization:
+Anthropic's API supports prompt caching: the first request pays `cache_creation` tokens, subsequent requests with the same prefix pay only `cache_read` tokens at 90% discount. Leading agent CLIs implement sophisticated cache optimization:
 
-1. **Cache break detection** (`promptCacheBreakDetection.ts`) — detects when cache read rate drops unexpectedly and flags potential breaks
-2. **Cached microcompact** (`cachedMicrocompact.ts`) — uses `cache_edits` API to delete old tool results from the cached prefix without invalidating it
+1. **Cache break detection** — detects when cache read rate drops unexpectedly and flags potential breaks
+2. **Cached microcompact** — uses `cache_edits` API to delete old tool results from the cached prefix without invalidating it
 3. **Prompt cache sharing** — forked agents (compact, session memory) reuse the main conversation's cache prefix
 
 D.U.H. currently has no prompt cache awareness. Every API call creates a new cache. This wastes ~80% of potential savings on multi-turn conversations.
@@ -53,7 +53,7 @@ Track cache read rates across turns. If cache reads drop unexpectedly:
 
 ### Phase 4: Cache-Aware Microcompact
 
-Instead of clearing tool result content (which changes the prefix and breaks cache), use the `cache_edits` API to remove tool results from the server-side cache without changing the local messages. This is CC's `cachedMicrocompact.ts` approach.
+Instead of clearing tool result content (which changes the prefix and breaks cache), use the `cache_edits` API to remove tool results from the server-side cache without changing the local messages. This is the cached microcompact approach used by leading agent CLIs.
 
 ## Implementation Plan
 

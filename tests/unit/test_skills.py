@@ -505,12 +505,66 @@ class TestDirectorySkillLayout:
         names = {s.name for s in skills}
         assert names == {"flat", "nested"}
 
-    def test_ignores_dirs_without_skill_md(self, tmp_path: Path):
+    def test_ignores_dirs_without_skill_md_and_no_nested_skills(self, tmp_path: Path):
         empty_dir = tmp_path / "no-skill"
         empty_dir.mkdir()
         (empty_dir / "README.md").write_text("Not a skill")
         skills = load_skills_dir(tmp_path)
         assert len(skills) == 0
+
+    def test_recurses_into_namespace_dirs(self, tmp_path: Path):
+        """Subdirs without SKILL.md are namespace dirs — recurse into them."""
+        ns = tmp_path / "perspectives"
+        ns.mkdir()
+        weaver = ns / "weaver"
+        weaver.mkdir()
+        (weaver / "SKILL.md").write_text(
+            "---\nname: weaver\ndescription: Pattern recognition\n---\nWeave patterns"
+        )
+        checker = ns / "checker"
+        checker.mkdir()
+        (checker / "SKILL.md").write_text(
+            "---\nname: checker\ndescription: Validation mode\n---\nCheck everything"
+        )
+        skills = load_skills_dir(tmp_path)
+        assert len(skills) == 2
+        names = {s.name for s in skills}
+        assert names == {"weaver", "checker"}
+
+    def test_recurses_multiple_levels(self, tmp_path: Path):
+        """Deep nesting: skills/category/subcategory/skill-name/SKILL.md"""
+        deep = tmp_path / "wisdom" / "eastern" / "buddhism"
+        deep.mkdir(parents=True)
+        (deep / "SKILL.md").write_text(
+            "---\nname: buddhism\ndescription: Buddhist wisdom\n---\nbody"
+        )
+        skills = load_skills_dir(tmp_path)
+        assert len(skills) == 1
+        assert skills[0].name == "buddhism"
+
+    def test_mixes_flat_dir_and_namespace(self, tmp_path: Path):
+        """All three layouts coexist."""
+        # Flat
+        (tmp_path / "flat.md").write_text(
+            "---\nname: flat\ndescription: Flat\n---\n"
+        )
+        # Direct dir skill
+        direct = tmp_path / "direct"
+        direct.mkdir()
+        (direct / "SKILL.md").write_text(
+            "---\nname: direct\ndescription: Direct\n---\n"
+        )
+        # Namespace → nested skill
+        ns = tmp_path / "category"
+        ns.mkdir()
+        nested = ns / "nested"
+        nested.mkdir()
+        (nested / "SKILL.md").write_text(
+            "---\nname: nested\ndescription: Nested\n---\n"
+        )
+        skills = load_skills_dir(tmp_path)
+        names = {s.name for s in skills}
+        assert names == {"flat", "direct", "nested"}
 
 
 class TestDescriptionFallback:

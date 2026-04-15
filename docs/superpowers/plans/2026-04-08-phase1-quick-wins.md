@@ -118,7 +118,7 @@ Add the following to `duh/tools/bash_security.py` after the existing imports (be
 
 ```python
 # ---------------------------------------------------------------------------
-# Env var allowlist + binary hijack detection (ported from Claude Code TS)
+# Env var allowlist + binary hijack detection (ported from industry best practice)
 # ---------------------------------------------------------------------------
 
 # Vars that are safe to set in shell commands.
@@ -366,7 +366,7 @@ Add early check in `WriteTool.call()` before writing:
 Add to `duh/adapters/file_store.py` after imports:
 
 ```python
-# Maximum session file size (64 MB). Matches Claude Code TS MAX_PERSISTED_SIZE.
+# Maximum session file size (64 MB). Matches industry best practice MAX_PERSISTED_SIZE.
 MAX_SESSION_BYTES = 64 * 1024 * 1024
 ```
 
@@ -815,7 +815,7 @@ Expected: FAIL — `_is_session_expired` not defined
 Add to `duh/adapters/mcp_executor.py` after the existing constants:
 
 ```python
-# Session management constants (from Claude Code TS)
+# Session management constants (from industry best practice)
 MAX_SESSION_RETRIES = 1
 MAX_ERRORS_BEFORE_RECONNECT = 3
 
@@ -1022,7 +1022,7 @@ Expected: FAIL — `duh.kernel.query_guard` not found
 """QueryGuard — concurrent query state machine.
 
 Prevents race conditions where multiple queries run simultaneously.
-Ported from Claude Code TS's QueryGuard pattern.
+Ported from industry best practice's QueryGuard pattern.
 
 State transitions:
     IDLE → DISPATCHING (reserve)

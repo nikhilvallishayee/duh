@@ -106,7 +106,7 @@ Tool calling format translation:
 | `openai.py` | `openai` | Future | OpenAI, Azure OpenAI |
 | `litellm.py` | `litellm` | Future | 100+ models via unified interface |
 | `hf_local.py` | `transformers` | Future | Local HuggingFace models |
-| `bedrock.py` | `boto3` | Future | AWS Bedrock (matches CC's Bedrock support) |
+| `bedrock.py` | `boto3` | Future | AWS Bedrock |
 | `vertex.py` | `google-cloud` | Future | Google Vertex AI |
 
 Each future adapter follows the same pattern:

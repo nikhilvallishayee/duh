@@ -1,4 +1,4 @@
-# ADR-058: Resume Modes and CC-Parity Compaction
+# ADR-058: Resume Modes and Competitive-Parity Compaction
 
 **Status:** Proposed — 2026-04-15
 **Date:** 2026-04-15
@@ -7,10 +7,10 @@
 
 ## Context
 
-Claude Code TS offers a single resume mode: load ALL messages as-is, let auto-compact handle context limits on the next query. This works because:
-1. CC tracks messages in JSONL transcript files with UUIDs and parent chains
-2. CC's compaction is multi-tier (microcompact → session memory → full summary → reactive)
-3. CC rebuilds post-compact state (file cache, plan mode, skills, deferred tools, MCP instructions)
+Leading agent CLIs offer a single resume mode: load ALL messages as-is, let auto-compact handle context limits on the next query. This works because:
+1. Messages are tracked in JSONL transcript files with UUIDs and parent chains
+2. Compaction is multi-tier (microcompact → session memory → full summary → reactive)
+3. Post-compact state is rebuilt (file cache, plan mode, skills, deferred tools, MCP instructions)
 
 D.U.H. currently has a simpler setup:
 - `--continue` loads messages and force-compacts on resume (context loss!)
@@ -20,7 +20,7 @@ D.U.H. currently has a simpler setup:
 
 With ADR-057 fixing message flow, sessions now save correctly. But we need:
 1. **Two resume modes** — full context (for 1M models) and summarized (for smaller contexts)
-2. **Multi-tier compaction** matching CC's sophistication
+2. **Multi-tier compaction** matching industry best practices
 3. **Post-compact state rebuild** to restore working context after summarization
 
 ## Decision
@@ -30,7 +30,7 @@ With ADR-057 fixing message flow, sessions now save correctly. But we need:
 #### Mode 1: Resume As-Is (default for `--continue`)
 Load all messages into `engine._messages`. No compaction on resume. Auto-compact in `engine.run()` handles context limits when the next query fires.
 
-This is what CC does, and it's the right default for 1M context models.
+This is the industry-standard approach, and it's the right default for 1M context models.
 
 ```
 duh --continue                    # resume most recent, full context
@@ -45,7 +45,7 @@ duh --continue --summarize        # resume with summarized history
 duh --resume <id> --summarize     # resume specific with summary
 ```
 
-### Multi-Tier Compaction (CC Parity)
+### Multi-Tier Compaction (Competitive Parity)
 
 | Tier | Name | Trigger | Model Call | Cost | D.U.H. Status |
 |------|------|---------|-----------|------|---------------|
@@ -57,10 +57,10 @@ duh --resume <id> --summarize     # resume specific with summary
 - `MicroCompactor` clears old tool_result content with `[tool result cleared for context management]`
 - Time-based: clears if gap between messages > 5 minutes (cache is cold anyway)
 - Count-based: keeps last N tool results
-- **Enhancement**: Add CC's `COMPACTABLE_TOOLS` set — only clear Read, Bash, Grep, Glob, WebFetch, WebSearch, Edit, Write
+- **Enhancement**: Add a `COMPACTABLE_TOOLS` set — only clear Read, Bash, Grep, Glob, WebFetch, WebSearch, Edit, Write
 
 #### Tier 1: Model-Based Summary Compaction (upgrade needed)
-CC's `compactConversation()` pattern:
+The summary compaction pattern:
 1. Send all messages to a forked model call with a summary prompt
 2. Model returns a conversation summary
 3. Build post-compact messages: `[boundary_marker, summary, recent_messages, attachments]`
@@ -82,7 +82,7 @@ Message(
 - Tool schemas that were discovered mid-session
 
 **Auto-Compact Trigger**: `effective_context_window - buffer_tokens`
-- CC uses 13K buffer. D.U.H. currently uses 20% threshold (80% of context).
+- Industry standard is ~13K buffer. D.U.H. currently uses 20% threshold (80% of context).
 - Keep 80% threshold but add circuit breaker: max 3 consecutive failures.
 
 #### Tier 2: Reactive Compact (already implemented)
@@ -108,7 +108,7 @@ duh -p "continue working" --continue --summarize  # SDK resume with summary
 ### Positive
 - Full context resume for 1M models (no context loss)
 - Optional summarized resume for cost-conscious users
-- CC-parity compaction sophistication
+- Competitive-parity compaction sophistication
 - Post-compact state rebuild prevents "amnesia" after compaction
 - Compact boundary markers make compaction visible in session history
 
@@ -138,7 +138,7 @@ duh -p "continue working" --continue --summarize  # SDK resume with summary
 - [ ] Implement summarize-on-resume in TUI runner
 - [ ] Implement summarize-on-resume in SDK runner
 
-### Phase 4: CC-parity enhancements
+### Phase 4: Competitive-parity enhancements
 - [ ] Time-based microcompact trigger (gap > 5 minutes)
 - [ ] Post-compact plan restoration
 - [ ] Post-compact skill/tool restoration

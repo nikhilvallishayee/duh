@@ -5,7 +5,7 @@
 
 ## D.U.H. is Not a Port
 
-D.U.H. is a **first-principles universal harness**. It benchmarks against every major AI coding agent CLI and takes the best ideas from each. The CC TS codebase (tengu-legacy) is one reference among five.
+D.U.H. is a **first-principles universal harness**. It benchmarks against every major AI coding agent CLI and takes the best ideas from each.
 
 ## Competitive Landscape (April 2026)
 
@@ -15,8 +15,8 @@ D.U.H. is a **first-principles universal harness**. It benchmarks against every 
 | **Context mgmt** | 4-tier compaction | Background auto | Hosted `/compact` endpoint | Auto per-project | Configurable auto | **Best of all** |
 | **Session persist** | JSONL + transcript | State files | Opaque | SQLite-like | SQLite | **JSONL per-project** |
 | **Resume** | Full load, auto-compact | `--continue` | Long-running | Dir-aware auto-switch | Terminal resume | **Full + --summarize** |
-| **@include** | @path in CLAUDE.md | N/A | N/A | GEMINI.md (no includes) | opencode.json | **@path (CC parity)** |
-| **Multi-agent** | AgentTool + coordinator | N/A | N/A | N/A | Build/Plan dual agent | **AgentTool + planned SwarmTool** |
+| **@include** | @path in CLAUDE.md | N/A | N/A | GEMINI.md (no includes) | opencode.json | **@path (full parity)** |
+| **Multi-agent** | AgentTool + coordinator | N/A | N/A | N/A | Build/Plan dual agent | **AgentTool + SwarmTool (planned)** |
 | **Cache optimization** | cache_control + edits | Proprietary | Proprietary | Proprietary | N/A | **Planned (ADR-061)** |
 | **Tool search** | Deferred + discovery | N/A | N/A | N/A | N/A | **Deferred (ADR-018)** |
 | **Approval modes** | Tiered | Auto | Sandboxed | Auto | Auto | **Tiered (ADR-038)** |
@@ -24,7 +24,7 @@ D.U.H. is a **first-principles universal harness**. It benchmarks against every 
 
 ## What D.U.H. Takes From Each
 
-### From Claude Code (tengu-legacy)
+### From Claude Code
 - Multi-tier compaction (micro → snip → summary → reactive)
 - @include directive in instruction files
 - Per-project session scoping
@@ -36,7 +36,7 @@ D.U.H. is a **first-principles universal harness**. It benchmarks against every 
 - **Disk-based tool output storage** — large tool results written to disk instead of kept in memory transcript
 
 ### From Codex CLI
-- **Structured handoff summaries** — compaction preserves: current progress, key decisions, constraints, user preferences, TODOs, critical data. Better than CC's free-form summary.
+- **Structured handoff summaries** — compaction preserves: current progress, key decisions, constraints, user preferences, TODOs, critical data. More structured than free-form summary approaches.
 - **Hybrid compaction** — hosted endpoint for supported models, local LLM for others
 
 ### From Gemini CLI
@@ -53,20 +53,20 @@ D.U.H. is a **first-principles universal harness**. It benchmarks against every 
 1. **Truly universal** — any provider, any model, any tool protocol (native + MCP)
 2. **Open source with full kernel** — not a binary blob, not partial open source
 3. **First-principles architecture** — ports-and-adapters, not framework lock-in
-4. **CC instruction compatibility** — reads CLAUDE.md, .claude/rules, .claude/skills
+4. **Instruction file compatibility** — reads CLAUDE.md, .claude/rules, .claude/skills
 5. **Multi-agent with recursion control** — AgentTool with depth limits, parent tool inheritance
 6. **Security-first** — trifecta check, taint tracking, confirmation gates, sandbox policies
 
 ## ADR Priorities (Reframed)
 
-These are prioritized by competitive advantage, not CC parity:
+These are prioritized by competitive advantage:
 
 | Priority | ADR | Feature | Why |
 |----------|-----|---------|-----|
 | **P0** | 060 | Snip compaction | Free context savings, all agents have some form of this |
 | **P0** | 061 | Prompt cache | 80% cost reduction, Copilot/Codex have proprietary equivalents |
 | **P1** | 059 | Context collapse | Background compaction (Copilot pattern), non-blocking |
-| **P1** | 063 | Coordinator + SwarmTool | OpenCode's dual-agent inspired, CC's coordinator |
+| **P1** | 063 | Coordinator + SwarmTool | OpenCode's dual-agent inspired, industry coordinator pattern |
 | **P2** | 062 | Output styles | Developer experience, all agents offer some verbosity control |
 | **P2** | 064 | VCR fixtures | Testing infrastructure, enables CI without API keys |
 | **P3** | — | Dir-aware sessions | Gemini's auto-switch pattern, nice UX |

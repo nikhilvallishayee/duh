@@ -6,7 +6,7 @@
 
 ## Context
 
-CC TS has evolved beyond auto-compact to a newer system called **Context Collapse** (`src/services/contextCollapse/`). Auto-compact summarizes the entire conversation when context hits ~93% — a blunt instrument that destroys granular context. Context Collapse instead:
+Leading agent CLIs have evolved beyond auto-compact to a newer system called **Context Collapse**. Auto-compact summarizes the entire conversation when context hits ~93% — a blunt instrument that destroys granular context. Context Collapse instead:
 
 1. **Commits** conversation segments at 90% usage — saving them to a structured log
 2. **Blocks** new requests at 95% — forces the user to wait for compaction
@@ -29,7 +29,7 @@ Remove completed API rounds (assistant+tool_result pairs) from the oldest end of
 
 ### Phase 2: Context Collapse
 
-Full CC-parity context management:
+Full competitive-parity context management:
 
 **Commit phase (90% context):**
 - Save the current conversation segment to a structured transcript
@@ -69,7 +69,7 @@ Token usage →
 - Preserves recent context with much higher fidelity than summary
 - Snip compaction is free (no model call)
 - Structural preservation: file state, tool results, thinking blocks intact
-- Matches CC's evolution beyond auto-compact
+- Matches industry evolution beyond auto-compact
 
 ### Negative
 - More complex than single-threshold auto-compact

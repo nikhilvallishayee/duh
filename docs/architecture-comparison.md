@@ -2,7 +2,7 @@
 
 ## Project Stats
 
-| | D.U.H. | open_tengu | tengu-legacy (Claude Code) | Codex (OpenAI) | OpenCode |
+| | D.U.H. | open_tengu | Claude Code (Claude Code) | Codex (OpenAI) | OpenCode |
 |---|---|---|---|---|---|
 | Language | Python | Python | TypeScript | Rust | Go |
 | Source LOC | 24,327 | 418,026 | ~512,000 | ~603,000 | ~42,000 |
@@ -22,7 +22,7 @@
 - **S** = Scaffolded (code exists, not functional)
 - **N** = Not implemented
 
-| Feature | D.U.H. | open_tengu | tengu-legacy | Codex | OpenCode |
+| Feature | D.U.H. | open_tengu | Claude Code | Codex | OpenCode |
 |---|---|---|---|---|---|
 | **Core Loop** | | | | | |
 | Multi-turn agentic loop | **Y** | **Y** | **Y** | **Y** | **Y** |
@@ -181,7 +181,7 @@
 
 ## Architectural Comparison
 
-| Dimension | D.U.H. | open_tengu | tengu-legacy | Codex | OpenCode |
+| Dimension | D.U.H. | open_tengu | Claude Code | Codex | OpenCode |
 |---|---|---|---|---|---|
 | **Architecture** | Hexagonal (ports & adapters) | Direct port of TS | Monolith + React hooks | Workspace (78 Rust crates) | Go packages |
 | **Kernel isolation** | Strict (kernel never imports providers) | Partial | Entangled with React | Strict (trait boundaries) | Partial |

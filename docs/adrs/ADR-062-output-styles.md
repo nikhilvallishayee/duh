@@ -6,7 +6,7 @@
 
 ## Context
 
-CC TS supports multiple output styles that control how responses are rendered:
+Leading agent CLIs support multiple output styles that control how responses are rendered:
 - **Default** — Rich markdown with tool panels
 - **Concise** — Shorter responses, less verbose tool output
 - **Verbose** — Full tool output, thinking blocks visible
@@ -58,7 +58,7 @@ Add an `OutputStyle` enum and wire it into renderers:
 - User controls verbosity without losing information
 - Concise mode for experienced users who just want results
 - Verbose mode for debugging complex tool chains
-- Matches CC's output style system
+- Follows industry best practice for output style systems
 
 ### Negative
 - Another configuration knob to maintain

@@ -24,7 +24,7 @@ from duh.kernel.messages import Message
 
 logger = logging.getLogger(__name__)
 
-# Maximum session file size (64 MB). Matches Claude Code TS MAX_PERSISTED_SIZE.
+# Maximum session file size (64 MB). Industry standard cap.
 MAX_SESSION_BYTES = 64 * 1024 * 1024
 
 
@@ -37,7 +37,7 @@ def _project_sessions_dir(cwd: str | None = None) -> Path:
 
     Sessions are stored under ``~/.config/duh/sessions/<hash>/`` where
     ``<hash>`` is derived from the git root (or cwd if not in a repo).
-    This matches Claude Code's per-project session scoping.
+    This follows the industry-standard per-project session scoping pattern.
     """
     import hashlib
     project_root = cwd or "."

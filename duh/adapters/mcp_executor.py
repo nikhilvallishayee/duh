@@ -135,7 +135,7 @@ def _create_transport(config: MCPServerConfig) -> Any | None:
         )
 
 
-# Session management constants (from Claude Code TS)
+# Session management constants
 MAX_SESSION_RETRIES = 1
 MAX_ERRORS_BEFORE_RECONNECT = 3
 

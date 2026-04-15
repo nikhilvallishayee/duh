@@ -6,7 +6,7 @@
 
 ## Context
 
-CC TS has `src/coordinator/` which implements a coordinator/worker pattern:
+Leading agent CLIs implement a coordinator/worker pattern:
 - **Coordinator mode**: The main agent delegates tasks to worker subagents
 - **Normal mode**: Single agent handles everything directly (current D.U.H. behavior)
 - Sessions remember which mode they were in for resume
@@ -75,7 +75,7 @@ engine._messages[0].metadata["coordinator_mode"] = True
 - Systematic multi-agent orchestration
 - Parallel execution of independent subtasks
 - Clean separation: coordinator reasons, workers execute
-- Matches CC's coordinator mode
+- Follows industry best practice for multi-agent coordination
 
 ### Negative
 - Cost multiplier: N agents = N× API calls

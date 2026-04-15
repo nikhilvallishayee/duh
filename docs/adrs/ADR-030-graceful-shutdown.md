@@ -11,7 +11,7 @@ D.U.H. has no signal handling. When a user presses Ctrl+C or the process receive
 - Temporary files unclean
 - Provider streaming connections dangling
 
-The reference TS harness handles SIGINT/SIGTERM with a coordinated shutdown sequence. Production deployments in containers require SIGTERM handling to meet graceful shutdown contracts.
+Production agent CLIs handle SIGINT/SIGTERM with a coordinated shutdown sequence. Production deployments in containers require SIGTERM handling to meet graceful shutdown contracts.
 
 ## Decision
 
@@ -80,7 +80,7 @@ Default 5 seconds total. Each callback gets the remaining time, not the full tim
 
 - `duh/kernel/signals.py` — `ShutdownHandler` with `on_shutdown()`, `run_cleanup()`, and
   `install()` registering SIGINT/SIGTERM signal handlers on the event loop.
-- Default timeout: `DEFAULT_SHUTDOWN_TIMEOUT = 1.5` (matches Claude Code TS session-end
+- Default timeout: `DEFAULT_SHUTDOWN_TIMEOUT = 1.5` (industry standard session-end
   budget, differs from the 5.0 s proposed above).
 - Callbacks execute in registration order (FIFO). LIFO ordering, second-signal force
   exit, and SIGQUIT stack dump remain TODO.

@@ -276,7 +276,7 @@ def _expand_includes(
 ) -> list[str]:
     """Expand @path references in instruction file content.
 
-    Matches CC's @include directive (claudemd.ts):
+    Implements the @include directive pattern:
     - @path, @./relative, @~/home, @/absolute
     - Skips code blocks (``` fenced)
     - Max depth 5, circular reference protection
@@ -340,7 +340,7 @@ def _expand_includes(
         expanded = _expand_includes(inc_content, inc_path.parent, processed, depth + 1)
         results.extend(expanded)
 
-    # Original content last (CC puts includes before the including file)
+    # Original content last (includes appear before the including file)
     results.append(content)
     return results
 
@@ -365,7 +365,7 @@ def load_instructions(cwd: str = ".") -> list[str]:
     Files are loaded in precedence order (lowest first, highest last).
     The model pays more attention to content appearing later.
 
-    @path references in instruction files are expanded (CC parity):
+    @path references in instruction files are expanded:
     - @./relative/path, @~/home/path, @/absolute/path
     - Included files appear before the file that references them
     - Max 5 levels of nesting, circular references prevented
@@ -393,13 +393,13 @@ def load_instructions(cwd: str = ".") -> list[str]:
 
     # Project instructions (root to cwd)
     for dir_path in _dirs_root_to_cwd(cwd):
-        # DUH.md / CLAUDE.md in directory root (CC compatibility)
+        # DUH.md / CLAUDE.md in directory root (cross-tool compatibility)
         for name in ["DUH.md", str(Path(".duh") / "DUH.md"), "CLAUDE.md"]:
             md_path = dir_path / name
             if md_path.exists():
                 instructions.extend(_load_file_with_includes(md_path, processed))
 
-        # .duh/rules/*.md and .claude/rules/*.md (CC compatibility)
+        # .duh/rules/*.md and .claude/rules/*.md (cross-tool compatibility)
         for rules_name in [Path(".duh") / "rules", Path(".claude") / "rules"]:
             rules_dir = dir_path / rules_name
             if rules_dir.is_dir():

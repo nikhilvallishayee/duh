@@ -1,7 +1,7 @@
 """QueryGuard — concurrent query state machine.
 
 Prevents race conditions where multiple queries run simultaneously.
-Ported from Claude Code TS's QueryGuard pattern.
+Implements the QueryGuard concurrent query prevention pattern.
 
 State transitions:
     IDLE → DISPATCHING (reserve / async_reserve)

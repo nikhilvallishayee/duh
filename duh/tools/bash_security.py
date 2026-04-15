@@ -21,11 +21,11 @@ from typing import TypedDict
 
 
 # ---------------------------------------------------------------------------
-# Env var allowlist + binary hijack detection (ported from Claude Code TS)
+# Env var allowlist + binary hijack detection
 # ---------------------------------------------------------------------------
 
 # Vars that are safe to set in shell commands.
-# Based on Claude Code's 166-var allowlist, distilled to the most common.
+# Based on a comprehensive 166-var allowlist, distilled to the most common.
 SAFE_ENV_VARS: frozenset[str] = frozenset({
     # Shell basics
     "PATH", "HOME", "USER", "SHELL", "TERM", "LANG", "LC_ALL", "LC_CTYPE",

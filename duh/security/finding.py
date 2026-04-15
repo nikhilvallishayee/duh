@@ -158,8 +158,8 @@ class Finding:
                     "physicalLocation": {
                         "artifactLocation": {"uri": self.location.file},
                         "region": {
-                            "startLine": self.location.line_start,
-                            "endLine": self.location.line_end,
+                            "startLine": max(1, self.location.line_start),
+                            "endLine": max(1, self.location.line_end),
                             "snippet": {"text": self.location.snippet},
                         },
                     }

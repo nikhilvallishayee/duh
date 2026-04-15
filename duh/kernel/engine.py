@@ -68,6 +68,8 @@ _PTL_TRIGGERS = (
     "too many tokens",
     "content too large",
     "request too large",
+    "request entity too large",
+    "input is too long",
 )
 
 
@@ -244,6 +246,20 @@ class Engine:
             token=token,
         )
 
+    def _get_adaptive_compactor(self) -> Any:
+        """Lazily create an AdaptiveCompactor for auto-compaction (ADR-056).
+
+        Used when no explicit ``deps.compact`` is provided.  Cached on
+        the engine instance so the circuit breaker state persists across
+        turns.
+        """
+        if not hasattr(self, "_adaptive_compactor"):
+            from duh.adapters.compact import AdaptiveCompactor
+            self._adaptive_compactor = AdaptiveCompactor(
+                call_model=self._deps.call_model,
+            )
+        return self._adaptive_compactor
+
     async def run(
         self,
         prompt: str | list[Any],
@@ -312,39 +328,44 @@ class Engine:
             )
 
         # --- Auto-compact if approaching context limit ---
-        if self._deps.compact:
-            effective_model = model or self._config.model
-            context_limit = get_context_limit(effective_model)
-            threshold = int(context_limit * 0.80)
-            if input_estimate > threshold:
-                logger.info(
-                    "Auto-compacting: ~%d tokens exceeds 80%% threshold (%d) "
-                    "for %s (limit %d)",
-                    input_estimate, threshold, effective_model, context_limit,
-                )
-                # Emit PRE_COMPACT hook
-                if self._deps.hook_registry:
-                    await execute_hooks(
-                        self._deps.hook_registry,
-                        HookEvent.PRE_COMPACT,
-                        {"message_count": len(self._messages), "token_estimate": input_estimate},
-                    )
+        # Use the injected compact function if provided (backward compat),
+        # otherwise fall back to AdaptiveCompactor (ADR-056).
+        compact_fn = self._deps.compact
+        if compact_fn is None:
+            compact_fn = self._get_adaptive_compactor().compact
 
-                count_before = len(self._messages)
-                self._messages = await self._deps.compact(
-                    self._messages, token_limit=threshold,
+        effective_model = model or self._config.model
+        context_limit = get_context_limit(effective_model)
+        threshold = int(context_limit * 0.80)
+        if input_estimate > threshold:
+            logger.info(
+                "Auto-compacting: ~%d tokens exceeds 80%% threshold (%d) "
+                "for %s (limit %d)",
+                input_estimate, threshold, effective_model, context_limit,
+            )
+            # Emit PRE_COMPACT hook
+            if self._deps.hook_registry:
+                await execute_hooks(
+                    self._deps.hook_registry,
+                    HookEvent.PRE_COMPACT,
+                    {"message_count": len(self._messages), "token_estimate": input_estimate},
                 )
 
-                # Emit POST_COMPACT hook
-                if self._deps.hook_registry:
-                    await execute_hooks(
-                        self._deps.hook_registry,
-                        HookEvent.POST_COMPACT,
-                        {
-                            "message_count_before": count_before,
-                            "message_count_after": len(self._messages),
-                        },
-                    )
+            count_before = len(self._messages)
+            self._messages = await compact_fn(
+                self._messages, token_limit=threshold,
+            )
+
+            # Emit POST_COMPACT hook
+            if self._deps.hook_registry:
+                await execute_hooks(
+                    self._deps.hook_registry,
+                    HookEvent.POST_COMPACT,
+                    {
+                        "message_count_before": count_before,
+                        "message_count_after": len(self._messages),
+                    },
+                )
 
         # Run the query loop
         effective_model = model or self._config.model
@@ -422,7 +443,7 @@ class Engine:
                     error_text = event.get("error", "")
                     if (_is_ptl_error(error_text)
                             and ptl_retries < MAX_PTL_RETRIES
-                            and self._deps.compact):
+                            and compact_fn is not None):
                         ptl_detected = True
                         continue  # don't yield PTL error, we'll retry
 
@@ -493,7 +514,7 @@ class Engine:
                     )
 
                 count_before = len(self._messages)
-                self._messages = await self._deps.compact(
+                self._messages = await compact_fn(
                     self._messages, token_limit=target,
                 )
 

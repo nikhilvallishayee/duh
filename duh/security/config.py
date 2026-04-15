@@ -82,6 +82,8 @@ class SecurityPolicy(BaseModel):
     exceptions_file: Path = Path(".duh/security-exceptions.json")
     cache_file: Path = Path(".duh/security-cache.json")
 
+    trifecta_acknowledged: bool = False
+
     scanners: dict[str, ScannerConfig] = Field(default_factory=dict)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     ci: CIConfig = Field(default_factory=CIConfig)

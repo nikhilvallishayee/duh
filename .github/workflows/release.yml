@@ -137,26 +137,7 @@ jobs:
           name: dist
           path: dist/
 
-  # ──────────────────────────────────────────────────
-  # Publish: PyPI via Trusted Publishing (OIDC)
-  # ──────────────────────────────────────────────────
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write  # Trusted Publishing (OIDC) — PEP 740 attestations
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4.6.2
-        with:
-          name: dist
-          path: dist/
-
-      - name: Publish to PyPI (Trusted Publishing)
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          attestations: true
+  # PyPI publish handled by publish.yml (separate workflow with Trusted Publishing)
 
   # ──────────────────────────────────────────────────
   # GitHub Release with notes

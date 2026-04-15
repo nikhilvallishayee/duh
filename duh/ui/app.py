@@ -71,10 +71,12 @@ class DuhApp(App[int]):
     """
 
     CSS = APP_CSS
-    ENABLE_COMMAND_PALETTE = False  # don't capture Ctrl+P etc.
+    ENABLE_COMMAND_PALETTE = False
+    ALLOW_SELECT = True  # Enable native text selection with mouse
 
     BINDINGS = [
         Binding("ctrl+b", "toggle_sidebar", "Sidebar", show=True),
+        Binding("ctrl+c", "copy_selection", "Copy", show=False),
         Binding("ctrl+q", "quit", "Quit", show=True),
         Binding("escape", "quit", "Quit", show=False),
     ]
@@ -151,6 +153,15 @@ class DuhApp(App[int]):
         self.query_one("#header", Static).update(self._header_text())
         self.query_one("#statusbar", Static).update(self._status_text())
 
+    # ----------------------------------------------------------------- copy selection
+
+    def action_copy_selection(self) -> None:
+        """Copy selected text to clipboard (Ctrl+C / Cmd+C)."""
+        selection = self.selection
+        if selection:
+            self.copy_to_clipboard(selection)
+            self.notify("Copied to clipboard", timeout=2)
+
     # ----------------------------------------------------------------- sidebar toggle
 
     def action_toggle_sidebar(self) -> None:
@@ -175,7 +186,7 @@ class DuhApp(App[int]):
             f"[dim]Session:[/] {sid_short}  "
             f"[dim]Permissions:[/] auto-approve\n"
             f"[dim]Type a message below. Ctrl+Q to quit. Ctrl+B for sidebar.[/]\n"
-            f"[dim]Copy: Option+click to select, then Cmd+C (macOS) or Ctrl+Shift+C (Linux)[/]"
+            f"[dim]Select text with mouse, Ctrl+C to copy.[/]"
         )
         await log.mount(Static(banner, classes="welcome-banner"))
 

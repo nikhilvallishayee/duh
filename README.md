@@ -1,3 +1,14 @@
+```
+    ██████╗        ██╗   ██╗       ██╗  ██╗
+    ██╔══██╗       ██║   ██║       ██║  ██║
+    ██║  ██║       ██║   ██║       ██████╔╝
+    ██║  ██║  ██╗  ██║   ██║  ██╗  ██╔══██╗
+    ██████╔╝  ╚═╝  ╚██████╔╝  ╚═╝  ██║  ██║
+    ╚═════╝        ╚═════╝        ╚═╝  ╚═╝
+    ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+     is  a  Universal  Harness
+```
+
 # D.U.H. — D.U.H. is a Universal Harness
 
 [![CI](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml/badge.svg)](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml)

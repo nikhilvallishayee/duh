@@ -1176,6 +1176,10 @@ async def run_repl(args: argparse.Namespace) -> int:
         logging.basicConfig(level=logging.DEBUG, stream=sys.stderr,
                             format="[%(levelname)s] %(name)s: %(message)s")
 
+    # --- Print startup logo ---
+    from duh.ui.logo import print_logo
+    print_logo("compact", color=True)
+
     # --- Build renderer (Rich when available, plain ANSI otherwise) ---
     renderer = _make_renderer(debug=debug)
 

@@ -299,7 +299,7 @@ async def run_print_mode(args: argparse.Namespace) -> int:
 
     # --- Wire session store ---
     from duh.adapters.file_store import FileStore
-    store = FileStore()
+    store = FileStore(cwd=cwd)
 
     # --- Build executor and approver ---
     executor = NativeExecutor(tools=tools, cwd=cwd)

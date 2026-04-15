@@ -1291,7 +1291,7 @@ async def run_repl(args: argparse.Namespace) -> int:
 
     # --- Wire session store (auto-save after each turn) ---
     from duh.adapters.file_store import FileStore
-    store = FileStore()
+    store = FileStore(cwd=cwd)
 
     # --- Wire hook registry for lifecycle event emission ---
     _hook_registry = HookRegistry()

@@ -4,7 +4,7 @@ Stores each session as a .jsonl file under ~/.config/duh/sessions/.
 One JSON object per line = one message. Atomic writes via
 temp-file-then-rename for thread safety.
 
-    store = FileStore()
+    store = FileStore(cwd="/path/to/project")
     await store.save("abc-123", messages)
     history = await store.load("abc-123")
 """
@@ -32,11 +32,40 @@ def _default_base_dir() -> Path:
     return Path.home() / ".config" / "duh" / "sessions"
 
 
+def _project_sessions_dir(cwd: str | None = None) -> Path:
+    """Return a project-scoped sessions directory.
+
+    Sessions are stored under ``~/.config/duh/sessions/<hash>/`` where
+    ``<hash>`` is derived from the git root (or cwd if not in a repo).
+    This matches Claude Code's per-project session scoping.
+    """
+    import hashlib
+    project_root = cwd or "."
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, cwd=project_root, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            project_root = result.stdout.strip()
+    except Exception:
+        pass
+    project_root = str(Path(project_root).resolve())
+    h = hashlib.sha256(project_root.encode()).hexdigest()[:16]
+    return _default_base_dir() / h
+
+
 class FileStore:
     """JSONL file-backed SessionStore implementation."""
 
-    def __init__(self, base_dir: Path | str | None = None):
-        self._base_dir = Path(base_dir) if base_dir else _default_base_dir()
+    def __init__(self, base_dir: Path | str | None = None, cwd: str | None = None):
+        if base_dir:
+            self._base_dir = Path(base_dir)
+        elif cwd:
+            self._base_dir = _project_sessions_dir(cwd)
+        else:
+            self._base_dir = _default_base_dir()
 
     def _session_path(self, session_id: str) -> Path:
         return self._base_dir / f"{session_id}.jsonl"

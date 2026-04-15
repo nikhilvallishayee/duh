@@ -638,7 +638,7 @@ def run_tui(args: argparse.Namespace) -> int:
         approver = AutoApprover()
 
     compactor = SimpleCompactor()
-    store = FileStore()
+    store = FileStore(cwd=cwd)
     hook_registry = HookRegistry()
 
     deps = Deps(

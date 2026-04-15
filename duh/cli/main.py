@@ -50,6 +50,28 @@ def main(argv: list[str] | None = None) -> int:
         from duh.security.cli import main as security_main
         return security_main(args.security_args)
 
+    if args.command == "audit":
+        import json as _json
+        from duh.security.audit import AuditLogger
+        logger = AuditLogger()
+        entries = logger.read_entries(limit=args.limit)
+        if not entries:
+            sys.stdout.write("No audit entries found.\n")
+            return 0
+        if getattr(args, "audit_json", False):
+            for e in entries:
+                sys.stdout.write(_json.dumps(e) + "\n")
+        else:
+            sys.stdout.write(f"Last {len(entries)} audit entries:\n")
+            for e in entries:
+                ts = e.get("ts", "?")
+                tool = e.get("tool", "?")
+                status = e.get("status", "?")
+                ms = e.get("ms", 0)
+                sid = e.get("sid", "?")[:8]
+                sys.stdout.write(f"  {ts}  {sid}  {tool:20s}  {status:7s}  {ms}ms\n")
+        return 0
+
     if args.command == "bridge":
         from duh.bridge.server import BridgeServer
 

@@ -49,6 +49,7 @@ from duh.ui.styles import OutputStyle
 from duh.ui.theme import APP_CSS
 from duh.ui.logo import LOGO_COMPACT
 from duh.ui.widgets import MessageWidget, ThinkingWidget, ToolCallWidget
+from duh.kernel.model_caps import model_context_block, rebuild_system_prompt
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +101,7 @@ class DuhApp(App[int]):
         self._resumed_messages = resumed_messages or []
         self._cwd = cwd
         self._output_style: OutputStyle = OutputStyle.DEFAULT
+        self._coordinator_mode: bool = False
 
         # Running counters
         self._input_tokens: int = 0
@@ -155,6 +157,17 @@ class DuhApp(App[int]):
     def _refresh_status(self) -> None:
         self.query_one("#header", Static).update(self._header_text())
         self.query_one("#statusbar", Static).update(self._status_text())
+
+    def _rebuild_system_prompt(self, old_model: str, new_model: str) -> None:
+        """Rebuild the system prompt after a model switch.
+
+        Replaces the ``<model-context>`` block with updated capabilities
+        for *new_model*.  If no block exists yet (sessions started before
+        this fix) the block is appended.
+        """
+        self._engine._config.system_prompt = rebuild_system_prompt(
+            self._engine._config.system_prompt, old_model, new_model,
+        )
 
     # ----------------------------------------------------------------- sidebar toggle
 
@@ -262,8 +275,8 @@ class DuhApp(App[int]):
         await self._add_widget(widget)
         return widget
 
-    async def _new_thinking_widget(self) -> ThinkingWidget:
-        widget = ThinkingWidget()
+    async def _new_thinking_widget(self, collapsed: bool = True) -> ThinkingWidget:
+        widget = ThinkingWidget(collapsed=collapsed)
         await self._add_widget(widget)
         return widget
 
@@ -322,6 +335,8 @@ class DuhApp(App[int]):
                 "  [cyan]/cost[/]          — Show token usage and cost\n"
                 "  [cyan]/context[/]       — Show context window token breakdown\n"
                 "  [cyan]/compact[/]       — Force context compaction\n"
+                "  [cyan]/mode[/] [name]   — Show or switch mode (normal/coordinator)\n"
+                "  [cyan]/memory[/]        — Memory facts (list/search/show/delete)\n"
                 "  [cyan]/clear[/]         — Clear message display\n"
                 "  [cyan]/session[/]       — Show session info\n"
                 "  [cyan]/sessions[/]      — List sessions for this project\n"
@@ -332,8 +347,10 @@ class DuhApp(App[int]):
 
         if cmd == "/model":
             if arg:
+                old_model = self._model
                 self._model = arg
                 self._engine._config.model = arg
+                self._rebuild_system_prompt(old_model, arg)
                 self._refresh_status()
                 await self._add_widget(Static(
                     f"[green]Model switched to:[/] {arg}", classes="session-divider",
@@ -433,6 +450,44 @@ class DuhApp(App[int]):
                 ))
             return True
 
+        if cmd == "/mode":
+            if arg:
+                mode_arg = arg.strip().lower()
+                if mode_arg == "coordinator":
+                    if not self._coordinator_mode:
+                        from duh.kernel.coordinator import COORDINATOR_SYSTEM_PROMPT
+                        self._engine._config.system_prompt = (
+                            COORDINATOR_SYSTEM_PROMPT + "\n\n" + self._engine._config.system_prompt
+                        )
+                    self._coordinator_mode = True
+                    await self._add_widget(Static(
+                        "[green]Mode switched to:[/] coordinator",
+                        classes="session-divider",
+                    ))
+                elif mode_arg == "normal":
+                    if self._coordinator_mode:
+                        from duh.kernel.coordinator import COORDINATOR_SYSTEM_PROMPT
+                        prompt = self._engine._config.system_prompt
+                        prefix = COORDINATOR_SYSTEM_PROMPT + "\n\n"
+                        if prompt.startswith(prefix):
+                            self._engine._config.system_prompt = prompt[len(prefix):]
+                    self._coordinator_mode = False
+                    await self._add_widget(Static(
+                        "[green]Mode switched to:[/] normal",
+                        classes="session-divider",
+                    ))
+                else:
+                    await self._add_error_message(
+                        f"Unknown mode '{arg.strip()}'. Choose from: normal, coordinator"
+                    )
+            else:
+                current = "coordinator" if self._coordinator_mode else "normal"
+                await self._add_widget(Static(
+                    f"[dim]Current mode:[/] {current}",
+                    classes="session-divider",
+                ))
+            return True
+
         if cmd == "/sessions":
             store = getattr(self._engine, "_session_store", None)
             if store is None:
@@ -466,6 +521,121 @@ class DuhApp(App[int]):
                 "\n".join(lines),
                 classes="welcome-banner",
             ))
+            return True
+
+        if cmd == "/memory":
+            import os
+            from duh.adapters.memory_store import FileMemoryStore
+
+            mem_cwd = self._cwd or os.getcwd()
+            mem_store = FileMemoryStore(cwd=mem_cwd)
+            sub_parts = arg.strip().split(None, 1)
+            sub = sub_parts[0].lower() if sub_parts else "list"
+            sub_arg = sub_parts[1].strip() if len(sub_parts) > 1 else ""
+
+            if sub == "list":
+                facts = mem_store.list_facts()
+                if not facts:
+                    await self._add_widget(Static(
+                        "[dim]No memory facts stored.[/]",
+                        classes="session-divider",
+                    ))
+                else:
+                    mem_lines = [f"[bold]Memory facts[/] ({len(facts)} total)\n"]
+                    for fact in facts:
+                        key = fact.get("key", "?")
+                        value = fact.get("value", "")
+                        tags = fact.get("tags", [])
+                        tag_str = f" [dim][{', '.join(tags)}][/dim]" if tags else ""
+                        mem_lines.append(f"  [cyan]{key}[/cyan]: {value}{tag_str}")
+                    await self._add_widget(Static(
+                        "\n".join(mem_lines),
+                        classes="welcome-banner",
+                    ))
+
+            elif sub == "search":
+                if not sub_arg:
+                    await self._add_widget(Static(
+                        "[dim]Usage: /memory search <query>[/]",
+                        classes="session-divider",
+                    ))
+                else:
+                    results = mem_store.recall_facts(sub_arg)
+                    if not results:
+                        await self._add_widget(Static(
+                            f"[dim]No facts matching \'{sub_arg}\'.[/]",
+                            classes="session-divider",
+                        ))
+                    else:
+                        srch_lines = [f"[bold]Search results[/] ({len(results)} match{'es' if len(results) != 1 else ''})\n"]
+                        for fact in results:
+                            key = fact.get("key", "?")
+                            value = fact.get("value", "")
+                            tags = fact.get("tags", [])
+                            tag_str = f" [dim][{', '.join(tags)}][/dim]" if tags else ""
+                            srch_lines.append(f"  [cyan]{key}[/cyan]: {value}{tag_str}")
+                        await self._add_widget(Static(
+                            "\n".join(srch_lines),
+                            classes="welcome-banner",
+                        ))
+
+            elif sub == "show":
+                if not sub_arg:
+                    await self._add_widget(Static(
+                        "[dim]Usage: /memory show <key>[/]",
+                        classes="session-divider",
+                    ))
+                else:
+                    all_facts = mem_store.list_facts()
+                    matched = [ff for ff in all_facts if ff.get("key") == sub_arg]
+                    if not matched:
+                        await self._add_widget(Static(
+                            f"[dim]No fact with key \'{sub_arg}\'.[/]",
+                            classes="session-divider",
+                        ))
+                    else:
+                        fact = matched[0]
+                        tags = fact.get("tags", [])
+                        tag_line = f"\n  [dim]Tags:[/dim] {', '.join(tags)}" if tags else ""
+                        ts = fact.get("timestamp", "")
+                        ts_line = f"\n  [dim]Saved:[/dim] {ts}" if ts else ""
+                        await self._add_widget(Static(
+                            f"[bold]Fact:[/] [cyan]{fact.get('key', '?')}[/cyan]\n"
+                            f"  [dim]Value:[/dim] {fact.get('value', '')}"
+                            f"{tag_line}{ts_line}",
+                            classes="welcome-banner",
+                        ))
+
+            elif sub == "delete":
+                if not sub_arg:
+                    await self._add_widget(Static(
+                        "[dim]Usage: /memory delete <key>[/]",
+                        classes="session-divider",
+                    ))
+                else:
+                    deleted = mem_store.delete_fact(sub_arg)
+                    if deleted:
+                        await self._add_widget(Static(
+                            f"[green]Deleted fact \'{sub_arg}\'.[/]",
+                            classes="session-divider",
+                        ))
+                    else:
+                        await self._add_widget(Static(
+                            f"[dim]No fact with key \'{sub_arg}\'.[/]",
+                            classes="session-divider",
+                        ))
+
+            else:
+                await self._add_widget(Static(
+                    "[bold]Usage:[/]\n"
+                    "  [cyan]/memory[/]              — list all facts\n"
+                    "  [cyan]/memory list[/]          — list all facts\n"
+                    "  [cyan]/memory search <q>[/]    — search facts by keyword\n"
+                    "  [cyan]/memory show <key>[/]    — show a specific fact\n"
+                    "  [cyan]/memory delete <key>[/]  — delete a fact\n",
+                    classes="welcome-banner",
+                ))
+
             return True
 
         if cmd in ("/quit", "/exit", "/q"):
@@ -504,10 +674,14 @@ class DuhApp(App[int]):
                     log.scroll_end(animate=False)
 
                 elif event_type == "thinking_delta":
-                    if self._debug:
+                    # VERBOSE/debug: expanded. DEFAULT: collapsed. CONCISE: hidden.
+                    if self._output_style != OutputStyle.CONCISE:
                         text = event.get("text", "")
+                        expanded = self._debug or self._output_style == OutputStyle.VERBOSE
                         if self._active_thinking is None:
-                            self._active_thinking = await self._new_thinking_widget()
+                            self._active_thinking = await self._new_thinking_widget(
+                                collapsed=not expanded,
+                            )
                         self._active_thinking.append(text)
 
                 elif event_type == "tool_use":
@@ -691,6 +865,9 @@ def run_tui(args: argparse.Namespace) -> int:
     app_config = load_config(cwd=cwd)
 
     system_prompt_parts = [getattr(args, "system_prompt", None) or SYSTEM_PROMPT]
+    if getattr(args, "coordinator", False):
+        from duh.kernel.coordinator import COORDINATOR_SYSTEM_PROMPT
+        system_prompt_parts.insert(0, COORDINATOR_SYSTEM_PROMPT)
     if getattr(args, "brief", False):
         system_prompt_parts.append(BRIEF_INSTRUCTION)
 
@@ -715,6 +892,9 @@ def run_tui(args: argparse.Namespace) -> int:
 
     for warning in get_git_warnings(cwd):
         sys.stderr.write(f"\033[33mWARNING: {warning}\033[0m\n")
+
+    # Model context block -- rebuilt on /model switch (ADR-070)
+    system_prompt_parts.append(model_context_block(model))
 
     system_prompt = "\n\n".join(system_prompt_parts)
 
@@ -837,4 +1017,5 @@ def run_tui(args: argparse.Namespace) -> int:
         resumed_messages=_resumed_for_display,
         cwd=cwd,
     )
+    app._coordinator_mode = getattr(args, "coordinator", False)
     return app.run() or 0

@@ -30,6 +30,7 @@ Slash commands:
     /undo     — undo the last file modification (Write or Edit)
     /health   — run provider and MCP health checks
     /clear    — clear conversation history
+    /memory   — memory facts (list, search, show, delete)
     /compact  — compact conversation (summarize older messages)
     /exit     — exit the REPL (also Ctrl-D)
 """
@@ -64,6 +65,7 @@ def _wrap_user_input(raw: str) -> UntrustedStr:
 from duh.adapters.anthropic import AnthropicProvider  # noqa: F401 (test/mocking compatibility)
 from duh.adapters.native_executor import NativeExecutor
 from duh.adapters.approvers import ApprovalMode, AutoApprover, InteractiveApprover, TieredApprover
+from duh.kernel.permission_cache import SessionPermissionCache
 from duh.cli.runner import BRIEF_INSTRUCTION, SYSTEM_PROMPT, _interpret_error
 from duh.hooks import HookEvent, HookRegistry, execute_hooks
 from duh.kernel.deps import Deps
@@ -71,6 +73,7 @@ from duh.kernel.engine import Engine, EngineConfig
 from duh.kernel.messages import Message
 from duh.kernel.plan_mode import PlanMode
 from duh.kernel.query_guard import QueryGuard
+from duh.kernel.model_caps import model_context_block, rebuild_system_prompt
 from duh.tools.registry import get_all_tools
 from duh.auth.openai_chatgpt import (
     connect_openai_api_key,
@@ -417,7 +420,9 @@ SLASH_COMMANDS = {
     "/compact": "Compact older messages",
     "/snapshot": "Ghost snapshot (/snapshot, /snapshot apply, /snapshot discard)",
     "/attach": "Attach a file to the next message (/attach path/to/file)",
+    "/memory": "Memory facts (/memory list|search <q>|show <key>|delete <key>)",
     "/sessions": "List sessions for this project",
+    "/audit": "Show recent audit log entries (/audit [N])",
     "/exit": "Exit the REPL",
 }
 
@@ -688,6 +693,10 @@ def _handle_slash(
             if requested.lower() == "codex":
                 requested = "gpt-5.2-codex"
             ok, result = _switch_backend_for_model(requested)
+            # ADR-070: rebuild system prompt so model context stays current
+            engine._config.system_prompt = rebuild_system_prompt(
+                engine._config.system_prompt, model, requested,
+            )
             if ok:
                 sys.stdout.write(f"  Model changed to: {requested} ({result})\n")
             else:
@@ -982,6 +991,27 @@ def _handle_slash(
             sys.stdout.write("  All checks passed.\n")
         return True, model
 
+    if name == "/audit":
+        from duh.security.audit import AuditLogger
+        limit = 20
+        if arg.strip().isdigit():
+            limit = int(arg.strip())
+        logger_instance = getattr(deps, "audit_logger", None)
+        if logger_instance is None:
+            logger_instance = AuditLogger()
+        entries = logger_instance.read_entries(limit=limit)
+        if not entries:
+            sys.stdout.write("  No audit entries found.\n")
+        else:
+            sys.stdout.write(f"  Last {len(entries)} audit entries:\n")
+            for e in entries:
+                ts = e.get("ts", "?")
+                tool = e.get("tool", "?")
+                status = e.get("status", "?")
+                ms = e.get("ms", 0)
+                sys.stdout.write(f"    {ts}  {tool:20s}  {status:7s}  {ms}ms\n")
+        return True, model
+
     if name == "/clear":
         engine._messages.clear()
         sys.stdout.write("  Conversation cleared.\n")
@@ -1029,6 +1059,84 @@ def _handle_slash(
             sys.stdout.write(f"  Error: {exc}\n")
         except ValueError as exc:
             sys.stdout.write(f"  Error: {exc}\n")
+        return True, model
+
+    if name == "/memory":
+        from duh.adapters.memory_store import FileMemoryStore
+
+        mem_store = FileMemoryStore(cwd=os.getcwd())
+        sub_parts = arg.strip().split(None, 1)
+        sub = sub_parts[0].lower() if sub_parts else "list"
+        sub_arg = sub_parts[1].strip() if len(sub_parts) > 1 else ""
+
+        if sub == "list":
+            facts = mem_store.list_facts()
+            if not facts:
+                sys.stdout.write("  No memory facts stored.\n")
+            else:
+                sys.stdout.write(f"  {len(facts)} fact(s):\n")
+                for f in facts:
+                    key = f.get("key", "?")
+                    value = f.get("value", "")
+                    tags = f.get("tags", [])
+                    tag_str = f" [{', '.join(tags)}]" if tags else ""
+                    sys.stdout.write(f"    {key}: {value}{tag_str}\n")
+
+        elif sub == "search":
+            if not sub_arg:
+                sys.stdout.write("  Usage: /memory search <query>\n")
+            else:
+                results = mem_store.recall_facts(sub_arg)
+                if not results:
+                    sys.stdout.write(f"  No facts matching '{sub_arg}'.\n")
+                else:
+                    sys.stdout.write(f"  {len(results)} match(es):\n")
+                    for f in results:
+                        key = f.get("key", "?")
+                        value = f.get("value", "")
+                        tags = f.get("tags", [])
+                        tag_str = f" [{', '.join(tags)}]" if tags else ""
+                        sys.stdout.write(f"    {key}: {value}{tag_str}\n")
+
+        elif sub == "show":
+            if not sub_arg:
+                sys.stdout.write("  Usage: /memory show <key>\n")
+            else:
+                facts = mem_store.list_facts()
+                match = [f for f in facts if f.get("key") == sub_arg]
+                if not match:
+                    sys.stdout.write(f"  No fact with key '{sub_arg}'.\n")
+                else:
+                    f = match[0]
+                    tags = f.get("tags", [])
+                    tag_str = f"  Tags: {', '.join(tags)}" if tags else ""
+                    ts = f.get("timestamp", "")
+                    ts_str = f"  Saved: {ts}" if ts else ""
+                    sys.stdout.write(
+                        f"  Key:   {f.get('key', '?')}\n"
+                        f"  Value: {f.get('value', '')}\n"
+                        f"{tag_str}\n{ts_str}\n"
+                    )
+
+        elif sub == "delete":
+            if not sub_arg:
+                sys.stdout.write("  Usage: /memory delete <key>\n")
+            else:
+                deleted = mem_store.delete_fact(sub_arg)
+                if deleted:
+                    sys.stdout.write(f"  Deleted fact '{sub_arg}'.\n")
+                else:
+                    sys.stdout.write(f"  No fact with key '{sub_arg}'.\n")
+
+        else:
+            sys.stdout.write(
+                "  Usage:\n"
+                "    /memory              — list all facts\n"
+                "    /memory list         — list all facts\n"
+                "    /memory search <q>   — search facts by keyword\n"
+                "    /memory show <key>   — show a specific fact\n"
+                "    /memory delete <key> — delete a fact\n"
+            )
         return True, model
 
     if name == "/sessions":
@@ -1276,6 +1384,9 @@ async def run_repl(args: argparse.Namespace) -> int:
 
     # --- Build system prompt with git context ---
     system_prompt_parts = [args.system_prompt or SYSTEM_PROMPT]
+    if getattr(args, "coordinator", False):
+        from duh.kernel.coordinator import COORDINATOR_SYSTEM_PROMPT
+        system_prompt_parts.insert(0, COORDINATOR_SYSTEM_PROMPT)
     if getattr(args, "brief", False):
         system_prompt_parts.append(BRIEF_INSTRUCTION)
 
@@ -1287,6 +1398,9 @@ async def run_repl(args: argparse.Namespace) -> int:
     # --- Print git safety warnings ---
     for warning in get_git_warnings(cwd):
         sys.stderr.write(f"\033[33mWARNING: {warning}\033[0m\n")
+
+    # Model context block -- rebuilt on /model switch (ADR-070)
+    system_prompt_parts.append(model_context_block(model))
 
     system_prompt = "\n\n".join(system_prompt_parts)
 
@@ -1310,6 +1424,7 @@ async def run_repl(args: argparse.Namespace) -> int:
     executor = NativeExecutor(tools=tools, cwd=cwd)
 
     # --- Approval mode selection ---
+    permission_cache = SessionPermissionCache()
     approval_mode_str = getattr(args, "approval_mode", None)
     if approval_mode_str:
         mode = ApprovalMode(approval_mode_str)
@@ -1317,7 +1432,7 @@ async def run_repl(args: argparse.Namespace) -> int:
     elif args.dangerously_skip_permissions:
         approver = AutoApprover()
     else:
-        approver = InteractiveApprover()
+        approver = InteractiveApprover(permission_cache=permission_cache)
 
     # --- Wire compactor ---
     from duh.adapters.simple_compactor import SimpleCompactor

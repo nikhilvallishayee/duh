@@ -17,6 +17,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+from duh.kernel.schema_validator import SchemaValidationError, validate_tool_schema
 from duh.kernel.untrusted import TaintSource, UntrustedStr
 from duh.adapters.mcp_unicode import normalize_mcp_description
 from duh.adapters.mcp_manifest import MCPManifest, DEFAULT_MCP_MANIFEST
@@ -347,6 +348,22 @@ class MCPExecutor:
                     f"MCP server '{server_name}' has suspicious Unicode in tool "
                     f"descriptions: {summary}"
                 )
+
+            # ADR-068: validate MCP tool schemas at discovery time
+            for info in tools:
+                try:
+                    warnings = validate_tool_schema(
+                        f"mcp__{server_name}__{info.name}",
+                        info.input_schema,
+                    )
+                    for w in warnings:
+                        logger.warning("MCP schema warning: %s", w)
+                except SchemaValidationError:
+                    logger.exception(
+                        "MCP schema error for tool '%s' on server '%s'",
+                        info.name,
+                        server_name,
+                    )
 
             conn = MCPConnection(
                 server_name=server_name,

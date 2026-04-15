@@ -21,6 +21,7 @@ def wrap_prompt_flag(value: str) -> UntrustedStr:
 from duh.adapters.anthropic import AnthropicProvider  # noqa: F401 (test/mocking compatibility)
 from duh.adapters.native_executor import NativeExecutor
 from duh.adapters.approvers import AutoApprover, InteractiveApprover
+from duh.kernel.permission_cache import SessionPermissionCache
 from duh.kernel.deps import Deps
 from duh.kernel.engine import Engine, EngineConfig
 from duh.kernel.messages import Message
@@ -180,6 +181,9 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         except Exception as e:
             sys.stderr.write(f"Warning: Could not read system prompt file: {e}\n")
     system_prompt_parts = [base_prompt]
+    if getattr(args, "coordinator", False):
+        from duh.kernel.coordinator import COORDINATOR_SYSTEM_PROMPT
+        system_prompt_parts.insert(0, COORDINATOR_SYSTEM_PROMPT)
     if getattr(args, "brief", False):
         system_prompt_parts.append(BRIEF_INSTRUCTION)
     if instruction_list:
@@ -304,13 +308,19 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     # --- Build executor and approver ---
     executor = NativeExecutor(tools=tools, cwd=cwd)
     skip_perms = args.dangerously_skip_permissions or getattr(args, "permission_mode", None) in ("bypassPermissions", "dontAsk")
-    approver: Any = AutoApprover() if skip_perms else InteractiveApprover()
+    permission_cache = SessionPermissionCache()
+    approver: Any = AutoApprover() if skip_perms else InteractiveApprover(permission_cache=permission_cache)
+
+    # --- Wire audit logger (ADR-072 P1) ---
+    from duh.security.audit import AuditLogger
+    audit_logger = AuditLogger()
 
     deps = Deps(
         call_model=call_model,
         run_tool=executor.run,
         approve=approver.check,
         compact=compactor.compact,
+        audit_logger=audit_logger,
     )
 
     # Wire AgentTool and SwarmTool now that Deps and tools are both built.
@@ -369,6 +379,9 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     session_id = getattr(args, "session_id", None)
     if session_id:
         engine._session_id = session_id
+
+    # --- Wire session ID into deps for audit logging (ADR-072 P1) ---
+    deps.session_id = engine.session_id
 
     # --- Resume session if --continue, --resume, or --session-id ---
     should_resume = getattr(args, "continue_session", False) or args.resume or session_id

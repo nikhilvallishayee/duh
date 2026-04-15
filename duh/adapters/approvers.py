@@ -15,6 +15,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from duh.kernel.permission_cache import SessionPermissionCache
 from duh.kernel.tool_categories import COMMAND_TOOLS, READ_TOOLS, WRITE_TOOLS
 
 
@@ -47,13 +48,31 @@ class AutoApprover:
 
 
 class InteractiveApprover:
-    """Asks the user for permission before tool execution."""
+    """Asks the user for permission before tool execution.
 
-    def __init__(self, *, default_allow: bool = False):
+    Supports an optional ``SessionPermissionCache`` to remember
+    "always allow" / "never allow" decisions within a session.
+    """
+
+    def __init__(
+        self,
+        *,
+        default_allow: bool = False,
+        permission_cache: SessionPermissionCache | None = None,
+    ):
         self._default_allow = default_allow
+        self._cache = permission_cache
 
     async def check(self, tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
         import builtins
+
+        # --- Check session cache first ---
+        if self._cache is not None:
+            cached = self._cache.check(tool_name)
+            if cached == "allow":
+                return {"allowed": True}
+            if cached == "deny":
+                return {"allowed": False, "reason": "Denied for this session (cached)"}
 
         # Format input summary
         summary = ", ".join(f"{k}={v!r}" for k, v in list(tool_input.items())[:3])
@@ -64,15 +83,19 @@ class InteractiveApprover:
         sys.stderr.write(f"\n  Tool: {tool_name}\n")
         if summary:
             sys.stderr.write(f"  Input: {summary}\n")
-        sys.stderr.write("  Allow? [y/n] ")
+        sys.stderr.write("  Allow? [y]es / [a]lways / [n]o / [N]ever ")
         sys.stderr.flush()
 
         try:
-            response = builtins.input("").strip().lower()
+            response = builtins.input("").strip()
         except (EOFError, KeyboardInterrupt):
             return {"allowed": False, "reason": "User cancelled"}
 
-        if response in ("y", "yes", ""):
+        # Record in cache (handles y/a/n/N; y and n are no-ops)
+        if self._cache is not None and response in ("y", "a", "n", "N"):
+            self._cache.record(tool_name, response)
+
+        if response in ("y", "yes", "a", ""):
             return {"allowed": True}
         return {"allowed": False, "reason": "User denied"}
 

@@ -62,3 +62,10 @@ class Deps:
     # Signature: (tool_name: str, tool_input: dict) -> PolicyDecision | None
     # Return None to allow; return a decision with action="block" to block.
     confirm_gate: Callable[..., Any] | None = None
+
+    # Optional: session identifier — used by audit logging and tracing
+    session_id: str = ""
+
+    # Optional: structured audit logger (ADR-072 P1) — records every tool
+    # invocation for security compliance.
+    audit_logger: Any = None  # AuditLogger | None

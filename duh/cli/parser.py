@@ -82,6 +82,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Enable structured JSON logging to ~/.config/duh/logs/duh.jsonl.")
     parser.add_argument("--tui", action="store_true", default=False,
                         help="Launch the full Textual TUI (ADR-011 Tier 2) instead of the readline REPL.")
+    parser.add_argument("--coordinator", action="store_true", default=False,
+                        help="Run in coordinator mode — delegates all tasks to subagents.")
     parser.add_argument(
         "--i-understand-the-lethal-trifecta",
         action="store_true",
@@ -118,6 +120,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     _security = subparsers.add_parser("security", help="Vulnerability monitoring (ADR-053)")
     _security.add_argument("security_args", nargs=argparse.REMAINDER)
+
+    _audit = subparsers.add_parser("audit", help="Show recent audit log entries (ADR-072)")
+    _audit.add_argument("-n", "--limit", type=int, default=20,
+                        help="Number of entries to show (default: 20).")
+    _audit.add_argument("--json", action="store_true", default=False, dest="audit_json",
+                        help="Output as raw JSONL.")
 
     bridge_parser = subparsers.add_parser("bridge", help="Start the remote bridge server.")
     bridge_sub = bridge_parser.add_subparsers(dest="bridge_command", required=True)

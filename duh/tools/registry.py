@@ -9,7 +9,30 @@ CLI can function with whatever tools are available.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+from duh.kernel.schema_validator import SchemaValidationError, validate_tool_schema
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_registered_tool(tool: Any) -> None:
+    """Validate a tool's input_schema after registration.
+
+    Logs warnings but never blocks registration -- tools with bad schemas
+    still work, just suboptimally.
+    """
+    name = getattr(tool, "name", "<unknown>")
+    schema = getattr(tool, "input_schema", None)
+    if schema is None:
+        return
+    try:
+        warnings = validate_tool_schema(name, schema)
+        for w in warnings:
+            logger.warning("Schema warning: %s", w)
+    except SchemaValidationError:
+        logger.exception("Schema validation error for tool '%s'", name)
 
 
 def get_all_tools(
@@ -229,5 +252,9 @@ def get_all_tools(
                 break
     except ImportError:
         pass
+
+    # ADR-068: validate tool schemas at registration time
+    for tool in tools:
+        _validate_registered_tool(tool)
 
     return tools

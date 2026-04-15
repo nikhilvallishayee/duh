@@ -161,19 +161,59 @@ class ToolCallWidget(Widget):
     # Public API
     # ------------------------------------------------------------------
 
-    def set_result(self, output: str, is_error: bool) -> None:
-        """Update the widget with the tool result."""
+    def set_result(
+        self,
+        output: str,
+        is_error: bool,
+        style: str = "default",
+        tool_name: str | None = None,
+    ) -> None:
+        """Update the widget with the tool result.
+
+        Parameters
+        ----------
+        output:
+            Raw tool output text.
+        is_error:
+            Whether the tool returned an error.
+        style:
+            One of ``"default"``, ``"concise"``, ``"verbose"``.
+            - concise: show just "OK" or "ERR" (no output preview).
+            - verbose: show up to 1000 chars of output.
+            - default: first line, up to 120 chars.
+        tool_name:
+            Name of the tool that produced this result.  When the tool is
+            ``"Edit"`` or ``"Write"`` and the output looks like a diff,
+            lines are rendered with green/red coloring.
+        """
         self._running = False
         if self._result_label is None:
             return
+
+        effective_name = tool_name or self._tool_name
+
         if is_error:
-            preview = escape_markup(output[:300]) if output else "(empty)"
-            self._result_label.update(f"[red]Error:[/red] {preview}")
+            if style == "concise":
+                self._result_label.update("[red]ERR[/red]")
+            else:
+                limit = 300
+                preview = escape_markup(output[:limit]) if output else "(empty)"
+                self._result_label.update(f"[red]Error:[/red] {preview}")
             self._result_label.remove_class("spinner-message")
             self._result_label.add_class("tool-result-error")
         else:
-            first_line = escape_markup(output.split("\n", 1)[0][:120]) if output else "(empty)"
-            self._result_label.update(f"[green]OK:[/green] {first_line}")
+            # Check for diff-like output from Edit/Write tools
+            if effective_name in ("Edit", "Write") and _looks_like_diff(output):
+                rendered = _render_diff(output)
+                self._result_label.update(rendered)
+            elif style == "concise":
+                self._result_label.update("[green]OK[/green]")
+            elif style == "verbose":
+                preview = escape_markup(output[:1000]) if output else "(empty)"
+                self._result_label.update(f"[green]OK:[/green] {preview}")
+            else:
+                first_line = escape_markup(output.split("\n", 1)[0][:120]) if output else "(empty)"
+                self._result_label.update(f"[green]OK:[/green] {first_line}")
             self._result_label.remove_class("spinner-message")
             self._result_label.add_class("tool-result-ok")
 
@@ -188,6 +228,50 @@ def _summarise_input(inp: dict[str, Any]) -> str:
             v = v[:40] + "…"
         parts.append(f"{k}={v!r}")
     return ", ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Diff rendering helpers
+# ---------------------------------------------------------------------------
+
+
+def _looks_like_diff(text: str) -> bool:
+    """Return True if *text* appears to contain unified-diff markers."""
+    if not text:
+        return False
+    for line in text.split("\n")[:20]:
+        stripped = line.lstrip()
+        if stripped.startswith("@@") or stripped.startswith("---") or stripped.startswith("+++"):
+            return True
+    return False
+
+
+def _render_diff(text: str, max_lines: int = 60) -> str:
+    """Render a diff with Rich markup: green for additions, red for removals.
+
+    Lines starting with ``+`` (but not ``+++``) are green.
+    Lines starting with ``-`` (but not ``---``) are red.
+    Lines starting with ``@@`` are cyan (hunk headers).
+    Everything else is left as-is.
+    """
+    lines = text.split("\n")[:max_lines]
+    rendered: list[str] = ["[green]OK:[/green] diff preview"]
+    for line in lines:
+        safe = escape_markup(line)
+        stripped = line.lstrip()
+        if stripped.startswith("@@"):
+            rendered.append(f"[cyan]{safe}[/cyan]")
+        elif stripped.startswith("+++") or stripped.startswith("---"):
+            rendered.append(f"[bold]{safe}[/bold]")
+        elif stripped.startswith("+"):
+            rendered.append(f"[green]{safe}[/green]")
+        elif stripped.startswith("-"):
+            rendered.append(f"[red]{safe}[/red]")
+        else:
+            rendered.append(safe)
+    if len(text.split("\n")) > max_lines:
+        rendered.append(f"[dim]… ({len(text.split(chr(10))) - max_lines} more lines)[/dim]")
+    return "\n".join(rendered)
 
 
 # ---------------------------------------------------------------------------
@@ -213,23 +297,35 @@ class ThinkingWidget(Widget):
     def __init__(
         self,
         *,
+        collapsed: bool = True,
         name: str | None = None,
         id: str | None = None,
         classes: str | None = None,
     ) -> None:
         merged = f"thinking-widget {classes}".strip() if classes else "thinking-widget"
         super().__init__(name=name, id=id, classes=merged)
+        self._collapsed = collapsed
         self._body: Static | None = None
+        self._collapsible: Collapsible | None = None
 
     def compose(self) -> ComposeResult:
-        with Collapsible(title="Thinking…", collapsed=True):
+        with Collapsible(title="Thinking…", collapsed=self._collapsed) as c:
+            self._collapsible = c
             yield Static("", classes="thinking-body", markup=False, id="thinking-body")
 
     def on_mount(self) -> None:
         self._body = self.query_one("#thinking-body", Static)
+        try:
+            self._collapsible = self.query_one(Collapsible)
+        except Exception:
+            pass
 
     def append(self, delta: str) -> None:
         """Append a thinking text delta."""
         self._content += delta
         if self._body is not None:
             self._body.update(self._content)
+        # Update collapsible title with character count
+        if self._collapsible is not None:
+            char_count = len(self._content)
+            self._collapsible.title = f"Thinking… ({char_count:,} chars)"

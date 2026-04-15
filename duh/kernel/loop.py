@@ -28,6 +28,7 @@ provider SDK. It never touches the filesystem. It never renders UI.
 
 from __future__ import annotations
 
+import time
 from typing import Any, AsyncGenerator
 
 from duh.hooks import HookEvent, execute_hooks
@@ -186,6 +187,8 @@ async def query(
 
             yield {"type": "tool_use", "id": tool_id, "name": tool_name, "input": tool_input}
 
+            _t0 = time.monotonic()  # start timing for audit
+
             # Check approval
             if deps.approve:
                 # Emit PERMISSION_REQUEST hook
@@ -218,6 +221,17 @@ async def query(
                     tool_results.append(result)
                     yield {"type": "tool_result", "tool_use_id": tool_id,
                            "output": result.content, "is_error": True}
+
+                    # Audit: denied
+                    if deps.audit_logger:
+                        _elapsed = int((time.monotonic() - _t0) * 1000)
+                        deps.audit_logger.log_tool_call(
+                            session_id=deps.session_id,
+                            tool_name=tool_name,
+                            tool_input=tool_input if isinstance(tool_input, dict) else {},
+                            result_status="denied",
+                            duration_ms=_elapsed,
+                        )
                     continue
 
             # Check confirmation gate (7.2) — block tainted dangerous tools
@@ -235,6 +249,17 @@ async def query(
                     tool_results.append(result)
                     yield {"type": "tool_result", "tool_use_id": tool_id,
                            "output": result.content, "is_error": True}
+
+                    # Audit: denied (blocked by confirmation gate)
+                    if deps.audit_logger:
+                        _elapsed = int((time.monotonic() - _t0) * 1000)
+                        deps.audit_logger.log_tool_call(
+                            session_id=deps.session_id,
+                            tool_name=tool_name,
+                            tool_input=tool_input if isinstance(tool_input, dict) else {},
+                            result_status="denied",
+                            duration_ms=_elapsed,
+                        )
                     continue
 
             # Execute
@@ -272,6 +297,17 @@ async def query(
             tool_results.append(result)
             yield {"type": "tool_result", "tool_use_id": tool_id,
                    "output": result.content, "is_error": result.is_error}
+
+            # Audit: ok or error
+            if deps.audit_logger:
+                _elapsed = int((time.monotonic() - _t0) * 1000)
+                deps.audit_logger.log_tool_call(
+                    session_id=deps.session_id,
+                    tool_name=tool_name,
+                    tool_input=tool_input if isinstance(tool_input, dict) else {},
+                    result_status="error" if result.is_error else "ok",
+                    duration_ms=_elapsed,
+                )
 
         # --- Build next turn messages ---
         if assistant_message:

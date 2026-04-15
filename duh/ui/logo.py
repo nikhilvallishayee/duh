@@ -16,6 +16,11 @@ _BRIGHT_BLUE = "\033[94m"
 _BRIGHT_WHITE = "\033[97m"
 _WHITE = "\033[37m"
 _GRAY = "\033[90m"
+_MAGENTA = "\033[35m"
+_BRIGHT_MAGENTA = "\033[95m"
+
+# The accent color — used for D, U, H in the tagline to reveal the pun
+_ACC = f"{_BRIGHT_MAGENTA}{_BOLD}"
 
 # ─── Large hero logo (12 lines) ────────────────────────────────────
 
@@ -27,7 +32,7 @@ LOGO_LARGE = r"""
     ██████╔╝  ╚═╝  ╚██████╔╝  ╚═╝  ██║  ██║
     ╚═════╝        ╚═════╝        ╚═╝  ╚═╝
     ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
-     is  a  Universal  Harness
+     D.U.H. is a Universal Harness
 """
 
 # ─── Compact logo (6 lines) ────────────────────────────────────────
@@ -38,40 +43,40 @@ LOGO_COMPACT = r"""
   ║║ ║║  ║║ ║║  ║╔══╗║
   ║╚═╝║  ║╚═╝║  ║║  ║║
   ╚═══╝  ╚═══╝  ╚╝  ╚╝
-  Universal Harness
+  D.U.H. is a Universal Harness
 """
 
 # ─── Mini one-liner ─────────────────────────────────────────────────
 
-LOGO_MINI = "◆ D.U.H. — Universal Harness"
+LOGO_MINI = "◆ D.U.H. — Duh is a Universal Harness"
 
 # ─── Colored versions ──────────────────────────────────────────────
 
 _LOGO_LARGE_COLOR = f"""\
-{_BRIGHT_CYAN}{_BOLD}    ██████╗        ██╗   ██╗       ██╗  ██╗{_RESET}
-{_BRIGHT_CYAN}{_BOLD}    ██╔══██╗       ██║   ██║       ██║  ██║{_RESET}
-{_BRIGHT_BLUE}{_BOLD}    ██║  ██║       ██║   ██║       ██████╔╝{_RESET}
-{_BRIGHT_BLUE}{_BOLD}    ██║  ██║  {_GRAY}██╗{_BRIGHT_BLUE}  ██║   ██║  {_GRAY}██╗{_BRIGHT_BLUE}  ██╔══██╗{_RESET}
-{_CYAN}    ██████╔╝  {_GRAY}╚═╝{_CYAN}  ╚██████╔╝  {_GRAY}╚═╝{_CYAN}  ██║  ██║{_RESET}
-{_BLUE}    ╚═════╝        ╚═════╝        ╚═╝  ╚═╝{_RESET}
+{_ACC}    ██████╗        ██╗   ██╗       ██╗  ██╗{_RESET}
+{_ACC}    ██╔══██╗       ██║   ██║       ██║  ██║{_RESET}
+{_BRIGHT_MAGENTA}{_BOLD}    ██║  ██║       ██║   ██║       ██████╔╝{_RESET}
+{_BRIGHT_MAGENTA}{_BOLD}    ██║  ██║  {_GRAY}██╗{_BRIGHT_MAGENTA}{_BOLD}  ██║   ██║  {_GRAY}██╗{_BRIGHT_MAGENTA}{_BOLD}  ██╔══██╗{_RESET}
+{_MAGENTA}    ██████╔╝  {_GRAY}╚═╝{_MAGENTA}  ╚██████╔╝  {_GRAY}╚═╝{_MAGENTA}  ██║  ██║{_RESET}
+{_MAGENTA}    ╚═════╝        ╚═════╝        ╚═╝  ╚═╝{_RESET}
 {_DIM}    ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄{_RESET}
-{_BRIGHT_WHITE}     is  a  {_BRIGHT_CYAN}Universal{_BRIGHT_WHITE}  Harness{_RESET}
+     {_ACC}D{_RESET}{_BRIGHT_WHITE}.{_ACC}U{_RESET}{_BRIGHT_WHITE}.{_ACC}H{_RESET}{_BRIGHT_WHITE}. is a {_ACC}U{_RESET}{_BRIGHT_WHITE}niversal {_ACC}H{_RESET}{_BRIGHT_WHITE}arness{_RESET}
 """
 
 _LOGO_COMPACT_COLOR = f"""\
-{_BRIGHT_CYAN}{_BOLD}  ╔═══╗  ╔╗ ╔╗  ╔╗  ╔╗{_RESET}
-{_BRIGHT_BLUE}{_BOLD}  ║╔═╗║  ║║ ║║  ║╚══╝║{_RESET}
-{_BRIGHT_BLUE}{_BOLD}  ║║ ║║  ║║ ║║  ║╔══╗║{_RESET}
-{_CYAN}  ║╚═╝║  ║╚═╝║  ║║  ║║{_RESET}
-{_BLUE}  ╚═══╝  ╚═══╝  ╚╝  ╚╝{_RESET}
-{_BRIGHT_WHITE}  Universal Harness{_RESET}
+{_ACC}  ╔═══╗  ╔╗ ╔╗  ╔╗  ╔╗{_RESET}
+{_BRIGHT_MAGENTA}{_BOLD}  ║╔═╗║  ║║ ║║  ║╚══╝║{_RESET}
+{_BRIGHT_MAGENTA}{_BOLD}  ║║ ║║  ║║ ║║  ║╔══╗║{_RESET}
+{_MAGENTA}  ║╚═╝║  ║╚═╝║  ║║  ║║{_RESET}
+{_MAGENTA}  ╚═══╝  ╚═══╝  ╚╝  ╚╝{_RESET}
+  {_ACC}D{_RESET}{_BRIGHT_WHITE}.{_ACC}U{_RESET}{_BRIGHT_WHITE}.{_ACC}H{_RESET}{_BRIGHT_WHITE}. is a {_ACC}U{_RESET}{_BRIGHT_WHITE}niversal {_ACC}H{_RESET}{_BRIGHT_WHITE}arness{_RESET}
 """
 
 _LOGO_MINI_COLOR = (
-    f"{_BRIGHT_CYAN}◆{_RESET} "
-    f"{_BRIGHT_WHITE}{_BOLD}D.U.H.{_RESET} "
+    f"{_BRIGHT_MAGENTA}◆{_RESET} "
+    f"{_ACC}D{_RESET}{_BRIGHT_WHITE}.{_ACC}U{_RESET}{_BRIGHT_WHITE}.{_ACC}H{_RESET}{_BRIGHT_WHITE}.{_RESET} "
     f"{_DIM}—{_RESET} "
-    f"{_BRIGHT_CYAN}Universal Harness{_RESET}"
+    f"{_ACC}U{_RESET}{_BRIGHT_WHITE}niversal {_ACC}H{_RESET}{_BRIGHT_WHITE}arness{_RESET}"
 )
 
 

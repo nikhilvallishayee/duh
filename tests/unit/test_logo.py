@@ -85,7 +85,9 @@ def test_print_logo_mini_color_on_tty() -> None:
     print_logo("mini", color=True, file=buf)
     out = buf.getvalue()
     assert "\033[" in out
-    assert "D.U.H." in out
+    # D, U, H each wrapped in ANSI — check they're all present
+    assert "D" in out and "U" in out and "H" in out
+    assert "niversal" in out
 
 
 def test_default_style_is_compact() -> None:

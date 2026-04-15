@@ -6,10 +6,10 @@
     ██████╔╝  ╚═╝  ╚██████╔╝  ╚═╝  ██║  ██║
     ╚═════╝        ╚═════╝        ╚═╝  ╚═╝
     ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
-     is  a  Universal  Harness
+     D.U.H. is a Universal Harness
 ```
 
-# D.U.H. — D.U.H. is a Universal Harness
+# D.U.H. — **D**uh is a **U**niversal **H**arness
 
 [![CI](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml/badge.svg)](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/duh-cli?color=blue)](https://pypi.org/project/duh-cli/)

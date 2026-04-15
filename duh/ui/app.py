@@ -382,6 +382,18 @@ class DuhApp(App[int]):
 
             self._refresh_status()
 
+            # Save session to disk so --continue can resume it
+            try:
+                store = getattr(self._engine, "_session_store", None)
+                sid = getattr(self._engine, "_session_id", None)
+                msgs = getattr(self._engine, "_messages", [])
+                if store and sid and msgs:
+                    import asyncio as _save_aio
+                    _save_aio.get_event_loop().create_task(store.save(sid, msgs))
+                    _log.info("Saved session %s (%d messages)", sid, len(msgs))
+            except Exception as save_err:
+                _log.warning("Session save failed: %s", save_err)
+
             # Re-enable input
             inp = self.query_one("#prompt-input", Input)
             inp.disabled = False

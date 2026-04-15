@@ -491,7 +491,10 @@ class TestAnthropicProviderStream:
             events.append(evt)
 
         call_kwargs = provider._client.messages.stream.call_args[1]
-        assert call_kwargs["system"] == "Be helpful"
+        # System prompt is now a structured list with cache_control (ADR-061)
+        assert call_kwargs["system"] == [
+            {"type": "text", "text": "Be helpful", "cache_control": {"type": "ephemeral"}}
+        ]
 
     async def test_stream_with_tools(self, provider):
         """Tools are translated and included."""

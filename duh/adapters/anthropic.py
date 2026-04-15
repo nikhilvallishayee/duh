@@ -105,10 +105,15 @@ class AnthropicProvider:
             "messages": api_messages,
         }
 
-        # System prompt
+        # System prompt — use cache_control for prompt caching (ADR-061 §1)
         system_text = _build_system_text(system_prompt)
         if system_text:
-            params["system"] = system_text
+            params["system"] = _build_cached_system(system_text)
+
+        # Message prefix caching (ADR-061 §2) — mark the boundary between
+        # old messages (stable prefix) and the new user input so the API
+        # can cache the entire conversation prefix across turns.
+        _add_prefix_cache_marker(api_messages)
 
         # Tools
         if tools:
@@ -291,11 +296,15 @@ def _to_api_messages(messages: list[Any]) -> list[dict[str, Any]]:
 
 
 def _sanitize_block(block: dict[str, Any]) -> dict[str, Any]:
-    """Strip non-API fields from content blocks."""
+    """Strip non-API fields from content blocks.
+
+    ``cache_control`` is always allowed — the Anthropic API uses it for
+    prompt caching (ADR-061).
+    """
     ALLOWED = {
-        "text": {"type", "text"},
-        "tool_use": {"type", "id", "name", "input"},
-        "tool_result": {"type", "tool_use_id", "content", "is_error"},
+        "text": {"type", "text", "cache_control"},
+        "tool_use": {"type", "id", "name", "input", "cache_control"},
+        "tool_result": {"type", "tool_use_id", "content", "is_error", "cache_control"},
         "thinking": {"type", "thinking", "signature"},
     }
     bt = block.get("type", "")
@@ -328,6 +337,56 @@ def _build_system_text(system_prompt: str | list[str]) -> str:
     if isinstance(system_prompt, list):
         return "\n\n".join(p for p in system_prompt if p)
     return system_prompt
+
+
+def _build_cached_system(system_text: str) -> list[dict[str, Any]]:
+    """Wrap system prompt text with cache_control for prompt caching (ADR-061).
+
+    Returns a structured content block list that the Anthropic API accepts
+    for the ``system`` parameter. The ``cache_control`` marker tells the API
+    to cache this block across turns, saving ~90% on repeated system prompts.
+    """
+    return [
+        {
+            "type": "text",
+            "text": system_text,
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
+
+
+def _add_prefix_cache_marker(api_messages: list[dict[str, Any]]) -> None:
+    """Mark the conversation prefix boundary for caching (ADR-061 §2).
+
+    Adds ``cache_control`` to the last content block of the second-to-last
+    message (i.e. the last message before the newest user input). This tells
+    the API that everything up to this point is stable and can be cached.
+
+    Requires at least 2 messages (a prior turn + the new user input).
+    Mutates ``api_messages`` in place.
+    """
+    if len(api_messages) < 2:
+        return
+
+    # The second-to-last message is the end of the "prefix" — mark it.
+    prefix_msg = api_messages[-2]
+    content = prefix_msg.get("content")
+
+    if isinstance(content, list) and content:
+        # Mark the last content block in the prefix message.
+        last_block = content[-1]
+        if isinstance(last_block, dict):
+            last_block["cache_control"] = {"type": "ephemeral"}
+    elif isinstance(content, str) and content:
+        # Content is a plain string — convert to structured form so we can
+        # attach cache_control.
+        prefix_msg["content"] = [
+            {
+                "type": "text",
+                "text": content,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
 
 
 def _default_max_tokens(model: str) -> int:

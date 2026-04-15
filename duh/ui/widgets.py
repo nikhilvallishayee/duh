@@ -13,6 +13,7 @@ import json
 from typing import Any
 
 from textual.app import ComposeResult
+from textual.markup import escape as escape_markup
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Collapsible, Label, Markdown, Static
@@ -145,9 +146,12 @@ class ToolCallWidget(Widget):
 
     def compose(self) -> ComposeResult:
         summary = _summarise_input(self._input)
-        title = f"Tool: {self._tool_name}({summary})"
+        # Escape Rich markup chars in tool input to prevent MarkupError
+        safe_summary = escape_markup(summary)
+        safe_name = escape_markup(self._tool_name)
+        title = f"Tool: {safe_name}({safe_summary})"
         with Collapsible(title=title, collapsed=False):
-            yield Label(f"Input: {summary}", classes="tool-call-label")
+            yield Label(f"Input: {safe_summary}", classes="tool-call-label")
             yield Static("⠋ running…", classes="spinner-message", id="tool-result")
 
     def on_mount(self) -> None:
@@ -163,12 +167,12 @@ class ToolCallWidget(Widget):
         if self._result_label is None:
             return
         if is_error:
-            preview = output[:300] if output else "(empty)"
+            preview = escape_markup(output[:300]) if output else "(empty)"
             self._result_label.update(f"[red]Error:[/red] {preview}")
             self._result_label.remove_class("spinner-message")
             self._result_label.add_class("tool-result-error")
         else:
-            first_line = output.split("\n", 1)[0][:120] if output else "(empty)"
+            first_line = escape_markup(output.split("\n", 1)[0][:120]) if output else "(empty)"
             self._result_label.update(f"[green]OK:[/green] {first_line}")
             self._result_label.remove_class("spinner-message")
             self._result_label.add_class("tool-result-ok")

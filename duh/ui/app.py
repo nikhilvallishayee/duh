@@ -28,7 +28,7 @@ Layout
 Keyboard shortcuts
 ------------------
 Ctrl+B  — toggle sidebar
-Ctrl+C / q  — quit (when input not focused)
+Ctrl+Q / Escape  — quit
 Enter   — send message (same as clicking Send)
 """
 
@@ -76,7 +76,6 @@ class DuhApp(App[int]):
 
     BINDINGS = [
         Binding("ctrl+b", "toggle_sidebar", "Sidebar", show=True),
-        Binding("ctrl+c", "copy_selection", "Copy", show=False),
         Binding("ctrl+q", "quit", "Quit", show=True),
         Binding("escape", "quit", "Quit", show=False),
     ]
@@ -152,15 +151,6 @@ class DuhApp(App[int]):
     def _refresh_status(self) -> None:
         self.query_one("#header", Static).update(self._header_text())
         self.query_one("#statusbar", Static).update(self._status_text())
-
-    # ----------------------------------------------------------------- copy selection
-
-    def action_copy_selection(self) -> None:
-        """Copy selected text to clipboard (Ctrl+C / Cmd+C)."""
-        selection = self.selection
-        if selection:
-            self.copy_to_clipboard(selection)
-            self.notify("Copied to clipboard", timeout=2)
 
     # ----------------------------------------------------------------- sidebar toggle
 

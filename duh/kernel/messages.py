@@ -118,3 +118,56 @@ def AssistantMessage(content: str | list[ContentBlock], **kwargs: Any) -> Messag
 def SystemMessage(content: str, **kwargs: Any) -> Message:
     """Create a system message."""
     return Message(role="system", content=content, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Message validation & repair (API requires strict role alternation)
+# ---------------------------------------------------------------------------
+
+def merge_consecutive(messages: list[Message]) -> list[Message]:
+    """Merge consecutive messages with the same role into one.
+
+    The Anthropic API returns 400 if two adjacent messages share a role.
+    This happens when sessions are resumed from disk where multi-turn
+    tool use stored multiple assistant messages in a row.
+    """
+    if not messages:
+        return []
+    merged: list[Message] = [messages[0]]
+    for msg in messages[1:]:
+        if msg.role == merged[-1].role:
+            # Merge content
+            prev = merged[-1]
+            prev_content = prev.content if isinstance(prev.content, str) else prev.text
+            new_content = msg.content if isinstance(msg.content, str) else msg.text
+            merged[-1] = Message(
+                role=prev.role,
+                content=f"{prev_content}\n\n{new_content}",
+                metadata=prev.metadata,
+            )
+        else:
+            merged.append(msg)
+    return merged
+
+
+def validate_alternation(messages: list[Message]) -> list[Message]:
+    """Ensure messages strictly alternate user/assistant.
+
+    Inserts synthetic user messages where needed. Merges consecutive
+    same-role messages first.
+    """
+    if not messages:
+        return []
+    result = merge_consecutive(messages)
+    # If first message isn't user, prepend one
+    if result[0].role != "user":
+        result.insert(0, Message(role="user", content="(resumed session)"))
+    # Insert synthetic messages where alternation breaks
+    fixed: list[Message] = [result[0]]
+    for msg in result[1:]:
+        if msg.role == fixed[-1].role:
+            # Insert opposite role
+            filler_role = "user" if msg.role == "assistant" else "assistant"
+            fixed.append(Message(role=filler_role, content="(continued)"))
+        fixed.append(msg)
+    return fixed

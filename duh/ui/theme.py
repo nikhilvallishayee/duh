@@ -105,6 +105,20 @@ MarkdownBulletList, MarkdownOrderedList {
     color: #e5e5e5;
 }
 
+.welcome-banner {
+    background: $primary-darken-2;
+    color: $text;
+    padding: 1 2;
+    margin: 0 0 1 0;
+    border: tall $primary;
+}
+
+.session-divider {
+    color: $text-muted;
+    text-align: center;
+    margin: 1 0;
+}
+
 /* ── Tool call widget ───────────────────────────────────────── */
 .tool-call-widget {
     background: $surface-darken-1;

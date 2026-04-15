@@ -375,6 +375,10 @@ class Engine:
         if self._slog:
             self._slog.model_request(model=effective_model, turn=self._turn_count)
 
+        # --- Validate message alternation (API requires strict user/assistant) ---
+        from duh.kernel.messages import validate_alternation
+        self._messages = validate_alternation(self._messages)
+
         # --- Query with PTL retry ---
         ptl_retries = 0
         while True:

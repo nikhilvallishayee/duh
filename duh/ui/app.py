@@ -86,12 +86,14 @@ class DuhApp(App[int]):
         model: str = "unknown",
         session_id: str = "",
         debug: bool = False,
+        resumed_messages: list | None = None,
     ) -> None:
         super().__init__()
         self._engine = engine
         self._model = model
         self._session_id = session_id
         self._debug = debug
+        self._resumed_messages = resumed_messages or []
 
         # Running counters
         self._input_tokens: int = 0
@@ -156,6 +158,53 @@ class DuhApp(App[int]):
             sidebar.remove_class("visible")
         else:
             sidebar.add_class("visible")
+
+    # ----------------------------------------------------------------- on_mount
+
+    async def on_mount(self) -> None:
+        """Show welcome banner and restored session messages."""
+        log = self.query_one("#message-log", ScrollableContainer)
+
+        # Welcome banner
+        sid_short = self._session_id[:8] if self._session_id else "new"
+        banner = (
+            f"[bold magenta]D[/].U.[bold magenta]H[/]. — "
+            f"[bold magenta]D[/].U.[bold magenta]H[/]. is a Universal Harness\n\n"
+            f"[dim]Model:[/] {self._model}  "
+            f"[dim]Session:[/] {sid_short}  "
+            f"[dim]Permissions:[/] auto-approve\n"
+            f"[dim]Type a message below. Ctrl+C to quit. Ctrl+B for sidebar.[/]"
+        )
+        await log.mount(Static(banner, classes="welcome-banner"))
+
+        # Show restored session messages
+        if self._resumed_messages:
+            await log.mount(Static(
+                f"[dim]--- Resumed session with {len(self._resumed_messages)} messages ---[/]",
+                classes="session-divider",
+            ))
+            for raw in self._resumed_messages:
+                role = raw.get("role", "user") if isinstance(raw, dict) else getattr(raw, "role", "user")
+                content = raw.get("content", "") if isinstance(raw, dict) else getattr(raw, "text", str(raw))
+                if isinstance(content, list):
+                    content = " ".join(
+                        b.get("text", "") if isinstance(b, dict) else str(b)
+                        for b in content
+                    )
+                text = str(content)[:500]  # truncate for display
+                if role == "user":
+                    widget = MessageWidget(role="user", text=text)
+                else:
+                    widget = MessageWidget(role="assistant", text=text)
+                await log.mount(widget)
+
+            await log.mount(Static(
+                "[dim]--- End of restored messages ---[/]",
+                classes="session-divider",
+            ))
+
+        log.scroll_end(animate=False)
+        self.query_one("#prompt-input", Input).focus()
 
     # ----------------------------------------------------------------- message helpers
 
@@ -505,10 +554,18 @@ def run_tui(args: argparse.Namespace) -> int:
                     except Exception as e:
                         logger.warning("Post-resume compact failed: %s", e)
 
+    # Collect resumed messages for display
+    _resumed_for_display = []
+    if (continue_session or resume_id) and session_id_to_load:
+        loaded_for_display = _aio.run(store.load(session_id_to_load))
+        if loaded_for_display:
+            _resumed_for_display = loaded_for_display
+
     app = DuhApp(
         engine=engine,
         model=model,
         session_id=engine.session_id,
         debug=getattr(args, "debug", False),
+        resumed_messages=_resumed_for_display,
     )
     return app.run() or 0

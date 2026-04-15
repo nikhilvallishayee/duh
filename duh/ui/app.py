@@ -594,6 +594,16 @@ def run_tui(args: argparse.Namespace) -> int:
     if getattr(args, "brief", False):
         system_prompt_parts.append(BRIEF_INSTRUCTION)
 
+    # Environment context — tell the model where it is
+    import platform as _platform
+    system_prompt_parts.append(
+        f"## Environment\n\n"
+        f"- Working directory: {cwd}\n"
+        f"- Platform: {sys.platform}\n"
+        f"- Shell: {os.environ.get('SHELL', 'unknown')}\n"
+        f"- Python: {_platform.python_version()}\n"
+    )
+
     git_ctx = get_git_context(cwd)
     if git_ctx:
         system_prompt_parts.append(git_ctx)

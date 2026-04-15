@@ -23,34 +23,16 @@ from typing import Any
 # Agent type definitions (system prompt variations)
 # ---------------------------------------------------------------------------
 
-AGENT_PROMPTS: dict[str, str] = {
-    "general": (
-        "You are a general-purpose AI coding assistant. "
-        "You have access to tools for reading, writing, editing files, "
-        "running bash commands, globbing, and grepping. Use them to "
-        "complete the task you've been given. Be thorough and concise."
-    ),
-    "coder": (
-        "You are a coding agent. Your primary job is to write clean, "
-        "correct, well-tested code. Read existing code to understand "
-        "patterns and conventions before writing. Write tests alongside "
-        "implementation. Prefer small, focused changes."
-    ),
-    "researcher": (
-        "You are a research agent. Your primary job is to read, search, "
-        "and understand code. Use Glob, Grep, and Read extensively to "
-        "build a thorough understanding before answering. Summarize "
-        "findings clearly with file paths and line numbers."
-    ),
-    "planner": (
-        "You are a planning agent. Your primary job is to break down "
-        "complex tasks into clear, actionable steps. Analyze the codebase "
-        "to understand what exists, then create a concrete plan with "
-        "specific files to create or modify. Do not implement -- just plan."
-    ),
-}
+from duh.constitution import build_system_prompt, ConstitutionConfig, AGENT_OVERLAYS
 
-AGENT_TYPES = list(AGENT_PROMPTS.keys())
+# Agent types are defined in the constitution — single source of truth
+AGENT_TYPES = list(AGENT_OVERLAYS.keys())
+
+# Build agent prompts from the constitution (not hardcoded)
+AGENT_PROMPTS: dict[str, str] = {
+    agent_type: build_system_prompt(ConstitutionConfig(agent_type=agent_type))
+    for agent_type in AGENT_TYPES
+}
 
 # ---------------------------------------------------------------------------
 # Default model per agent type (used when caller doesn't specify)

@@ -83,7 +83,8 @@ class OpenAIChatGPTProvider:
 
         instructions = _build_system_text(system_prompt).strip()
         if not instructions:
-            instructions = "You are a coding assistant."
+            from duh.constitution import build_system_prompt
+            instructions = build_system_prompt()
 
         request_body: dict[str, Any] = {
             "model": resolved_model,

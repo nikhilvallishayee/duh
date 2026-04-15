@@ -106,6 +106,12 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=False)
     subparsers.add_parser("doctor", help="Run diagnostics and health checks.")
 
+    _constitution = subparsers.add_parser("constitution",
+        help="Print the full system prompt (constitution) for human review.")
+    _constitution.add_argument("--agent-type", type=str, default="general",
+        choices=["general", "coder", "researcher", "planner", "reviewer"],
+        help="Show constitution for a specific agent type.")
+
     _security = subparsers.add_parser("security", help="Vulnerability monitoring (ADR-053)")
     _security.add_argument("security_args", nargs=argparse.REMAINDER)
 

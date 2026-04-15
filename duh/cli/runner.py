@@ -33,17 +33,11 @@ from duh.providers.registry import (
 
 logger = logging.getLogger("duh")
 
-SYSTEM_PROMPT = (
-    "You are D.U.H. (D.U.H. is a Universal Harness), an AI coding assistant. "
-    "You have access to tools for reading, writing, editing files, running "
-    "bash commands, globbing, and grepping. Use them to help the user with "
-    "their coding tasks. Be concise and direct."
-)
+from duh.constitution import build_system_prompt as _build_constitution, BRIEF, ConstitutionConfig
 
-BRIEF_INSTRUCTION = (
-    "Be extremely concise. Use short sentences. Skip explanations unless asked. "
-    "Prefer code over prose. Maximum 3 sentences for non-code responses."
-)
+# Legacy aliases — kept for backward compat with tests that import these
+SYSTEM_PROMPT = _build_constitution()
+BRIEF_INSTRUCTION = BRIEF
 
 # ---------------------------------------------------------------------------
 # Error interpretation — translate API errors into human-friendly messages

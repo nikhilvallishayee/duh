@@ -38,6 +38,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "doctor":
         return run_doctor()
 
+    if args.command == "constitution":
+        from duh.constitution import build_system_prompt, ConstitutionConfig
+        agent = getattr(args, "agent_type", "general") or "general"
+        cfg = ConstitutionConfig(agent_type=agent)
+        sys.stdout.write(build_system_prompt(cfg))
+        sys.stdout.write("\n")
+        return 0
+
     if args.command == "security":
         from duh.security.cli import main as security_main
         return security_main(args.security_args)

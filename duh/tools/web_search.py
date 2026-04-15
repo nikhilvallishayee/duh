@@ -24,7 +24,7 @@ class WebSearchTool:
     """
 
     name = "WebSearch"
-    capabilities = Capability.READ_UNTRUSTED | Capability.NETWORK_EGRESS
+    capabilities = Capability.NETWORK_EGRESS
     description = "Search the web. Requires SERPER_API_KEY or TAVILY_API_KEY."
     input_schema: dict[str, Any] = {
         "type": "object",

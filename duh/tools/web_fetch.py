@@ -43,7 +43,7 @@ class WebFetchTool:
     """Fetch a URL and return the text content."""
 
     name = "WebFetch"
-    capabilities = Capability.READ_UNTRUSTED | Capability.NETWORK_EGRESS
+    capabilities = Capability.NETWORK_EGRESS
     description = "Fetch a URL and return its text content with HTML tags stripped."
     input_schema: dict[str, Any] = {
         "type": "object",

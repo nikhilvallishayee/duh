@@ -1,7 +1,7 @@
 {
   "version": 1,
   "mode": "strict",
-  "trifecta_acknowledged": true,
+  "trifecta_acknowledged": false,
   "runtime": {
     "enabled": true
   },

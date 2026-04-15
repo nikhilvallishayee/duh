@@ -71,11 +71,12 @@ class DuhApp(App[int]):
     """
 
     CSS = APP_CSS
+    ENABLE_COMMAND_PALETTE = False  # don't capture Ctrl+P etc.
 
     BINDINGS = [
         Binding("ctrl+b", "toggle_sidebar", "Sidebar", show=True),
-        Binding("ctrl+c", "quit", "Quit", show=True),
-        Binding("q", "quit", "Quit", show=False),
+        Binding("ctrl+q", "quit", "Quit", show=True),
+        Binding("escape", "quit", "Quit", show=False),
     ]
 
     # ------------------------------------------------------------------ init
@@ -173,7 +174,8 @@ class DuhApp(App[int]):
             f"[dim]Model:[/] {self._model}  "
             f"[dim]Session:[/] {sid_short}  "
             f"[dim]Permissions:[/] auto-approve\n"
-            f"[dim]Type a message below. Ctrl+C to quit. Ctrl+B for sidebar.[/]"
+            f"[dim]Type a message below. Ctrl+Q to quit. Ctrl+B for sidebar.[/]\n"
+            f"[dim]Copy: Option+click to select, then Cmd+C (macOS) or Ctrl+Shift+C (Linux)[/]"
         )
         await log.mount(Static(banner, classes="welcome-banner"))
 

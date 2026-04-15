@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -259,16 +260,121 @@ def _dirs_root_to_cwd(cwd: str) -> list[Path]:
     return dirs
 
 
+_MAX_INCLUDE_DEPTH = 5
+_TEXT_EXTENSIONS = {".md", ".txt", ".text", ".yaml", ".yml", ".toml", ".json", ".cfg", ".ini", ".py", ".ts", ".js", ".sh"}
+_INCLUDE_RE = re.compile(r"(?:^|\s)@((?:[^\s\\]|\\ )+)")
+
+# Code-fence state machine: skip @paths inside ``` blocks
+_FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
+
+
+def _expand_includes(
+    content: str,
+    base_dir: Path,
+    processed: set[str] | None = None,
+    depth: int = 0,
+) -> list[str]:
+    """Expand @path references in instruction file content.
+
+    Matches CC's @include directive (claudemd.ts):
+    - @path, @./relative, @~/home, @/absolute
+    - Skips code blocks (``` fenced)
+    - Max depth 5, circular reference protection
+    - Text file extensions only
+
+    Returns list of [included_content..., original_content].
+    """
+    if depth >= _MAX_INCLUDE_DEPTH:
+        return [content]
+    if processed is None:
+        processed = set()
+
+    results: list[str] = []
+    include_paths: list[Path] = []
+
+    # Extract @paths from non-code-block lines
+    in_fence = False
+    for line in content.split("\n"):
+        fence_match = _FENCE_RE.match(line.strip())
+        if fence_match:
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        for match in _INCLUDE_RE.finditer(line):
+            raw_path = match.group(1)
+            # Strip trailing punctuation and fragment identifiers
+            if "#" in raw_path:
+                raw_path = raw_path[:raw_path.index("#")]
+            if not raw_path:
+                continue
+            # Unescape spaces
+            raw_path = raw_path.replace("\\ ", " ")
+            # Resolve path
+            if raw_path.startswith("~/"):
+                resolved = Path(raw_path).expanduser()
+            elif raw_path.startswith("/"):
+                resolved = Path(raw_path)
+            else:
+                # Relative (including ./ prefix)
+                resolved = base_dir / raw_path
+            resolved = resolved.resolve()
+            # Only text files
+            if resolved.suffix.lower() not in _TEXT_EXTENSIONS:
+                continue
+            include_paths.append(resolved)
+
+    # Process includes (depth-first, included before parent)
+    for inc_path in include_paths:
+        norm = str(inc_path)
+        if norm in processed:
+            continue
+        processed.add(norm)
+        if not inc_path.exists() or not inc_path.is_file():
+            continue
+        try:
+            inc_content = inc_path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        # Recurse — included files can have their own @includes
+        expanded = _expand_includes(inc_content, inc_path.parent, processed, depth + 1)
+        results.extend(expanded)
+
+    # Original content last (CC puts includes before the including file)
+    results.append(content)
+    return results
+
+
+def _load_file_with_includes(path: Path, processed: set[str]) -> list[str]:
+    """Load a file and expand its @include directives."""
+    norm = str(path.resolve())
+    if norm in processed:
+        return []
+    processed.add(norm)
+    try:
+        content = path.read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.warning("Failed to read %s: %s", path, exc)
+        return []
+    return _expand_includes(content, path.parent, processed)
+
+
 def load_instructions(cwd: str = ".") -> list[str]:
-    """Load all DUH.md and AGENTS.md instruction files.
+    """Load all DUH.md, CLAUDE.md, and AGENTS.md instruction files.
 
     Files are loaded in precedence order (lowest first, highest last).
     The model pays more attention to content appearing later.
 
+    @path references in instruction files are expanded (CC parity):
+    - @./relative/path, @~/home/path, @/absolute/path
+    - Included files appear before the file that references them
+    - Max 5 levels of nesting, circular references prevented
+    - Only text file extensions (.md, .txt, .py, .ts, etc.)
+
     Order:
         1. ~/.config/duh/DUH.md (user-global)
-        2. DUH.md / .duh/DUH.md per directory (git root to cwd)
-        3. .duh/rules/*.md per directory
+        2. DUH.md / .duh/DUH.md / CLAUDE.md per directory (git root to cwd)
+        3. .duh/rules/*.md and .claude/rules/*.md per directory
         4. AGENTS.md per directory (open standard)
 
     Args:
@@ -278,14 +384,12 @@ def load_instructions(cwd: str = ".") -> list[str]:
         List of instruction strings, ordered by precedence.
     """
     instructions: list[str] = []
+    processed: set[str] = set()
 
     # User-global instructions
     user_duh = config_dir() / "DUH.md"
     if user_duh.exists():
-        try:
-            instructions.append(user_duh.read_text(encoding="utf-8"))
-        except Exception as exc:
-            logger.warning("Failed to read %s: %s", user_duh, exc)
+        instructions.extend(_load_file_with_includes(user_duh, processed))
 
     # Project instructions (root to cwd)
     for dir_path in _dirs_root_to_cwd(cwd):
@@ -293,27 +397,18 @@ def load_instructions(cwd: str = ".") -> list[str]:
         for name in ["DUH.md", str(Path(".duh") / "DUH.md"), "CLAUDE.md"]:
             md_path = dir_path / name
             if md_path.exists():
-                try:
-                    instructions.append(md_path.read_text(encoding="utf-8"))
-                except Exception as exc:
-                    logger.warning("Failed to read %s: %s", md_path, exc)
+                instructions.extend(_load_file_with_includes(md_path, processed))
 
         # .duh/rules/*.md and .claude/rules/*.md (CC compatibility)
         for rules_name in [Path(".duh") / "rules", Path(".claude") / "rules"]:
             rules_dir = dir_path / rules_name
             if rules_dir.is_dir():
                 for md_file in sorted(rules_dir.glob("*.md")):
-                    try:
-                        instructions.append(md_file.read_text(encoding="utf-8"))
-                    except Exception as exc:
-                        logger.warning("Failed to read %s: %s", md_file, exc)
+                    instructions.extend(_load_file_with_includes(md_file, processed))
 
         # AGENTS.md (open standard)
         agents_md = dir_path / "AGENTS.md"
         if agents_md.exists():
-            try:
-                instructions.append(agents_md.read_text(encoding="utf-8"))
-            except Exception as exc:
-                logger.warning("Failed to read %s: %s", agents_md, exc)
+            instructions.extend(_load_file_with_includes(agents_md, processed))
 
     return instructions

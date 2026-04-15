@@ -37,8 +37,8 @@ def test_publish_yml_uses_trusted_publishing() -> None:
     assert "pypa/gh-action-pypi-publish@" in body
     # Trusted Publishing means no long-lived token reference anywhere.
     assert "PYPI_API_TOKEN" not in body
-    # SHA-pinned to v1.14.0+ from the pin registry.
-    assert "6733eb7d741f0b11ec6a39b58540dab7590f9b7d" in body
+    # Uses release tag (Trusted Publishing — no token needed).
+    assert "pypa/gh-action-pypi-publish@release/v1" in body
 
 
 def test_dependabot_yml_is_committed() -> None:

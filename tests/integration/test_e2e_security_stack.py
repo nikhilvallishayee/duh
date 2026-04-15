@@ -538,7 +538,7 @@ class TestRedactionPipeline:
     @pytest.mark.asyncio
     async def test_native_executor_redacts_tool_output(self) -> None:
         """A tool that emits a secret gets redacted before leaving NativeExecutor."""
-        executor = NativeExecutor(tools=[_SecretEmittingTool()])
+        executor = NativeExecutor(tools=[_SecretEmittingTool()], redact=True)
         output = await executor.run("LeakyRead", {})
         assert isinstance(output, str)
         assert "sk-ant-api03-ZZZZZZZZZZZZZZZZZZZZ" not in output

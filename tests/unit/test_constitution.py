@@ -5,12 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 
 from duh.constitution import (
+    ACTIONS,
     AGENT_OVERLAYS,
     BRIEF,
+    DOING_TASKS,
+    GIT_OPS,
+    HOOKS,
     IDENTITY,
-    PRINCIPLES,
     SAFETY,
     STYLE,
+    SYSTEM,
     TOOL_GUIDANCE,
     ConstitutionConfig,
     build_system_prompt,
@@ -24,23 +28,41 @@ def test_default_prompt_contains_identity() -> None:
     assert "Universal Harness" in prompt
 
 
-def test_default_prompt_contains_principles() -> None:
+def test_default_prompt_contains_doing_tasks() -> None:
     prompt = build_system_prompt()
-    assert "Execute, don't deliberate" in prompt
-    assert "Read before writing" in prompt
-    assert "Test what you build" in prompt
+    assert "software engineering tasks" in prompt
+    assert "Do not propose changes to code you haven't read" in prompt
 
 
 def test_default_prompt_contains_safety() -> None:
     prompt = build_system_prompt()
-    assert "Security is non-negotiable" in prompt
+    assert "authorized security testing" in prompt
     assert "Never commit secrets" in prompt
 
 
 def test_default_prompt_contains_tool_guidance() -> None:
     prompt = build_system_prompt()
-    assert "Read before Edit" in prompt
-    assert "Verify after Write" in prompt
+    assert "Do NOT use Bash when a dedicated tool exists" in prompt
+
+def test_default_prompt_contains_actions() -> None:
+    prompt = build_system_prompt()
+    assert "reversibility and blast radius" in prompt
+    assert "Measure twice, cut once" in prompt
+
+def test_default_prompt_contains_git_ops() -> None:
+    prompt = build_system_prompt()
+    assert "Git safety protocol" in prompt
+    assert "NEVER force push to main" in prompt
+    assert "HEREDOC" in prompt
+
+def test_default_prompt_contains_hooks() -> None:
+    prompt = build_system_prompt()
+    assert "hooks" in prompt.lower()
+
+def test_default_prompt_contains_system() -> None:
+    prompt = build_system_prompt()
+    assert "permission mode" in prompt
+    assert "prompt injection" in prompt
 
 
 def test_default_prompt_contains_style() -> None:
@@ -84,7 +106,7 @@ def test_reviewer_agent_overlay() -> None:
     cfg = ConstitutionConfig(agent_type="reviewer")
     prompt = build_system_prompt(cfg)
     assert "Agent Role: Reviewer" in prompt
-    assert "bugs and security" in prompt
+    assert "bugs first" in prompt
 
 
 def test_general_agent_has_no_overlay() -> None:
@@ -166,7 +188,7 @@ def test_export_default_constitution(tmp_path: Path) -> None:
     export_default_constitution(out)
     content = out.read_text()
     assert "D.U.H." in content
-    assert "Execute, don't deliberate" in content
+    assert "software engineering tasks" in content
     assert len(content) > 500
 
 
@@ -175,12 +197,33 @@ def test_none_config_uses_defaults() -> None:
     assert "D.U.H." in prompt
 
 
+def test_mcp_instructions_section() -> None:
+    cfg = ConstitutionConfig(mcp_instructions="weather-server: provides weather data")
+    prompt = build_system_prompt(cfg)
+    assert "weather-server" in prompt
+    assert "MCP Servers" in prompt
+
+
+def test_scratchpad_section() -> None:
+    cfg = ConstitutionConfig(scratchpad_dir="/tmp/duh-scratch-abc123")
+    prompt = build_system_prompt(cfg)
+    assert "/tmp/duh-scratch-abc123" in prompt
+    assert "Scratchpad" in prompt
+
+
+def test_subagent_overlay() -> None:
+    cfg = ConstitutionConfig(agent_type="subagent")
+    prompt = build_system_prompt(cfg)
+    assert "Do NOT re-delegate" in prompt
+    assert "absolute file paths" in prompt
+
+
 def test_no_hardcoded_prompts_in_runner() -> None:
     """The runner should import from constitution, not define its own prompts."""
     import duh.cli.runner as runner
     # SYSTEM_PROMPT should come from constitution
     assert "D.U.H." in runner.SYSTEM_PROMPT
-    assert "Execute, don't deliberate" in runner.SYSTEM_PROMPT
+    assert "software engineering tasks" in runner.SYSTEM_PROMPT
 
 
 def test_agent_prompts_come_from_constitution() -> None:

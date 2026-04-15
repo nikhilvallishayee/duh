@@ -365,6 +365,10 @@ def run_tui(args: argparse.Namespace) -> int:
     cwd = os.getcwd()
     tools = list(get_all_tools())
 
+    # Load project config for trifecta and MCP settings
+    from duh.config import load_config
+    app_config = load_config(cwd=cwd)
+
     system_prompt_parts = [getattr(args, "system_prompt", None) or SYSTEM_PROMPT]
     if getattr(args, "brief", False):
         system_prompt_parts.append(BRIEF_INSTRUCTION)
@@ -410,6 +414,11 @@ def run_tui(args: argparse.Namespace) -> int:
                 pass
 
     trifecta_ack = getattr(args, "i_understand_the_lethal_trifecta", False)
+    if not trifecta_ack:
+        try:
+            trifecta_ack = app_config.trifecta_acknowledged
+        except (NameError, AttributeError):
+            pass
 
     engine_config = EngineConfig(
         model=model,

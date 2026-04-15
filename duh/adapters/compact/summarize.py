@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from duh.adapters.compact.handoff import HANDOFF_PROMPT
 from duh.kernel.messages import Message
 
 # Post-restoration limits (ADR-056)
@@ -142,17 +143,12 @@ class SummarizeCompactor:
         if len(conversation_text) > 10_000:
             conversation_text = conversation_text[:10_000] + "\n... (truncated)"
 
-        prompt = (
-            "Summarize the following conversation context concisely. "
-            "Preserve key decisions, file paths, tool results, and any "
-            "instructions that are still relevant. Output only the summary."
-            f"\n\n{conversation_text}"
-        )
+        prompt = f"{HANDOFF_PROMPT}\n\n{conversation_text}"
 
         summary_parts: list[str] = []
         async for event in self._call_model(
             messages=[Message(role="user", content=prompt)],
-            system_prompt="You are a concise summarizer. Output only the summary.",
+            system_prompt="You produce structured handoff summaries. Use the section format exactly as requested.",
             model="",
         ):
             if isinstance(event, dict) and event.get("type") == "text_delta":

@@ -1,0 +1,3 @@
+{"type": "text_delta", "text": "Hello, world!"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Hello, world!"}], "metadata": {"stop_reason": "end_turn", "model": "test-model"}}}
+{"type": "done", "stop_reason": "end_turn", "turns": 1}

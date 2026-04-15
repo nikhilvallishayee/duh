@@ -313,14 +313,13 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         compact=compactor.compact,
     )
 
-    # Wire AgentTool now that Deps and tools are both built.
+    # Wire AgentTool and SwarmTool now that Deps and tools are both built.
     # Child agents get parent deps (call_model, run_tool) and parent tools
-    # (minus AgentTool itself to prevent recursion).
+    # (minus AgentTool/SwarmTool to prevent recursion).
     for t in tools:
-        if getattr(t, "name", "") == "Agent":
+        if getattr(t, "name", "") in ("Agent", "Swarm"):
             t._parent_deps = deps
             t._parent_tools = tools
-            break
 
     # Resolve max_cost: CLI flag > env var > None
     max_cost = getattr(args, "max_cost", None)
@@ -393,6 +392,22 @@ async def run_print_mode(args: argparse.Namespace) -> int:
                     engine._messages.append(Msg(role=role, content=content))
                 if debug:
                     logger.debug("resumed %d messages", len(prev))
+
+                # --- ADR-058 Phase 3: --summarize compacts on resume ---
+                if getattr(args, "summarize", False) and engine._messages:
+                    compact_fn = deps.compact
+                    if compact_fn:
+                        before_count = len(engine._messages)
+                        # Use 50% of default limit as threshold for summarized resume
+                        engine._messages = await compact_fn(
+                            engine._messages, token_limit=compactor.default_limit // 2
+                        )
+                        after_count = len(engine._messages)
+                        if debug:
+                            logger.debug(
+                                "summarize: compacted %d -> %d messages",
+                                before_count, after_count,
+                            )
             elif debug:
                 logger.debug("no session to resume")
         except Exception as e:

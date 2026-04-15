@@ -203,6 +203,13 @@ def get_all_tools(
     except ImportError:
         pass
 
+    # SwarmTool (parallel multi-agent — deps and tools wired by runner after construction)
+    try:
+        from duh.tools.swarm_tool import SwarmTool
+        tools.append(SwarmTool())
+    except ImportError:
+        pass
+
     # LSP (deferred — registered via ToolSearch, not loaded eagerly)
     try:
         from duh.tools.lsp_tool import LSPTool

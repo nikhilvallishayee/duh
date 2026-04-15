@@ -1,8 +1,13 @@
-"""AdaptiveCompactor — orchestrates multi-tier compaction (ADR-056).
+"""AdaptiveCompactor — orchestrates multi-tier compaction (ADR-056, ADR-060).
 
-Runs compaction strategies in order (microcompact -> dedup -> summarize),
+Runs compaction strategies in order:
+    microcompact -> snip (75%) -> dedup -> summarize (85%)
 stopping as soon as the context fits within budget.  Includes a circuit
 breaker (max 3 consecutive failures) and reserves an output buffer.
+
+Snip compaction (ADR-060) fires at 75% context usage as a free structural
+pass.  If snip frees enough tokens, the expensive model summary at 85% is
+skipped entirely.
 
     from duh.adapters.compact import AdaptiveCompactor
 
@@ -25,6 +30,14 @@ DEFAULT_OUTPUT_BUFFER = 20_000
 
 # Circuit breaker: max consecutive failures before giving up
 MAX_CONSECUTIVE_FAILURES = 3
+
+# Threshold gates: a strategy only fires when current usage exceeds this
+# fraction of the effective limit.  Strategies without an entry always fire.
+# ADR-060: snip at 75%, summarize at 85%.
+_THRESHOLD_GATES: dict[str, float] = {
+    "SnipCompactor": 0.75,
+    "SummarizeCompactor": 0.85,
+}
 
 
 class AdaptiveCompactor:
@@ -61,13 +74,15 @@ class AdaptiveCompactor:
         if strategies is not None:
             self._strategies = strategies
         else:
-            # Build default 3-tier pipeline
+            # Build default 4-tier pipeline (ADR-056 + ADR-060)
             from duh.adapters.compact.microcompact import MicroCompactor
+            from duh.adapters.compact.snip import SnipCompactor
             from duh.adapters.compact.dedup import DedupCompactor
             from duh.adapters.compact.summarize import SummarizeCompactor
 
             self._strategies = [
                 MicroCompactor(bytes_per_token=bytes_per_token),
+                SnipCompactor(bytes_per_token=bytes_per_token),
                 DedupCompactor(bytes_per_token=bytes_per_token),
                 SummarizeCompactor(
                     call_model=call_model,
@@ -126,6 +141,21 @@ class AdaptiveCompactor:
                 break
 
             strategy_name = type(strategy).__name__
+
+            # Threshold gate (ADR-060): skip strategies whose threshold
+            # hasn't been reached yet.
+            threshold = _THRESHOLD_GATES.get(strategy_name)
+            if threshold is not None and effective_limit > 0:
+                usage_ratio = current_tokens / effective_limit
+                if usage_ratio < threshold:
+                    logger.debug(
+                        "Tier %s skipped: usage %.1f%% < threshold %.0f%%",
+                        strategy_name,
+                        usage_ratio * 100,
+                        threshold * 100,
+                    )
+                    continue
+
             tiers_run += 1
 
             try:

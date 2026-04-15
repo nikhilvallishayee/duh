@@ -417,6 +417,7 @@ SLASH_COMMANDS = {
     "/compact": "Compact older messages",
     "/snapshot": "Ghost snapshot (/snapshot, /snapshot apply, /snapshot discard)",
     "/attach": "Attach a file to the next message (/attach path/to/file)",
+    "/sessions": "List sessions for this project",
     "/exit": "Exit the REPL",
 }
 
@@ -1030,6 +1031,39 @@ def _handle_slash(
             sys.stdout.write(f"  Error: {exc}\n")
         return True, model
 
+    if name == "/sessions":
+        store = getattr(engine, "_session_store", None)
+        if store is None:
+            sys.stdout.write("  No session store configured.\n")
+            return True, model
+        import asyncio as _sessions_aio
+        try:
+            sessions = _sessions_aio.run(store.list_sessions())
+        except RuntimeError:
+            # Already inside a running event loop — use thread pool
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                sessions = pool.submit(
+                    _sessions_aio.run, store.list_sessions()
+                ).result()
+        except Exception as exc:
+            sys.stdout.write(f"  Error listing sessions: {exc}\n")
+            return True, model
+        if not sessions:
+            sys.stdout.write("  No sessions for this project.\n")
+            return True, model
+        sessions.sort(key=lambda s: s.get("modified", ""), reverse=True)
+        sys.stdout.write(f"  {'ID':10s} {'Messages':>8s}  {'Last Modified'}\n")
+        sys.stdout.write(f"  {'─' * 10} {'─' * 8}  {'─' * 20}\n")
+        for s in sessions:
+            sid = s["session_id"][:8]
+            count = s.get("message_count", 0)
+            modified = s.get("modified", "?")
+            if modified != "?" and "T" in modified:
+                modified = modified.replace("T", " ").split("+")[0][:19]
+            sys.stdout.write(f"  {sid:10s} {count:>8d}  {modified}\n")
+        return True, model
+
     if name == "/exit":
         return False, model
 
@@ -1304,12 +1338,11 @@ async def run_repl(args: argparse.Namespace) -> int:
         hook_registry=_hook_registry,
     )
 
-    # Wire AgentTool now that Deps and tools are both built.
+    # Wire AgentTool and SwarmTool now that Deps and tools are both built.
     for t in tools:
-        if getattr(t, "name", "") == "Agent":
+        if getattr(t, "name", "") in ("Agent", "Swarm"):
             t._parent_deps = deps
             t._parent_tools = tools
-            break
 
     # Resolve max_cost: CLI flag > env var > None
     max_cost = getattr(args, "max_cost", None)

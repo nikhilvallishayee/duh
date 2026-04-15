@@ -34,6 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Sampling temperature (0.0-1.0).")
     parser.add_argument("--output-format", type=str, choices=["text", "json", "stream-json"],
                         default="text", help="Output format (default: text).")
+    parser.add_argument("--output-style", choices=["default", "concise", "verbose"],
+                        default="default", help="Output verbosity style (default: default).")
     parser.add_argument("--input-format", type=str, choices=["text", "stream-json"],
                         default="text", help="Input format (default: text).")
     parser.add_argument("--dangerously-skip-permissions", action="store_true",
@@ -68,6 +70,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Use a specific session ID.")
     parser.add_argument("--fork-session", action="store_true", default=False,
                         help="Fork from the resumed session into a new session.")
+    parser.add_argument("--summarize", action="store_true", default=False,
+                        help="Summarize older messages on resume (use with --continue or --resume).")
     parser.add_argument("--debug", "-d", action="store_true", default=False,
                         help="Enable debug output (full event tracing to stderr).")
     parser.add_argument("--verbose", action="store_true", default=False,

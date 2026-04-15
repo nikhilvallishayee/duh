@@ -45,6 +45,7 @@ from textual.binding import Binding
 from textual.containers import ScrollableContainer, Horizontal, Vertical
 from textual.widgets import Button, Footer, Header, Input, Label, Static
 
+from duh.ui.styles import OutputStyle
 from duh.ui.theme import APP_CSS
 from duh.ui.logo import LOGO_COMPACT
 from duh.ui.widgets import MessageWidget, ThinkingWidget, ToolCallWidget
@@ -89,6 +90,7 @@ class DuhApp(App[int]):
         session_id: str = "",
         debug: bool = False,
         resumed_messages: list | None = None,
+        cwd: str = "",
     ) -> None:
         super().__init__()
         self._engine = engine
@@ -96,6 +98,8 @@ class DuhApp(App[int]):
         self._session_id = session_id
         self._debug = debug
         self._resumed_messages = resumed_messages or []
+        self._cwd = cwd
+        self._output_style: OutputStyle = OutputStyle.DEFAULT
 
         # Running counters
         self._input_tokens: int = 0
@@ -167,11 +171,28 @@ class DuhApp(App[int]):
         """Show welcome banner and restored session messages."""
         log = self.query_one("#message-log", ScrollableContainer)
 
-        # Welcome banner
+        # Welcome banner with project awareness
         sid_short = self._session_id[:8] if self._session_id else "new"
+
+        # Count sessions for this project
+        session_count = 0
+        store = getattr(self._engine, "_session_store", None)
+        if store:
+            try:
+                sessions = await store.list_sessions()
+                session_count = len(sessions)
+            except Exception:
+                pass
+
+        project_line = ""
+        if self._cwd:
+            project_line = f"[dim]Project:[/] {self._cwd}  "
+            project_line += f"[dim]Sessions:[/] {session_count}\n"
+
         banner = (
             f"[bold magenta]D[/].U.[bold magenta]H[/]. — "
             f"[bold magenta]D[/].U.[bold magenta]H[/]. is a Universal Harness\n\n"
+            f"{project_line}"
             f"[dim]Model:[/] {self._model}  "
             f"[dim]Session:[/] {sid_short}  "
             f"[dim]Permissions:[/] auto-approve\n"
@@ -297,10 +318,13 @@ class DuhApp(App[int]):
                 "[bold]Available commands:[/]\n"
                 "  [cyan]/help[/]          — Show this help\n"
                 "  [cyan]/model[/] [name]  — Show or switch model\n"
+                "  [cyan]/style[/] [name]  — Show or set output style (default/concise/verbose)\n"
                 "  [cyan]/cost[/]          — Show token usage and cost\n"
+                "  [cyan]/context[/]       — Show context window token breakdown\n"
                 "  [cyan]/compact[/]       — Force context compaction\n"
                 "  [cyan]/clear[/]         — Clear message display\n"
                 "  [cyan]/session[/]       — Show session info\n"
+                "  [cyan]/sessions[/]      — List sessions for this project\n"
                 "  [cyan]/quit[/]          — Exit D.U.H.\n",
                 classes="welcome-banner",
             ))
@@ -330,6 +354,15 @@ class DuhApp(App[int]):
                 f"  Estimated cost: ${cost:.4f}\n"
                 f"  Turn: {self._turn}\n"
                 f"  Model: {self._model}",
+                classes="welcome-banner",
+            ))
+            return True
+
+        if cmd == "/context":
+            from duh.cli.repl import context_breakdown
+            output = context_breakdown(self._engine, self._model)
+            await self._add_widget(Static(
+                f"[bold]Context Window[/]\n{output}",
                 classes="welcome-banner",
             ))
             return True
@@ -373,6 +406,64 @@ class DuhApp(App[int]):
                 f"  Messages: {msg_count}\n"
                 f"  Turn: {self._turn}\n"
                 f"  Model: {self._model}",
+                classes="welcome-banner",
+            ))
+            return True
+
+        if cmd == "/style":
+            if arg:
+                arg_lower = arg.strip().lower()
+                try:
+                    new_style = OutputStyle(arg_lower)
+                except ValueError:
+                    await self._add_error_message(
+                        f"Unknown style '{arg.strip()}'. "
+                        f"Choose from: default, concise, verbose"
+                    )
+                    return True
+                self._output_style = new_style
+                await self._add_widget(Static(
+                    f"[green]Output style set to:[/] {new_style.value}",
+                    classes="session-divider",
+                ))
+            else:
+                await self._add_widget(Static(
+                    f"[dim]Current output style:[/] {self._output_style.value}",
+                    classes="session-divider",
+                ))
+            return True
+
+        if cmd == "/sessions":
+            store = getattr(self._engine, "_session_store", None)
+            if store is None:
+                await self._add_error_message("No session store configured.")
+                return True
+            try:
+                sessions = await store.list_sessions()
+            except Exception as exc:
+                await self._add_error_message(f"Error listing sessions: {exc}")
+                return True
+            if not sessions:
+                await self._add_widget(Static(
+                    "[dim]No sessions for this project.[/]",
+                    classes="session-divider",
+                ))
+                return True
+            sessions.sort(key=lambda s: s.get("modified", ""), reverse=True)
+            lines = [
+                f"[bold]Sessions for this project[/] ({len(sessions)} total)\n",
+                f"  {'ID':10s} {'Messages':>8s}  {'Last Modified'}",
+                f"  {'─' * 10} {'─' * 8}  {'─' * 20}",
+            ]
+            for s in sessions:
+                sid = s["session_id"][:8]
+                count = s.get("message_count", 0)
+                modified = s.get("modified", "?")
+                if modified != "?" and "T" in modified:
+                    modified = modified.replace("T", " ").split("+")[0][:19]
+                lines.append(f"  {sid:10s} {count:>8d}  {modified}")
+            await self._add_widget(Static(
+                "\n".join(lines),
                 classes="welcome-banner",
             ))
             return True
@@ -649,12 +740,11 @@ def run_tui(args: argparse.Namespace) -> int:
         hook_registry=hook_registry,
     )
 
-    # Wire AgentTool now that Deps and tools are both built.
+    # Wire AgentTool and SwarmTool now that Deps and tools are both built.
     for t in tools:
-        if getattr(t, "name", "") == "Agent":
+        if getattr(t, "name", "") in ("Agent", "Swarm"):
             t._parent_deps = deps
             t._parent_tools = tools
-            break
 
     max_cost = getattr(args, "max_cost", None)
     if max_cost is None:
@@ -718,6 +808,20 @@ def run_tui(args: argparse.Namespace) -> int:
                 # so they load at the right size. Auto-compact in engine.run()
                 # handles context limits if needed.
 
+                # --- ADR-058 Phase 3: --summarize compacts on resume ---
+                if getattr(args, "summarize", False) and engine._messages:
+                    compact_fn = deps.compact
+                    if compact_fn:
+                        before_count = len(engine._messages)
+                        engine._messages = _aio.run(
+                            compact_fn(engine._messages, token_limit=compactor.default_limit // 2)
+                        )
+                        after_count = len(engine._messages)
+                        logger.info(
+                            "summarize: compacted %d -> %d messages",
+                            before_count, after_count,
+                        )
+
     # Collect resumed messages for display
     _resumed_for_display = []
     if (continue_session or resume_id) and session_id_to_load:
@@ -731,5 +835,6 @@ def run_tui(args: argparse.Namespace) -> int:
         session_id=engine.session_id,
         debug=getattr(args, "debug", False),
         resumed_messages=_resumed_for_display,
+        cwd=cwd,
     )
     return app.run() or 0

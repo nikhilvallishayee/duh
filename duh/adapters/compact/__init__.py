@@ -53,9 +53,11 @@ class CompactionResult:
 
 
 from duh.adapters.compact.adaptive import AdaptiveCompactor  # noqa: E402, F401
+from duh.adapters.compact.snip import SnipCompactor  # noqa: E402, F401
 
 __all__ = [
     "CompactionStrategy",
     "CompactionResult",
     "AdaptiveCompactor",
+    "SnipCompactor",
 ]

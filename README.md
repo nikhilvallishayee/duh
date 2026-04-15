@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/site/assets/duh-logo.png" alt="D.U.H. — Duh is a Universal Harness" width="600">
+<img src="docs/site/assets/duh-logo.png" alt="D.U.H. — D.U.H. is a Universal Harness" width="600">
 
 <br>
 

@@ -39,12 +39,12 @@ LOGO_LARGE = r"""
 
 LOGO_COMPACT = r"""
   D . U . H .
-  Duh is a Universal Harness
+  D.U.H. is a Universal Harness
 """
 
 # ─── Mini one-liner ─────────────────────────────────────────────────
 
-LOGO_MINI = "◆ D.U.H. — Duh is a Universal Harness"
+LOGO_MINI = "◆ D.U.H. — D.U.H. is a Universal Harness"
 
 # ─── Colored versions ──────────────────────────────────────────────
 
@@ -61,14 +61,14 @@ _LOGO_LARGE_COLOR = f"""\
 
 _LOGO_COMPACT_COLOR = f"""\
   {_ACC}D{_RESET}{_DIM} . {_ACC}U{_RESET}{_DIM} . {_ACC}H{_RESET}{_DIM} .{_RESET}
-  {_ACC}D{_RESET}{_BRIGHT_WHITE}uh is a {_ACC}U{_RESET}{_BRIGHT_WHITE}niversal {_ACC}H{_RESET}{_BRIGHT_WHITE}arness{_RESET}
+  {_ACC}D{_RESET}{_BRIGHT_WHITE}.{_ACC}U{_RESET}{_BRIGHT_WHITE}.{_ACC}H{_RESET}{_BRIGHT_WHITE} is a {_ACC}U{_RESET}{_BRIGHT_WHITE}niversal {_ACC}H{_RESET}{_BRIGHT_WHITE}arness{_RESET}
 """
 
 _LOGO_MINI_COLOR = (
     f"{_BRIGHT_MAGENTA}◆{_RESET} "
-    f"{_ACC}D{_RESET}{_BRIGHT_WHITE}.{_ACC}U{_RESET}{_BRIGHT_WHITE}.{_ACC}H{_RESET}{_BRIGHT_WHITE}.{_RESET} "
+    f"{_ACC}D{_RESET}{_BRIGHT_WHITE}.{_ACC}U{_RESET}{_BRIGHT_WHITE}.{_ACC}H{_RESET}{_BRIGHT_WHITE}{_RESET} "
     f"{_DIM}—{_RESET} "
-    f"{_ACC}U{_RESET}{_BRIGHT_WHITE}niversal {_ACC}H{_RESET}{_BRIGHT_WHITE}arness{_RESET}"
+    f"{_ACC}D{_RESET}{_BRIGHT_WHITE}.{_ACC}U{_RESET}{_BRIGHT_WHITE}.{_ACC}H{_RESET}{_BRIGHT_WHITE} is a {_ACC}U{_RESET}{_BRIGHT_WHITE}niversal {_ACC}H{_RESET}{_BRIGHT_WHITE}arness{_RESET}"
 )
 
 

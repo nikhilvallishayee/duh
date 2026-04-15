@@ -139,7 +139,7 @@ class TestRedactInNativeExecutor:
             async def call(self, input: dict, ctx: ToolContext) -> ToolResult:
                 return ToolResult(output="Secret: sk-ant-api03-abcdef1234567890abcdef")
 
-        executor = NativeExecutor(tools=[LeakyTool()])
+        executor = NativeExecutor(tools=[LeakyTool()], redact=True)
         result = await executor.run("Leaky", {})
         assert "sk-ant" not in result
         assert REDACTED in result

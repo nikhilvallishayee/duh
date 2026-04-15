@@ -70,7 +70,7 @@ class TestContextBreakdownStructure:
         engine = _make_engine()
         output = context_breakdown(engine, "claude-sonnet-4-6")
         assert "Context window:" in output
-        assert "200,000" in output  # claude-sonnet-4-6 has 200K limit
+        assert "1,000,000" in output  # claude-sonnet-4-6 has 1M limit
 
     def test_contains_all_components(self):
         engine = _make_engine()
@@ -135,7 +135,7 @@ class TestContextTokenCounting:
         engine = _make_engine(system_prompt="", tools=[])
         output = context_breakdown(engine, "claude-sonnet-4-6")
         # With no system prompt, no history, no tools, all should be available
-        assert "200,000" in output  # context limit
+        assert "1,000,000" in output  # context limit
         # Used should be 0
         lines = output.split("\n")
         used_line = [l for l in lines if "Used" in l][0]
@@ -155,7 +155,7 @@ class TestContextTokenCounting:
         engine = _make_engine(system_prompt="")
         output_sonnet = context_breakdown(engine, "claude-sonnet-4-6")
         output_gpt = context_breakdown(engine, "gpt-4o")
-        assert "200,000" in output_sonnet
+        assert "1,000,000" in output_sonnet
         assert "128,000" in output_gpt
 
 

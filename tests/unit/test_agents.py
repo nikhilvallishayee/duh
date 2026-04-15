@@ -98,12 +98,14 @@ class TestAgentTypes:
         for t, prompt in AGENT_PROMPTS.items():
             assert len(prompt) > 20, f"{t} prompt is too short"
 
-    def test_four_types(self):
-        assert len(AGENT_TYPES) == 4
+    def test_six_types(self):
+        assert len(AGENT_TYPES) == 6
         assert "general" in AGENT_TYPES
         assert "coder" in AGENT_TYPES
         assert "researcher" in AGENT_TYPES
         assert "planner" in AGENT_TYPES
+        assert "reviewer" in AGENT_TYPES
+        assert "subagent" in AGENT_TYPES
 
 
 # ---------------------------------------------------------------------------

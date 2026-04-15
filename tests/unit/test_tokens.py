@@ -402,10 +402,10 @@ class TestModelPricingTable:
 
 class TestGetContextLimit:
     def test_known_claude_model(self):
-        assert get_context_limit("claude-sonnet-4-6") == 200_000
+        assert get_context_limit("claude-sonnet-4-6") == 1_000_000
 
     def test_known_opus(self):
-        assert get_context_limit("claude-opus-4-6") == 200_000
+        assert get_context_limit("claude-opus-4-6") == 1_000_000
 
     def test_known_gpt4o(self):
         assert get_context_limit("gpt-4o") == 128_000

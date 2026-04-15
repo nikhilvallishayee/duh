@@ -43,6 +43,8 @@ AGENT_TYPE_DEFAULTS: dict[str, str] = {
     "coder": "sonnet",      # balanced speed/quality
     "researcher": "haiku",  # fast and cheap for search
     "planner": "opus",      # complex reasoning
+    "reviewer": "sonnet",   # code review needs balanced quality
+    "subagent": "inherit",  # delegated tasks inherit parent model
 }
 
 

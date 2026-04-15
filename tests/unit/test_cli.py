@@ -43,7 +43,7 @@ class TestBuildParser:
     def test_max_turns_default(self):
         parser = build_parser()
         args = parser.parse_args([])
-        assert args.max_turns == 10
+        assert args.max_turns == 100
 
     def test_max_turns_override(self):
         parser = build_parser()
@@ -116,7 +116,7 @@ class TestVersion:
             main(["--version"])
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "0.3.0" in captured.out
+        assert "0.4.2" in captured.out
 
 
 # ---------------------------------------------------------------------------

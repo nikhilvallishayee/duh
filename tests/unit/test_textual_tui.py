@@ -231,17 +231,18 @@ class TestDuhAppRunTest:
             assert "visible" not in sidebar.classes
 
     async def test_empty_input_does_not_trigger_query(self):
-        """Submitting an empty input should be a no-op."""
+        """Submitting an empty input should be a no-op (only welcome banner present)."""
         engine = _fake_engine([])
         app = DuhApp(engine=engine)
         async with app.run_test(size=(120, 40)) as pilot:
+            log = app.query_one("#message-log")
+            initial_count = len(list(log.children))
             inp = app.query_one("#prompt-input", Input)
             inp.value = ""
             await pilot.click("#send-button")
             await pilot.pause(0.2)
-            # No messages mounted in the log
-            log = app.query_one("#message-log")
-            assert len(list(log.children)) == 0
+            # No new messages beyond the welcome banner
+            assert len(list(log.children)) == initial_count
 
     async def test_text_delta_events_create_assistant_message(self):
         events = [

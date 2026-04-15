@@ -1502,5 +1502,6 @@ async def test_stream_default_instructions_when_empty(monkeypatch):
         messages=[Message(role="user", content="hi")], system_prompt=""
     ):
         pass
-    assert captured["json"]["instructions"] == "You are a coding assistant."
+    from duh.constitution import build_system_prompt
+    assert captured["json"]["instructions"] == build_system_prompt()
     assert captured["json"]["model"] == "gpt-5.2-codex"

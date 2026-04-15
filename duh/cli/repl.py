@@ -1303,6 +1303,13 @@ async def run_repl(args: argparse.Namespace) -> int:
         compact=compactor.compact,
         hook_registry=_hook_registry,
     )
+
+    # Wire AgentTool's parent deps now that Deps is built
+    for t in tools:
+        if getattr(t, "name", "") == "Agent":
+            t._parent_deps = deps
+            break
+
     # Resolve max_cost: CLI flag > env var > None
     max_cost = getattr(args, "max_cost", None)
     if max_cost is None:

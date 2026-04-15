@@ -635,6 +635,12 @@ def run_tui(args: argparse.Namespace) -> int:
         hook_registry=hook_registry,
     )
 
+    # Wire AgentTool's parent deps now that Deps is built
+    for t in tools:
+        if getattr(t, "name", "") == "Agent":
+            t._parent_deps = deps
+            break
+
     max_cost = getattr(args, "max_cost", None)
     if max_cost is None:
         env_cost = os.environ.get("DUH_MAX_COST")

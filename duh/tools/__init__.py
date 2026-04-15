@@ -18,8 +18,9 @@ from duh.tools.memory_tool import MemoryRecallTool, MemoryStoreTool
 from duh.tools.notebook_edit import NotebookEditTool
 from duh.tools.worktree import EnterWorktreeTool, ExitWorktreeTool
 from duh.tools.write import WriteTool
+from duh.tools.agent_tool import AgentTool
 
-ALL_TOOLS = [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GlobTool, GrepTool, SkillTool, ToolSearchTool, WebFetchTool, WebSearchTool, TaskTool, EnterWorktreeTool, ExitWorktreeTool, NotebookEditTool, MemoryStoreTool, MemoryRecallTool]
+ALL_TOOLS = [ReadTool, WriteTool, EditTool, MultiEditTool, BashTool, GlobTool, GrepTool, SkillTool, ToolSearchTool, WebFetchTool, WebSearchTool, TaskTool, EnterWorktreeTool, ExitWorktreeTool, NotebookEditTool, MemoryStoreTool, MemoryRecallTool, AgentTool]
 
 __all__ = [
     "ReadTool",
@@ -39,5 +40,6 @@ __all__ = [
     "WebSearchTool",
     "EnterWorktreeTool",
     "ExitWorktreeTool",
+    "AgentTool",
     "ALL_TOOLS",
 ]

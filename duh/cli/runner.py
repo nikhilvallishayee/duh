@@ -312,6 +312,13 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         approve=approver.check,
         compact=compactor.compact,
     )
+
+    # Wire AgentTool's parent deps now that Deps is built
+    for t in tools:
+        if getattr(t, "name", "") == "Agent":
+            t._parent_deps = deps
+            break
+
     # Resolve max_cost: CLI flag > env var > None
     max_cost = getattr(args, "max_cost", None)
     if max_cost is None:

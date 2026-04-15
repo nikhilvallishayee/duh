@@ -12,7 +12,7 @@ class AgentTool:
         "type": "object",
         "properties": {
             "prompt": {"type": "string", "description": "The task for the subagent."},
-            "agent_type": {"type": "string", "enum": ["general", "coder", "researcher", "planner"], "description": "Agent specialization. Default: general."},
+            "agent_type": {"type": "string", "enum": ["general", "coder", "researcher", "planner", "reviewer", "subagent"], "description": "Agent specialization. Default: general."},
             "model": {"type": "string", "enum": ["haiku", "sonnet", "opus", "inherit"], "description": "Model for subagent. Defaults to agent type's preferred model."},
         },
         "required": ["prompt"],

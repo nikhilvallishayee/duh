@@ -289,8 +289,8 @@ def load_instructions(cwd: str = ".") -> list[str]:
 
     # Project instructions (root to cwd)
     for dir_path in _dirs_root_to_cwd(cwd):
-        # DUH.md in directory root
-        for name in ["DUH.md", str(Path(".duh") / "DUH.md")]:
+        # DUH.md / CLAUDE.md in directory root (CC compatibility)
+        for name in ["DUH.md", str(Path(".duh") / "DUH.md"), "CLAUDE.md"]:
             md_path = dir_path / name
             if md_path.exists():
                 try:
@@ -298,14 +298,15 @@ def load_instructions(cwd: str = ".") -> list[str]:
                 except Exception as exc:
                     logger.warning("Failed to read %s: %s", md_path, exc)
 
-        # .duh/rules/*.md
-        rules_dir = dir_path / ".duh" / "rules"
-        if rules_dir.is_dir():
-            for md_file in sorted(rules_dir.glob("*.md")):
-                try:
-                    instructions.append(md_file.read_text(encoding="utf-8"))
-                except Exception as exc:
-                    logger.warning("Failed to read %s: %s", md_file, exc)
+        # .duh/rules/*.md and .claude/rules/*.md (CC compatibility)
+        for rules_name in [Path(".duh") / "rules", Path(".claude") / "rules"]:
+            rules_dir = dir_path / rules_name
+            if rules_dir.is_dir():
+                for md_file in sorted(rules_dir.glob("*.md")):
+                    try:
+                        instructions.append(md_file.read_text(encoding="utf-8"))
+                    except Exception as exc:
+                        logger.warning("Failed to read %s: %s", md_file, exc)
 
         # AGENTS.md (open standard)
         agents_md = dir_path / "AGENTS.md"

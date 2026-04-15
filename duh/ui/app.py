@@ -584,7 +584,11 @@ def run_tui(args: argparse.Namespace) -> int:
 
     model = backend.model
     cwd = os.getcwd()
-    tools = list(get_all_tools())
+
+    # Load skills (CC-compatible: ~/.claude/skills, .claude/skills, .duh/skills)
+    from duh.kernel.skill import load_all_skills
+    loaded_skills = load_all_skills(cwd)
+    tools = list(get_all_tools(skills=loaded_skills))
 
     # Load project config for trifecta and MCP settings
     from duh.config import load_config
@@ -593,6 +597,11 @@ def run_tui(args: argparse.Namespace) -> int:
     system_prompt_parts = [getattr(args, "system_prompt", None) or SYSTEM_PROMPT]
     if getattr(args, "brief", False):
         system_prompt_parts.append(BRIEF_INSTRUCTION)
+
+    # Load project instructions (DUH.md, CLAUDE.md, AGENTS.md, rules)
+    from duh.config import load_instructions
+    for instruction in load_instructions(cwd):
+        system_prompt_parts.append(instruction)
 
     # Environment context — tell the model where it is
     import platform as _platform

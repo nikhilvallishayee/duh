@@ -95,12 +95,10 @@ def resolve_provider_name(
     provider_name = explicit_provider or infer_provider_from_model(model)
     if provider_name:
         return provider_name
-    # Keep auto-detection conservative and backward-compatible:
-    # env vars first, then ollama probe. Saved keys are used once a provider
-    # is explicitly chosen or inferred from model.
-    if os.environ.get("ANTHROPIC_API_KEY"):
+    # Auto-detect: env vars and saved keys first, then ollama probe.
+    if has_anthropic_available():
         return "anthropic"
-    if os.environ.get("OPENAI_API_KEY"):
+    if has_openai_available() or has_openai_chatgpt_oauth():
         return "openai"
     if check_ollama():
         return "ollama"

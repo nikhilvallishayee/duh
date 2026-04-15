@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>D.U.H. — Getting Started</title>
+  <meta name="description" content="Install D.U.H., set up a provider, run your first session, and explore the REPL. Takes about 5 minutes.">
+  <meta name="theme-color" content="#0a0a0a">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🔧</text></svg>">
+  <style>
+    .gs-layout {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 48px;
+      align-items: start;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 56px 24px 96px;
+    }
+    .gs-sidebar {
+      position: sticky;
+      top: calc(var(--nav-h) + 24px);
+    }
+    .gs-sidebar h4 {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--fg-3);
+      margin-bottom: 12px;
+    }
+    .gs-sidebar ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .gs-sidebar a {
+      display: block;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      color: var(--fg-2);
+      transition: all 0.15s;
+    }
+    .gs-sidebar a:hover {
+      color: var(--fg);
+      background: var(--bg-3);
+      text-decoration: none;
+    }
+    .gs-sidebar a.active {
+      color: var(--accent);
+      background: var(--accent-dim);
+    }
+    .gs-content h2 {
+      font-size: 1.6rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+      margin-top: 56px;
+      padding-top: 56px;
+      border-top: 1px solid var(--border);
+    }
+    .gs-content h2:first-child {
+      margin-top: 0;
+      padding-top: 0;
+      border-top: none;
+    }
+    .gs-content h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin: 28px 0 12px;
+    }
+    .gs-content p {
+      font-size: 0.925rem;
+      color: var(--fg-2);
+      line-height: 1.7;
+      margin-bottom: 16px;
+    }
+    .gs-content ul, .gs-content ol {
+      padding-left: 20px;
+      margin-bottom: 16px;
+    }
+    .gs-content li {
+      font-size: 0.925rem;
+      color: var(--fg-2);
+      line-height: 1.6;
+      padding: 3px 0;
+    }
+    .gs-content .code-block {
+      margin: 20px 0;
+    }
+    .gs-content code {
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 0.825em;
+      color: var(--accent);
+    }
+    @media (max-width: 768px) {
+      .gs-layout { grid-template-columns: 1fr; gap: 32px; }
+      .gs-sidebar { position: static; }
+    }
+  </style>
+</head>
+<body class="page-body">
+
+<!-- ── Navigation ── -->
+<nav class="nav" role="navigation" aria-label="Main navigation">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo"><span>D.U.H.</span></a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="getting-started.html">Get Started</a></li>
+      <li><a href="security.html">Security</a></li>
+      <li><a href="comparisons.html">Compare</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="https://github.com/nikhilvallishayee/duh" class="nav-github" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        GitHub
+      </a>
+    </div>
+    <button class="nav-hamburger" aria-label="Toggle menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<!-- ── Page Hero ── -->
+<div class="page-hero">
+  <div class="container">
+    <div class="hero-badge">Tutorial · ~5 minutes</div>
+    <h1>Getting Started</h1>
+    <p>Install D.U.H., configure your provider, and run your first session. Takes about 5 minutes.</p>
+  </div>
+</div>
+
+<!-- ── Layout ── -->
+<div class="gs-layout">
+
+  <!-- Sidebar -->
+  <aside class="gs-sidebar" aria-label="Page sections">
+    <h4>On this page</h4>
+    <ul>
+      <li><a href="#install">Installation</a></li>
+      <li><a href="#providers">Provider Setup</a></li>
+      <li><a href="#first-session">First Session</a></li>
+      <li><a href="#tui-mode">TUI / REPL Mode</a></li>
+      <li><a href="#security-scan">Security Scan</a></li>
+      <li><a href="#repl-cheatsheet">REPL Cheat Sheet</a></li>
+      <li><a href="#sdk-mode">SDK Mode</a></li>
+      <li><a href="#next-steps">Next Steps</a></li>
+    </ul>
+  </aside>
+
+  <!-- Content -->
+  <main class="gs-content">
+
+    <!-- Installation -->
+    <h2 id="install">Installation</h2>
+    <p>D.U.H. requires Python 3.12+. Install from PyPI or from source during the alpha period.</p>
+
+    <h3>From PyPI (recommended)</h3>
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dots"><span></span><span></span><span></span></div>
+        <span class="code-title">bash</span>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <pre><span class="cmt"># Core install (Anthropic + Ollama)</span>
+<span class="fn">pip</span> install duh-cli
+
+<span class="cmt"># With OpenAI API support</span>
+<span class="fn">pip</span> install <span class="str">'duh-cli[openai]'</span>
+
+<span class="cmt"># With Rich TUI rendering</span>
+<span class="fn">pip</span> install <span class="str">'duh-cli[rich]'</span>
+
+<span class="cmt"># With security scanners (ruff, pip-audit, detect-secrets, cyclonedx)</span>
+<span class="fn">pip</span> install <span class="str">'duh-cli[security]'</span>
+
+<span class="cmt"># Everything</span>
+<span class="fn">pip</span> install <span class="str">'duh-cli[all]'</span></pre>
+    </div>
+
+    <h3>From Source</h3>
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dots"><span></span><span></span><span></span></div>
+        <span class="code-title">bash</span>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <pre><span class="fn">git</span> clone https://github.com/nikhilvallishayee/duh
+<span class="kw">cd</span> duh
+<span class="fn">python3.12</span> <span class="flag">-m</span> venv .venv <span class="punc">&&</span> source .venv/bin/activate
+<span class="fn">pip</span> install <span class="flag">-e</span> <span class="str">".[dev]"</span></pre>
+    </div>
+
+    <h3>Verify the install</h3>
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dots"><span></span><span></span><span></span></div>
+        <span class="code-title">bash</span>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <pre><span class="fn">duh</span> <span class="flag">--version</span>
+<span class="fn">duh</span> doctor   <span class="cmt"># checks providers, keys, dependencies</span></pre>
+    </div>
+
+    <!-- Provider Setup -->
+    <h2 id="providers">Provider Setup</h2>
+
+    <h3>Anthropic Claude (default)</h3>
+    <p>Set your API key as an environment variable. D.U.H. auto-detects it.</p>
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dots"><span></span><span></span><span></span></div>
+        <span class="code-title">bash</span>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <pre><span class="kw">export</span> <span class="val">ANTHROPIC_API_KEY</span>=sk-ant-...
+
+<span class="cmt"># Or connect interactively in the REPL</span>
+<span class="fn">duh</span>
+<span class="dim">&gt;</span> /connect anthropic</pre>
+    </div>
+
+    <h3>OpenAI API</h3>
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dots"><span></span><span></span><span></span></div>
+        <span class="code-title">bash</span>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <pre><span class="kw">export</span> <span class="val">OPENAI_API_KEY</span>=sk-...
+
+<span class="fn">duh</span> <span class="flag">--provider</span> openai <span class="flag">--model</span> gpt-4o <span class="flag">-p</span> <span class="str">"your task"</span></pre>
+    </div>
+
+    <h3>ChatGPT Plus/Pro — Codex (OAuth, no API key)</h3>
+    <p>D.U.H. is the only Python agent that supports ChatGPT Plus/Pro via OAuth. Run the connect flow in the REPL:</p>
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dots"><span></span><span></span><span></span></div>
+        <span class="code-title">bash</span>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <pre><span class="fn">duh</span>
+<span class="dim">&gt;</span> /connect openai
+<span class="cmt"># Opens browser → ChatGPT OAuth → stores token in ~/.config/duh/auth.json</span>
+
+<span class="cmt"># Then use Codex models</span>
+<span class="fn">duh</span> <span class="flag">--provider</span> openai_chatgpt <span class="flag">--model</span> gpt-5.2-codex <span class="flag">-p</span> <span class="str">"refactor auth.py"</span></pre>
+    </div>
+
+    <h3>Ollama (local models)</h3>
+    <p>Start Ollama, pull a model, then point D.U.H. at it. No internet connection required after pull.</p>
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dots"><span></span><span></span><span></span></div>
+        <span class="code-title">bash</span>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <pre><span class="cmt"># Start Ollama (runs on localhost:11434)</span>
+<span class="fn">ollama</span> serve
+
+<span class="cmt"># Pull a coding model</span>
+<span class="fn">ollama</span> pull qwen2.5-coder:7b
+
+<span class="cmt"># Use with D.U.H.</span>
+<span class="fn">duh</span> <span class="flag">--provider</span> ollama <span class="flag">--model</span> qwen2.5-coder:7b <span class="flag">-p</span> <span class="str">"write tests for auth.py"</span></pre>
+    </div>
+
+    <h3>litellm / OpenRouter (100+ models)</h3>
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dots"><span></span><span></span><span></span></div>
+        <span class="code-title">bash</span>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <pre><span class="fn">pip</span> install litellm
+
+<span class="cmt"># Use any model via litellm proxy</span>
+<span class="fn">duh</span> <span class="flag">--provider</span> litellm <span class="flag">--model</span> gemini/gemini-2.0-flash <span class="flag">-p</span> <span class="str">"your task"</span></pre>
+    </div>
+
+    <div class="callout tip">
+      <span class="callout-icon">✓</span>
+      <p><strong>Auto-detection:</strong> Pass <code>--model claude-sonnet-4-6</code> and D.U.H. will auto-route to Anthropic. Pass <code>--model gpt-5.2-codex</code> and it routes to ChatGPT OAuth if tokens exist, or OpenAI API with your key. No <code>--provider</code> flag required.</p>
+    </div>
+
+    <!-- First Session -->
+    <h2 id="first-session">First Session</h2>
+    <p>D.U.H. has three modes: <strong>print mode</strong> (pipe-friendly, great for scripts), <strong>REPL mode</strong> (interactive), and <strong>SDK mode</strong> (NDJSON protocol). Start with print mode.</p>
+
+    <h3>Print mode (-p)</h3>
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dots"><span></span><span></span><span></span></div>
+        <span class="code-title">bash</span>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <pre><span class="cmt"># Simple one-shot task</span>
+<span class="fn">duh</span> <span class="flag">-p</span> <span class="str">"add type hints to all functions in src/api.py"</span>
+
+<span class="cmt"># With a specific model</span>
+<span class="fn">duh</span> <span class="flag">--model</span> claude-haiku-4-5 <span class="flag">-p</span> <span class="str">"write a test for the login function"</span>
+
+<span class="cmt"># Limit turns (default: 30)</span>
+<span class="fn">duh</span> <span class="flag">--max-turns</span> 10 <span class="flag">-p</span> <span class="str">"fix all linting errors in src/"</span>
+
+<span class="cmt"># Auto-approve all tool calls (use with care)</span>
+<span class="fn">duh</span> <span class="flag">--approval-mode</span> full-auto <span class="flag">-p</span> <span class="str">"build a FastAPI CRUD app"</span>
+
+<span class="cmt"># JSON output (for scripts)</span>
+<span class="fn">duh</span> <span class="flag">--output</span> json <span class="flag">-p</span> <span class="str">"list the files in src/"</span></pre>
+    </div>
+
+    <!-- TUI Mode -->
+    <h2 id="tui-mode">TUI / REPL Mode</h2>
+    <p>Run <code>duh</code> with no arguments to enter the interactive REPL. Built on Rich — fast, clean, no Electron.</p>
+
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dots"><span></span><span></span><span></span></div>
+        <span class="code-title">bash</span>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <pre><span class="fn">duh</span>                          <span class="cmt"># start REPL with auto-detected provider</span>
+<span class="fn">duh</span> <span class="flag">--model</span> gpt-4o           <span class="cmt"># start with a specific model</span>
+<span class="fn">duh</span> <span class="flag">--continue</span>              <span class="cmt"># resume the last session</span>
+<span class="fn">duh</span> <span class="flag">--session</span> &lt;session-id&gt;  <span class="cmt"># resume a specific session</span></pre>
+    </div>
+
+    <p>In the REPL, type your task at the prompt. Tool calls show their inputs and outputs inline. Press <kbd>Ctrl+C</kbd> to interrupt a running task, <kbd>Ctrl+D</kbd> to exit.</p>
+
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <p><strong>Approval mode in REPL:</strong> By default, D.U.H. shows each tool call and asks for approval. Use <code>/model</code> to switch models mid-session, or start with <code>--approval-mode auto-edit</code> to approve file edits automatically but prompt for shell commands.</p>
+    </div>
+
+    <!-- Security Scan -->
+    <h2 id="security-scan">Running a Security Scan</h2>
+    <p>D.U.H. includes a built-in vulnerability scanner. It covers your project, not just D.U.H. itself.</p>
+
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dots"><span></span><span></span><span></span></div>
+        <span class="code-title">bash</span>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <pre><span class="cmt"># Initialize security policy (one-time setup)</span>
+<span class="fn">duh</span> security init
+
+<span class="cmt"># Run a full scan</span>
+<span class="fn">duh</span> security scan
+
+<span class="cmt"># Scan with SARIF output (for GitHub Code Scanning)</span>
+<span class="fn">duh</span> security scan <span class="flag">--format</span> sarif <span class="flag">--output</span> results.sarif
+
+<span class="cmt"># Run only the fast "minimal" tier</span>
+<span class="fn">duh</span> security scan <span class="flag">--tier</span> minimal
+
+<span class="cmt"># Install pre-push git hook</span>
+<span class="fn">duh</span> security init <span class="flag">--install-hooks</span>
+
+<span class="cmt"># Check scanner health</span>
+<span class="fn">duh</span> security doctor</pre>
+    </div>
+
+    <div class="callout warn">
+      <span class="callout-icon">⚠</span>
+      <p><strong>First run:</strong> The <code>security</code> extra installs <code>ruff</code>, <code>pip-audit</code>, <code>detect-secrets</code>, and <code>cyclonedx-bom</code>. Run <code>pip install 'duh-cli[security]'</code> if you skipped it.</p>
+    </div>
+
+    <!-- REPL Cheat Sheet -->
+    <h2 id="repl-cheatsheet">REPL Cheat Sheet</h2>
+    <p>21 slash commands available in the interactive REPL. Type <code>/help</code> for full descriptions.</p>
+
+    <div class="cheat-grid">
+      <div class="cheat-card">
+        <h4>Session</h4>
+        <ul>
+          <li><span class="cheat-key">/model</span><span class="cheat-desc">Switch model mid-session</span></li>
+          <li><span class="cheat-key">/status</span><span class="cheat-desc">Session info, token usage</span></li>
+          <li><span class="cheat-key">/cost</span><span class="cheat-desc">API cost so far</span></li>
+          <li><span class="cheat-key">/context</span><span class="cheat-desc">Show context window</span></li>
+          <li><span class="cheat-key">/compact</span><span class="cheat-desc">Summarize &amp; compress context</span></li>
+          <li><span class="cheat-key">/clear</span><span class="cheat-desc">Clear conversation history</span></li>
+          <li><span class="cheat-key">/exit</span><span class="cheat-desc">Exit the REPL</span></li>
+        </ul>
+      </div>
+      <div class="cheat-card">
+        <h4>Workflow</h4>
+        <ul>
+          <li><span class="cheat-key">/plan</span><span class="cheat-desc">Design-first two-phase mode</span></li>
+          <li><span class="cheat-key">/undo</span><span class="cheat-desc">Undo last file changes</span></li>
+          <li><span class="cheat-key">/snapshot</span><span class="cheat-desc">Ghost filesystem snapshot</span></li>
+          <li><span class="cheat-key">/changes</span><span class="cheat-desc">Show all changed files</span></li>
+          <li><span class="cheat-key">/git</span><span class="cheat-desc">Show git status</span></li>
+          <li><span class="cheat-key">/tasks</span><span class="cheat-desc">Show running tasks</span></li>
+          <li><span class="cheat-key">/jobs</span><span class="cheat-desc">Background job status</span></li>
+        </ul>
+      </div>
+      <div class="cheat-card">
+        <h4>Providers &amp; Models</h4>
+        <ul>
+          <li><span class="cheat-key">/connect</span><span class="cheat-desc">OAuth / API key setup</span></li>
+          <li><span class="cheat-key">/models</span><span class="cheat-desc">List available models</span></li>
+          <li><span class="cheat-key">/health</span><span class="cheat-desc">Provider health check</span></li>
+        </ul>
+      </div>
+      <div class="cheat-card">
+        <h4>Search &amp; Code</h4>
+        <ul>
+          <li><span class="cheat-key">/search</span><span class="cheat-desc">Search codebase</span></li>
+          <li><span class="cheat-key">/brief</span><span class="cheat-desc">Summarize project</span></li>
+          <li><span class="cheat-key">/template</span><span class="cheat-desc">Insert code template</span></li>
+          <li><span class="cheat-key">/pr</span><span class="cheat-desc">PR list/view/diff/checks (gh)</span></li>
+          <li><span class="cheat-key">/help</span><span class="cheat-desc">Full command reference</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- SDK Mode -->
+    <h2 id="sdk-mode">SDK Mode (NDJSON)</h2>
+    <p>D.U.H. implements the Claude Agent SDK NDJSON streaming protocol. Any tool or script that expects <code>claude</code> as a binary will work with <code>duh</code> as a drop-in replacement.</p>
+
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dots"><span></span><span></span><span></span></div>
+        <span class="code-title">bash</span>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <pre><span class="cmt"># NDJSON stream (Claude Agent SDK protocol)</span>
+<span class="fn">duh</span> <span class="flag">--output</span> stream-json <span class="flag">-p</span> <span class="str">"fix auth.py"</span>
+
+<span class="cmt"># Pipe into any tool expecting the SDK protocol</span>
+<span class="fn">duh</span> <span class="flag">--output</span> stream-json <span class="flag">-p</span> <span class="str">"build API"</span> <span class="punc">|</span> <span class="fn">jq</span> <span class="str">'.type'</span>
+
+<span class="cmt"># The stub provider works offline — great for CI</span>
+<span class="val">DUH_STUB_PROVIDER</span>=1 <span class="fn">duh</span> <span class="flag">-p</span> <span class="str">"hello"</span>   <span class="cmt"># → "stub-ok"</span></pre>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">ℹ</span>
+      <p><strong>Offline testing:</strong> Set <code>DUH_STUB_PROVIDER=1</code> to run with the deterministic stub provider. It returns canned responses without any network calls — perfect for CI pipelines and unit tests.</p>
+    </div>
+
+    <!-- Next Steps -->
+    <h2 id="next-steps">Next Steps</h2>
+    <ul>
+      <li><a href="security.html">Security deep dive</a> — understand the 3-layer model and configure scanners</li>
+      <li><a href="comparisons.html">Compare with alternatives</a> — benchmark data and feature matrix</li>
+      <li><a href="https://github.com/nikhilvallishayee/duh/tree/main/docs/adrs" target="_blank" rel="noopener">Browse the 54 ADRs</a> — every architectural decision is documented</li>
+      <li><a href="https://github.com/nikhilvallishayee/duh/blob/main/SECURITY.md" target="_blank" rel="noopener">Security policy</a> — how to report vulnerabilities</li>
+      <li><a href="https://github.com/nikhilvallishayee/duh/issues" target="_blank" rel="noopener">Open an issue</a> — bugs, questions, feature requests</li>
+    </ul>
+
+    <div class="callout tip" style="margin-top: 32px;">
+      <span class="callout-icon">✓</span>
+      <p><strong>DUH.md:</strong> Create a <code>DUH.md</code> file in your project root (like <code>CLAUDE.md</code>) to give D.U.H. project-specific instructions. It's loaded automatically at session start.</p>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── Footer ── -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-logo"><span>D.U.H.</span> — D.U.H. is a Universal Harness</div>
+    <nav class="footer-links" aria-label="Footer navigation">
+      <a href="https://github.com/nikhilvallishayee/duh" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://pypi.org/project/duh-cli/" target="_blank" rel="noopener">PyPI</a>
+      <a href="index.html">Home</a>
+      <a href="security.html">Security</a>
+      <a href="comparisons.html">Compare</a>
+      <a href="https://github.com/nikhilvallishayee/duh/blob/main/LICENSE" target="_blank" rel="noopener">Apache 2.0</a>
+    </nav>
+    <div class="footer-copy">Copyright 2026 Nikhil Vallishayee · Apache 2.0 License</div>
+  </div>
+</footer>
+
+<script src="nav.js"></script>
+</body>
+</html>

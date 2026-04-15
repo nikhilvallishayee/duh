@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>D.U.H. — Comparisons</title>
+  <meta name="description" content="D.U.H. vs Claude Code vs OpenCode vs Codex vs Aider — feature matrix, security comparison, and benchmark data.">
+  <meta name="theme-color" content="#0a0a0a">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🔧</text></svg>">
+</head>
+<body class="page-body">
+
+<!-- ── Navigation ── -->
+<nav class="nav" role="navigation" aria-label="Main navigation">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo"><span>D.U.H.</span></a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="getting-started.html">Get Started</a></li>
+      <li><a href="security.html">Security</a></li>
+      <li><a href="comparisons.html">Compare</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="https://github.com/nikhilvallishayee/duh" class="nav-github" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        GitHub
+      </a>
+    </div>
+    <button class="nav-hamburger" aria-label="Toggle menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<!-- ── Page Hero ── -->
+<div class="page-hero">
+  <div class="container">
+    <div class="hero-badge">Honest assessment · No marketing fluff</div>
+    <h1>D.U.H. vs the field</h1>
+    <p>Detailed feature-by-feature comparison with Claude Code, Codex, OpenCode, and others. Based on real code counts and direct testing, not marketing claims.</p>
+  </div>
+</div>
+
+<!-- ── Main Content ── -->
+<div class="container" style="padding-top: 56px; padding-bottom: 96px;">
+
+  <!-- Tabs -->
+  <div data-tabs>
+    <div class="tab-bar">
+      <button class="tab-btn active" data-panel="tab-benchmark">Benchmark</button>
+      <button class="tab-btn" data-panel="tab-security">Security</button>
+      <button class="tab-btn" data-panel="tab-tools">Tools</button>
+      <button class="tab-btn" data-panel="tab-providers">Providers</button>
+      <button class="tab-btn" data-panel="tab-architecture">Architecture</button>
+      <button class="tab-btn" data-panel="tab-full">Full Feature Matrix</button>
+    </div>
+
+    <!-- ── Benchmark Tab ── -->
+    <div class="tab-panel active" id="tab-benchmark">
+      <h2 class="section-title" style="margin-bottom: 8px;">Benchmark: D.U.H. vs Claude Code</h2>
+      <p style="color: var(--fg-2); margin-bottom: 32px; font-size: 0.95rem;">Task: Build a FastAPI URL shortener from spec (TASK.md) · Model: Claude Haiku 4.5 · 3 independent runs each · Same API key, same prompt, same max-turns (15).</p>
+
+      <h3 style="margin-bottom: 16px; font-size: 1rem; color: var(--fg-2);">Raw Results</h3>
+      <div class="table-wrap" style="margin-bottom: 40px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Run</th>
+              <th>Tool</th>
+              <th>Time</th>
+              <th>Files</th>
+              <th>LOC</th>
+              <th>Tests</th>
+              <th>Pass Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td>Claude Code</td>
+              <td>61.3s</td>
+              <td>3</td>
+              <td>227</td>
+              <td>9/9</td>
+              <td class="td-yes">100%</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>Claude Code</td>
+              <td>65.1s</td>
+              <td>3</td>
+              <td>319</td>
+              <td>12/12</td>
+              <td class="td-yes">100%</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>Claude Code</td>
+              <td>50.7s</td>
+              <td>0</td>
+              <td>0</td>
+              <td>—</td>
+              <td class="td-no">FAIL (no output)</td>
+            </tr>
+            <tr style="background: rgba(59,130,246,0.04);">
+              <td>1</td>
+              <td class="td-bold">D.U.H.</td>
+              <td class="td-bold">52.6s</td>
+              <td>3</td>
+              <td>475</td>
+              <td>24/24</td>
+              <td class="td-yes">100%</td>
+            </tr>
+            <tr style="background: rgba(59,130,246,0.04);">
+              <td>2</td>
+              <td class="td-bold">D.U.H.</td>
+              <td class="td-bold">48.8s</td>
+              <td>3</td>
+              <td>446</td>
+              <td>18/18</td>
+              <td class="td-yes">100%</td>
+            </tr>
+            <tr style="background: rgba(59,130,246,0.04);">
+              <td>3</td>
+              <td class="td-bold">D.U.H.</td>
+              <td class="td-bold">35.6s</td>
+              <td>3</td>
+              <td>335</td>
+              <td>12/12</td>
+              <td class="td-yes">100%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-bottom: 16px; font-size: 1rem; color: var(--fg-2);">Aggregated (CC Run 3 excluded — tool failure)</h3>
+      <div class="table-wrap" style="margin-bottom: 40px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th class="th-duh">D.U.H. (n=3)</th>
+              <th>Claude Code (n=2)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Avg completion time</td>
+              <td class="td-bold">45.7s</td>
+              <td>63.2s</td>
+            </tr>
+            <tr>
+              <td>Avg LOC</td>
+              <td class="td-bold">419</td>
+              <td>273</td>
+            </tr>
+            <tr>
+              <td>Avg tests generated</td>
+              <td class="td-bold">18</td>
+              <td>10.5</td>
+            </tr>
+            <tr>
+              <td>Success rate</td>
+              <td class="td-yes">3/3 (100%)</td>
+              <td class="td-part">2/3 (67%)</td>
+            </tr>
+            <tr>
+              <td>All tests pass (on success)</td>
+              <td class="td-yes">3/3 ✓</td>
+              <td class="td-yes">2/2 ✓</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="insight-box">
+        <h4>Analysis</h4>
+        <p>D.U.H. is <strong>~28% faster</strong> on average (45.7s vs 63.2s). The gap is startup overhead — Claude Code loads its Ink TUI, plugin system, and Node.js runtime; D.U.H. is a direct Python process with no UI overhead in print mode. D.U.H. also showed self-correction behavior in Run 1 (detected a Pydantic URL normalization issue, fixed the test, re-ran), which is why it produced more LOC and tests. Both tools achieved 100% test pass rates on successful runs — the same model generates the code in both cases.</p>
+      </div>
+    </div>
+
+    <!-- ── Security Tab ── -->
+    <div class="tab-panel" id="tab-security">
+      <h2 class="section-title" style="margin-bottom: 8px;">Security Comparison</h2>
+      <p style="color: var(--fg-2); margin-bottom: 32px; font-size: 0.95rem;">D.U.H. is ahead of every competing open-source agent on security depth. This is by design — ADRs 053 and 054 address every published 2024–2026 agent CVE.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Security Feature</th>
+              <th class="th-duh">D.U.H.</th>
+              <th>Claude Code</th>
+              <th>Codex</th>
+              <th>OpenCode</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Vulnerability scanner framework</td>
+              <td class="td-yes">13 scanners, 3 tiers</td>
+              <td class="td-no">None</td>
+              <td class="td-no">None</td>
+              <td class="td-no">None</td>
+            </tr>
+            <tr>
+              <td>Project-file RCE scanner (CVE-2025-59536)</td>
+              <td class="td-yes">✓</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>MCP tool-poisoning scanner (CVE-2025-54136)</td>
+              <td class="td-yes">✓</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>Sandbox bypass scanner (CVE-2025-59532)</td>
+              <td class="td-yes">✓</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>SARIF output (GitHub Code Scanning)</td>
+              <td class="td-yes">✓</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>Taint propagation (UntrustedStr)</td>
+              <td class="td-ahead">Unique in OSS AI agents</td>
+              <td class="td-no">None</td>
+              <td class="td-no">None</td>
+              <td class="td-no">None</td>
+            </tr>
+            <tr>
+              <td>Confirmation tokens (HMAC-bound)</td>
+              <td class="td-yes">✓</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>Lethal trifecta check</td>
+              <td class="td-yes">✓</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>MCP Unicode normalization (GlassWorm)</td>
+              <td class="td-yes">✓ (NFKC + bidi/tag rejection)</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>MCP hash-pinning (MCPoison defense)</td>
+              <td class="td-yes">✓</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>Per-hook filesystem namespacing</td>
+              <td class="td-yes">✓</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>PEP 578 audit hook bridge</td>
+              <td class="td-yes">✓ (sub-500ns)</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>Signed plugin manifests</td>
+              <td class="td-yes">TOFU + sigstore-ready</td>
+              <td class="td-yes">✓</td>
+              <td class="td-part">Partial</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>Plugin trust store + revocation</td>
+              <td class="td-yes">✓</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>macOS Seatbelt sandboxing</td>
+              <td class="td-yes">✓</td>
+              <td class="td-part">Partial</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>Linux Landlock sandboxing</td>
+              <td class="td-yes">✓</td>
+              <td class="td-no">—</td>
+              <td class="td-yes">✓</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>Provider differential fuzzer</td>
+              <td class="td-yes">✓ (Hypothesis)</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>CVE replay fixtures</td>
+              <td class="td-yes">4 CVEs</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>Security test count</td>
+              <td class="td-bold">330+</td>
+              <td class="td-no">Unknown (internal)</td>
+              <td class="td-no">Unknown</td>
+              <td class="td-no">Unknown</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="margin-top: 32px;">
+        <a href="security.html" class="btn btn-secondary">Full security deep dive →</a>
+      </div>
+    </div>
+
+    <!-- ── Tools Tab ── -->
+    <div class="tab-panel" id="tab-tools">
+      <h2 class="section-title" style="margin-bottom: 8px;">Tool Comparison</h2>
+      <p style="color: var(--fg-2); margin-bottom: 32px; font-size: 0.95rem;">D.U.H. ships 26 built-in tools — more than any competing open-source agent. Legend: Y = fully implemented, P = partial, N = not implemented.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Tool</th>
+              <th class="th-duh">D.U.H.</th>
+              <th>Claude Code</th>
+              <th>Codex</th>
+              <th>OpenCode</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Read</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td></tr>
+            <tr><td>Write</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td></tr>
+            <tr><td>Edit (exact string match)</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td></tr>
+            <tr><td>MultiEdit</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>Bash (subprocess)</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td></tr>
+            <tr><td>Glob</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td></tr>
+            <tr><td>Grep</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td></tr>
+            <tr><td>WebSearch (Serper + Tavily)</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td></tr>
+            <tr><td>WebFetch (taint-tagged)</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>Task (subagent spawn)</td><td class="td-yes">Y (4 types)</td><td class="td-yes">Y (60+ types)</td><td class="td-yes">Y</td><td class="td-no">N</td></tr>
+            <tr><td>Skill (invoke skills)</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td></tr>
+            <tr><td>ToolSearch (deferred tools)</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>NotebookEdit</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td></tr>
+            <tr><td>LSP integration</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td></tr>
+            <tr><td>Docker</td><td class="td-yes">Y</td><td class="td-no">N</td><td class="td-yes">Y</td><td class="td-no">N</td></tr>
+            <tr><td>Database</td><td class="td-yes">Y</td><td class="td-no">N</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>HTTP</td><td class="td-yes">Y</td><td class="td-no">N</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>GitHub (PR/issues)</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td></tr>
+            <tr><td>TestImpact</td><td class="td-yes">Y</td><td class="td-no">N</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>TodoWrite</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>AskUserQuestion</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td></tr>
+            <tr><td>EnterWorktree / ExitWorktree</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>MemoryStore / MemoryRecall</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr style="font-weight: 700;">
+              <td>Total tool count</td>
+              <td class="td-bold">26</td>
+              <td>25+</td>
+              <td>~15</td>
+              <td>~10</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Providers Tab ── -->
+    <div class="tab-panel" id="tab-providers">
+      <h2 class="section-title" style="margin-bottom: 8px;">Provider Support</h2>
+      <p style="color: var(--fg-2); margin-bottom: 32px; font-size: 0.95rem;">D.U.H. supports 5 providers including ChatGPT Plus/Pro via OAuth (no API key required). The kernel is provider-agnostic — zero provider imports in core code.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th class="th-duh">D.U.H.</th>
+              <th>Claude Code</th>
+              <th>Codex</th>
+              <th>OpenCode</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Anthropic (Claude)</td>
+              <td class="td-yes">✓ API key or /connect</td>
+              <td class="td-yes">✓ (native)</td>
+              <td class="td-no">—</td>
+              <td class="td-yes">✓</td>
+            </tr>
+            <tr>
+              <td>OpenAI API (key)</td>
+              <td class="td-yes">✓ GPT-4o, o1, o3</td>
+              <td class="td-no">—</td>
+              <td class="td-yes">✓</td>
+              <td class="td-yes">✓</td>
+            </tr>
+            <tr>
+              <td>ChatGPT Plus/Pro — Codex (OAuth)</td>
+              <td class="td-ahead">✓ PKCE OAuth (ADR-051/052)</td>
+              <td class="td-no">—</td>
+              <td class="td-yes">✓ (native)</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>Ollama (local models)</td>
+              <td class="td-yes">✓ any pulled model</td>
+              <td class="td-no">—</td>
+              <td class="td-yes">✓</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>Stub (deterministic)</td>
+              <td class="td-yes">✓ DUH_STUB_PROVIDER=1</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+            </tr>
+            <tr>
+              <td>Google Gemini</td>
+              <td class="td-no">Planned</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-yes">✓</td>
+            </tr>
+            <tr>
+              <td>AWS Bedrock</td>
+              <td class="td-no">Planned</td>
+              <td class="td-yes">✓</td>
+              <td class="td-no">—</td>
+              <td class="td-yes">✓</td>
+            </tr>
+            <tr>
+              <td>Azure OpenAI</td>
+              <td class="td-no">Planned</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-yes">✓</td>
+            </tr>
+            <tr>
+              <td>Provider auto-detection</td>
+              <td class="td-yes">✓ model name inference</td>
+              <td class="td-no">—</td>
+              <td class="td-no">—</td>
+              <td class="td-yes">✓</td>
+            </tr>
+            <tr style="font-weight: 700;">
+              <td>Total providers</td>
+              <td class="td-bold">5</td>
+              <td>1 (Anthropic)</td>
+              <td>2</td>
+              <td>5</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout info" style="margin-top: 24px;">
+        <span class="callout-icon">ℹ</span>
+        <p><strong>ChatGPT OAuth:</strong> D.U.H. is the only Python agent that supports ChatGPT Plus/Pro subscription via PKCE OAuth against <code>auth.openai.com</code> — meaning you can use Codex-family models without paying for a separate API key. Tokens are stored in <code>~/.config/duh/auth.json</code> (0600 permissions). See <a href="https://github.com/nikhilvallishayee/duh/blob/main/docs/adrs/ADR-051-oauth-provider-authentication.md" target="_blank" rel="noopener">ADR-051</a> and <a href="https://github.com/nikhilvallishayee/duh/blob/main/docs/adrs/ADR-052-chatgpt-codex-adapter.md" target="_blank" rel="noopener">ADR-052</a>.</p>
+      </div>
+    </div>
+
+    <!-- ── Architecture Tab ── -->
+    <div class="tab-panel" id="tab-architecture">
+      <h2 class="section-title" style="margin-bottom: 8px;">Architecture Comparison</h2>
+      <p style="color: var(--fg-2); margin-bottom: 32px; font-size: 0.95rem;">Project statistics and architectural dimensions across agents. All D.U.H. numbers are independently verified.</p>
+
+      <h3 style="font-size: 1rem; color: var(--fg-2); margin-bottom: 16px;">Project Statistics</h3>
+      <div class="table-wrap" style="margin-bottom: 40px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th class="th-duh">D.U.H.</th>
+              <th>Claude Code</th>
+              <th>Codex</th>
+              <th>OpenCode</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Language</td>
+              <td class="td-bold">Python</td>
+              <td>TypeScript</td>
+              <td>Rust</td>
+              <td>Go</td>
+            </tr>
+            <tr>
+              <td>Source LOC</td>
+              <td>24,327</td>
+              <td>~512,000</td>
+              <td>~603,000</td>
+              <td>~42,000</td>
+            </tr>
+            <tr>
+              <td>Test LOC</td>
+              <td class="td-bold">55,438</td>
+              <td>Internal</td>
+              <td>Unknown</td>
+              <td>Unknown</td>
+            </tr>
+            <tr>
+              <td>Tests passing</td>
+              <td class="td-bold">4,160</td>
+              <td>Internal</td>
+              <td>Unknown</td>
+              <td>Unknown</td>
+            </tr>
+            <tr>
+              <td>Test:code ratio</td>
+              <td class="td-bold">2.3:1</td>
+              <td>Unknown</td>
+              <td>Unknown</td>
+              <td>Unknown</td>
+            </tr>
+            <tr>
+              <td>Coverage</td>
+              <td class="td-bold">100%</td>
+              <td>Unknown</td>
+              <td>Unknown</td>
+              <td>Unknown</td>
+            </tr>
+            <tr>
+              <td>ADRs</td>
+              <td class="td-bold">54</td>
+              <td>Proprietary</td>
+              <td>Proprietary</td>
+              <td>0</td>
+            </tr>
+            <tr>
+              <td>License</td>
+              <td>Apache 2.0</td>
+              <td>Proprietary</td>
+              <td>Apache 2.0</td>
+              <td>MIT</td>
+            </tr>
+            <tr>
+              <td>Status</td>
+              <td class="td-yes">Production alpha</td>
+              <td class="td-yes">Production</td>
+              <td class="td-yes">Production</td>
+              <td class="td-no">Archived</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="font-size: 1rem; color: var(--fg-2); margin-bottom: 16px;">Architectural Dimensions</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Dimension</th>
+              <th class="th-duh">D.U.H.</th>
+              <th>Claude Code</th>
+              <th>Codex</th>
+              <th>OpenCode</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Architecture style</td>
+              <td class="td-bold">Hexagonal (ports &amp; adapters)</td>
+              <td>Monolith + React hooks</td>
+              <td>Workspace (78 Rust crates)</td>
+              <td>Go packages</td>
+            </tr>
+            <tr>
+              <td>Kernel isolation</td>
+              <td class="td-yes">Strict (zero provider imports)</td>
+              <td class="td-part">Entangled with React</td>
+              <td class="td-yes">Strict (trait boundaries)</td>
+              <td class="td-part">Partial</td>
+            </tr>
+            <tr>
+              <td>Dependency injection</td>
+              <td>Explicit (Deps dataclass)</td>
+              <td>React context/hooks</td>
+              <td>Rust traits</td>
+              <td>Go interfaces</td>
+            </tr>
+            <tr>
+              <td>Test strategy</td>
+              <td class="td-bold">Unit + integration + property + benchmark</td>
+              <td>Internal</td>
+              <td>Unknown</td>
+              <td>Unknown</td>
+            </tr>
+            <tr>
+              <td>Error handling</td>
+              <td>Events + metadata flags</td>
+              <td>Events + React error boundaries</td>
+              <td>Rust Result types</td>
+              <td>Go errors</td>
+            </tr>
+            <tr>
+              <td>Security depth</td>
+              <td class="td-ahead">3-layer (scanning + taint + sandbox)</td>
+              <td>Pattern-based</td>
+              <td>Sandbox-focused</td>
+              <td>Minimal</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Full Feature Matrix Tab ── -->
+    <div class="tab-panel" id="tab-full">
+      <h2 class="section-title" style="margin-bottom: 8px;">Full Feature Matrix</h2>
+      <p style="color: var(--fg-2); margin-bottom: 8px; font-size: 0.95rem;"><strong>Legend:</strong> Y = Fully implemented · P = Partial (works but incomplete) · S = Scaffolded (not functional) · N = Not implemented</p>
+      <p style="color: var(--fg-3); margin-bottom: 32px; font-size: 0.85rem;">Snapshot as of April 2026 · <a href="https://github.com/nikhilvallishayee/duh/blob/main/docs/architecture-comparison.md" target="_blank" rel="noopener">See full document on GitHub</a></p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th class="th-duh">D.U.H.</th>
+              <th>Claude Code</th>
+              <th>Codex</th>
+              <th>OpenCode</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="background: var(--bg-3);"><td colspan="5" style="color: var(--fg-3); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">Core Loop</td></tr>
+            <tr><td>Multi-turn agentic loop</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td></tr>
+            <tr><td>Streaming text output</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td></tr>
+            <tr><td>Thinking/reasoning blocks</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>Error recovery in loop</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-part">P</td></tr>
+            <tr style="background: var(--bg-3);"><td colspan="5" style="color: var(--fg-3); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">MCP Integration</td></tr>
+            <tr><td>MCP client (stdio/SSE/HTTP/WS)</td><td class="td-yes">Y (4 transports)</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td></tr>
+            <tr><td>MCP tool discovery &amp; execution</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td></tr>
+            <tr><td>MCP Unicode normalization</td><td class="td-yes">Y (GlassWorm)</td><td class="td-no">N</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>MCP subprocess sandboxing</td><td class="td-yes">Y (Seatbelt/Landlock)</td><td class="td-no">N</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>MCP hash-pinning (MCPoison)</td><td class="td-yes">Y</td><td class="td-no">N</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr style="background: var(--bg-3);"><td colspan="5" style="color: var(--fg-3); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">Session &amp; Context</td></tr>
+            <tr><td>Session persistence (disk)</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y (SQLite)</td></tr>
+            <tr><td>Session resume (--continue)</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td></tr>
+            <tr><td>Context compaction (truncation)</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td></tr>
+            <tr><td>Context compaction (LLM summary)</td><td class="td-yes">Y (ModelCompactor)</td><td class="td-yes">Y (16 modules)</td><td class="td-yes">Y</td><td class="td-no">N</td></tr>
+            <tr style="background: var(--bg-3);"><td colspan="5" style="color: var(--fg-3); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">CLI &amp; Interface</td></tr>
+            <tr><td>Print mode (-p)</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N (REPL only)</td></tr>
+            <tr><td>Interactive REPL</td><td class="td-yes">Y (Rich, 21 commands)</td><td class="td-yes">Y (Ink, 114 commands)</td><td class="td-yes">Y (Bubble Tea)</td><td class="td-yes">Y (Bubble Tea)</td></tr>
+            <tr><td>/plan, /undo, /snapshot</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>/connect (OAuth flow)</td><td class="td-yes">Y</td><td class="td-no">N</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>Doctor diagnostics</td><td class="td-yes">Y (duh doctor)</td><td class="td-no">N</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>Security CLI (scan/init/exception)</td><td class="td-yes">Y</td><td class="td-no">N</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr style="background: var(--bg-3);"><td colspan="5" style="color: var(--fg-3); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">SDK &amp; Hooks</td></tr>
+            <tr><td>Claude Agent SDK drop-in</td><td class="td-yes">Y (verified e2e)</td><td class="td-yes">Y (IS the SDK target)</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>stream-json NDJSON protocol</td><td class="td-yes">Y</td><td class="td-yes">Y (native)</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+            <tr><td>Total hook event types</td><td class="td-bold">29</td><td>29+</td><td>Unknown</td><td>0</td></tr>
+            <tr><td>Hook blocking (input rewrite)</td><td class="td-yes">Y (ADR-045)</td><td class="td-yes">Y</td><td class="td-part">P</td><td class="td-no">N</td></tr>
+            <tr style="background: var(--bg-3);"><td colspan="5" style="color: var(--fg-3); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">Plugins &amp; Skills</td></tr>
+            <tr><td>Skill loading (.claude/skills/)</td><td class="td-yes">Y (parity with CC)</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td></tr>
+            <tr><td>Plugin discovery (entry_points)</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-yes">Y</td><td class="td-no">N</td></tr>
+            <tr><td>Signed plugin manifests</td><td class="td-yes">Y (TOFU + sigstore)</td><td class="td-yes">Y</td><td class="td-part">P</td><td class="td-no">N</td></tr>
+            <tr><td>Property-based testing</td><td class="td-yes">Y (Hypothesis)</td><td class="td-no">N</td><td class="td-no">N</td><td class="td-no">N</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout tip" style="margin-top: 24px;">
+        <span class="callout-icon">✓</span>
+        <p><strong>Where D.U.H. is ahead of Claude Code:</strong> Provider-agnostic (5 vs 1), pluggable security scanning (13 scanners), taint propagation (UntrustedStr), confirmation token gating, lethal trifecta check, MCP hash-pinning + Unicode normalization, PEP 578 audit hook bridge, signed plugin manifests with TOFU trust, provider differential fuzzer, and fully documented with 54 public ADRs.</p>
+      </div>
+    </div>
+  </div><!-- /data-tabs -->
+
+</div>
+
+<!-- ── Footer ── -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-logo"><span>D.U.H.</span> — D.U.H. is a Universal Harness</div>
+    <nav class="footer-links" aria-label="Footer navigation">
+      <a href="https://github.com/nikhilvallishayee/duh" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://pypi.org/project/duh-cli/" target="_blank" rel="noopener">PyPI</a>
+      <a href="index.html">Home</a>
+      <a href="getting-started.html">Get Started</a>
+      <a href="security.html">Security</a>
+      <a href="https://github.com/nikhilvallishayee/duh/blob/main/LICENSE" target="_blank" rel="noopener">Apache 2.0</a>
+    </nav>
+    <div class="footer-copy">Copyright 2026 Nikhil Vallishayee · Apache 2.0 License</div>
+  </div>
+</footer>
+
+<script src="nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>D.U.H. — The Universal AI Coding Agent</title>
+  <meta name="description" content="Provider-agnostic, open-source AI coding agent. One harness. Any model. Your machine. 5 providers, 26 tools, 3-layer security, 4160 tests.">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta property="og:title" content="D.U.H. — The Universal AI Coding Agent">
+  <meta property="og:description" content="One harness. Any model. Your machine. 5 providers, 26 tools, 3-layer security.">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🔧</text></svg>">
+</head>
+<body class="page-body">
+
+<!-- ── Navigation ── -->
+<nav class="nav" role="navigation" aria-label="Main navigation">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo"><span>D.U.H.</span></a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="getting-started.html">Get Started</a></li>
+      <li><a href="security.html">Security</a></li>
+      <li><a href="comparisons.html">Compare</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="https://github.com/nikhilvallishayee/duh" class="nav-github" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        GitHub
+      </a>
+    </div>
+    <button class="nav-hamburger" aria-label="Toggle menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<!-- ── Hero ── -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-badge">Open Source · Apache 2.0 · Production Alpha</div>
+    <h1 class="hero-title">
+      <span class="mono">D.U.H.</span><br>
+      The Universal AI<br>Coding Agent
+    </h1>
+    <p class="hero-tagline">One harness. Any model. Your machine.</p>
+
+    <div class="install-box">
+      <span class="install-label">$</span>
+      <span class="install-cmd" id="install-cmd">pip install duh-cli</span>
+      <button class="install-copy" data-target="#install-cmd">Copy</button>
+    </div>
+
+    <div class="hero-cta">
+      <a href="getting-started.html" class="btn btn-primary">Get Started</a>
+      <a href="https://github.com/nikhilvallishayee/duh" class="btn btn-secondary" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        View on GitHub
+      </a>
+      <a href="comparisons.html" class="btn btn-secondary">See Comparisons</a>
+    </div>
+
+    <div class="hero-badges">
+      <span class="badge badge-green">4160 tests passing</span>
+      <span class="badge badge-green">100% coverage</span>
+      <span class="badge badge-blue">5 providers</span>
+      <span class="badge badge-blue">26 built-in tools</span>
+      <span class="badge badge-purple">3-layer security</span>
+      <span class="badge badge-purple">54 ADRs</span>
+      <span class="badge badge-blue">Python 3.12+</span>
+      <span class="badge badge-yellow">Apache 2.0</span>
+    </div>
+  </div>
+</section>
+
+<!-- ── Feature Cards ── -->
+<section id="features">
+  <div class="container">
+    <div class="section-header center">
+      <span class="section-label">Features</span>
+      <h2 class="section-title">Everything you need.<br>Nothing you don't.</h2>
+      <p class="section-sub">D.U.H. is designed around a clean hexagonal kernel — providers plug in at the edge, tools compose in the middle, and security wraps every layer.</p>
+    </div>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon blue">🔌</div>
+        <h3>Provider Freedom</h3>
+        <p>Anthropic Claude, OpenAI API, ChatGPT Plus/Pro (Codex via OAuth), local Ollama, or a deterministic stub for CI. Switch providers at runtime — same harness, any model.</p>
+        <div class="tag-list">
+          <span class="tag">anthropic</span>
+          <span class="tag">openai</span>
+          <span class="tag">ollama</span>
+          <span class="tag">litellm</span>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon purple">🛡️</div>
+        <h3>Security-First by Design</h3>
+        <p>3-layer pluggable security: 13 vulnerability scanners, taint-propagating <code>UntrustedStr</code>, HMAC-bound confirmation tokens, lethal trifecta check, macOS Seatbelt + Linux Landlock sandboxing.</p>
+        <div class="tag-list">
+          <span class="tag">taint propagation</span>
+          <span class="tag">sandboxing</span>
+          <span class="tag">SARIF</span>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon green">⚡</div>
+        <h3>28% Faster than Claude Code</h3>
+        <p>45.7s average vs 63.2s for Claude Code on identical tasks with the same model. Direct Python process — no Node.js runtime, no Ink TUI overhead. 100% success rate vs 67%.</p>
+        <div class="tag-list">
+          <span class="tag">benchmark</span>
+          <span class="tag">startup</span>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon blue">🔧</div>
+        <h3>26 Built-in Tools</h3>
+        <p>Read, Write, Edit, MultiEdit, Bash, Glob, Grep, WebSearch, WebFetch, Task (subagents), Docker, Database, HTTP, GitHub, LSP, TestImpact, MemoryStore, NotebookEdit, and more.</p>
+        <div class="tag-list">
+          <span class="tag">26 tools</span>
+          <span class="tag">MCP</span>
+          <span class="tag">skills</span>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon yellow">💻</div>
+        <h3>Rich TUI &amp; REPL</h3>
+        <p>Full Textual TUI, Rich-powered REPL with 21 slash commands including <code>/connect</code> (OAuth), <code>/snapshot</code>, <code>/plan</code>, <code>/pr</code>, <code>/compact</code>. Print mode for CI pipelines. SDK mode via NDJSON.</p>
+        <div class="tag-list">
+          <span class="tag">REPL</span>
+          <span class="tag">print mode</span>
+          <span class="tag">SDK mode</span>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon indigo">🔗</div>
+        <h3>Claude Agent SDK Drop-in</h3>
+        <p>Implements the full NDJSON streaming protocol. Drop <code>duh</code> anywhere <code>claude</code> is expected — same interface, any provider behind it. Verified end-to-end.</p>
+        <div class="tag-list">
+          <span class="tag">NDJSON</span>
+          <span class="tag">stream-json</span>
+          <span class="tag">ADR-021</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Benchmark ── -->
+<section id="benchmarks">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-label">Benchmarks</span>
+      <h2 class="section-title">Numbers don't lie.</h2>
+      <p class="section-sub">3 independent runs per tool, same model (Claude Haiku 4.5), same prompt, same task (FastAPI URL shortener from spec), fully isolated directories.</p>
+    </div>
+
+    <div class="benchmark-grid">
+      <div class="stat-card highlight">
+        <div class="stat-value green">28%</div>
+        <div class="stat-label">Faster average execution</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value blue">45.7s</div>
+        <div class="stat-label">D.U.H. avg completion time</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">63.2s</div>
+        <div class="stat-label">Claude Code avg time</div>
+      </div>
+      <div class="stat-card highlight">
+        <div class="stat-value green">100%</div>
+        <div class="stat-label">D.U.H. success rate (3/3)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">67%</div>
+        <div class="stat-label">Claude Code success rate (2/3)</div>
+      </div>
+      <div class="stat-card highlight">
+        <div class="stat-value green">18</div>
+        <div class="stat-label">Avg tests generated (D.U.H.)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">10.5</div>
+        <div class="stat-label">Avg tests generated (CC)</div>
+      </div>
+      <div class="stat-card highlight">
+        <div class="stat-value green">419</div>
+        <div class="stat-label">Avg lines of code (D.U.H.)</div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th class="th-duh">D.U.H. (n=3)</th>
+            <th>Claude Code (n=2 successful)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Avg completion time</td>
+            <td class="td-bold">45.7s</td>
+            <td>63.2s</td>
+          </tr>
+          <tr>
+            <td>Success rate</td>
+            <td class="td-yes">3/3 (100%)</td>
+            <td class="td-part">2/3 (67%)</td>
+          </tr>
+          <tr>
+            <td>Avg LOC generated</td>
+            <td class="td-bold">419</td>
+            <td>273</td>
+          </tr>
+          <tr>
+            <td>Avg tests generated</td>
+            <td class="td-bold">18</td>
+            <td>10.5</td>
+          </tr>
+          <tr>
+            <td>All tests pass (on success)</td>
+            <td class="td-yes">3/3 ✓</td>
+            <td class="td-yes">2/2 ✓</td>
+          </tr>
+          <tr>
+            <td>Self-correction behavior</td>
+            <td class="td-yes">Yes (detected &amp; fixed Pydantic issue)</td>
+            <td class="td-no">Minimal</td>
+          </tr>
+          <tr>
+            <td>Runtime / startup</td>
+            <td class="td-bold">Python (direct)</td>
+            <td>Node.js + Ink TUI</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout info" style="margin-top: 24px;">
+      <span class="callout-icon">ℹ</span>
+      <p><strong>Methodology:</strong> Same Anthropic API key, same model (Haiku 4.5), same prompt verbatim, same TASK.md, separate directories, fresh git repo per run, <code>--max-turns 15</code> on both tools. D.U.H. advantage is architectural simplicity — less startup overhead means more time for actual model interaction. See <a href="https://github.com/nikhilvallishayee/duh/blob/main/docs/benchmark-results.md" target="_blank" rel="noopener">full benchmark report</a>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── Security ── -->
+<section id="security">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-label">Security</span>
+      <h2 class="section-title">The deepest security<br>story in open-source AI agents.</h2>
+      <p class="section-sub">Three independent layers that address every published agent RCE in the 2024–2026 CVE corpus. No other open-source AI coding agent comes close.</p>
+    </div>
+
+    <div class="layer-grid">
+      <div class="layer-card">
+        <h3><span class="layer-num">Layer 1</span> Vulnerability Monitoring</h3>
+        <ul>
+          <li>13 scanners across 3 tiers (Minimal / Extended / Paranoid)</li>
+          <li>Project-file RCE scanner (CVE-2025-59536)</li>
+          <li>MCP tool-poisoning scanner (CVE-2025-54136)</li>
+          <li>Sandbox bypass scanner (CVE-2025-59532)</li>
+          <li>Command injection scanner (CVE-2026-35022)</li>
+          <li>OAuth hardening scanner</li>
+          <li>SARIF output for GitHub Code Scanning</li>
+          <li>Pre-push git hook installer</li>
+          <li><code>duh security scan</code> · <code>duh security init</code></li>
+        </ul>
+      </div>
+
+      <div class="layer-card">
+        <h3><span class="layer-num">Layer 2</span> Runtime Hardening</h3>
+        <ul>
+          <li><strong>Taint propagation</strong> — <code>UntrustedStr</code> tags every string by origin and propagates through all string ops</li>
+          <li><strong>Confirmation tokens</strong> — HMAC-bound, prevent tainted strings reaching Bash/Write/Edit without user confirmation</li>
+          <li><strong>Lethal trifecta check</strong> — blocks sessions with simultaneous read-private + read-untrusted + network-egress</li>
+          <li>MCP Unicode normalization (GlassWorm defense)</li>
+          <li>Per-hook filesystem namespacing</li>
+          <li>PEP 578 audit hook bridge (sub-500ns)</li>
+          <li>Signed plugin manifests (TOFU + sigstore-ready)</li>
+        </ul>
+      </div>
+
+      <div class="layer-card">
+        <h3><span class="layer-num">Layer 3</span> OS Sandboxing</h3>
+        <ul>
+          <li><strong>macOS Seatbelt</strong> — sandbox-exec profiles for shell commands and MCP servers</li>
+          <li><strong>Linux Landlock</strong> — syscall-level filesystem access control</li>
+          <li>Network policy layer — blocks outbound traffic unless explicitly allowed</li>
+          <li>Approval modes: <code>suggest</code> / <code>auto-edit</code> / <code>full-auto</code></li>
+          <li>MCP subprocess sandboxing via host OS facilities</li>
+          <li>Provider differential fuzzer (Hypothesis property tests)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div style="margin-top: 32px;">
+      <a href="security.html" class="btn btn-secondary">Deep dive into security →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ── Providers ── -->
+<section id="providers">
+  <div class="container">
+    <div class="section-header center">
+      <span class="section-label">Providers</span>
+      <h2 class="section-title">Any model. Zero lock-in.</h2>
+      <p class="section-sub">D.U.H.'s kernel never imports a provider directly. Providers are adapters at the edge — swap them without touching your workflow.</p>
+    </div>
+
+    <div class="provider-grid">
+      <div class="provider-card">
+        <div class="provider-icon">🔮</div>
+        <div class="provider-info">
+          <h4>Anthropic Claude</h4>
+          <p>API key or <code>/connect</code></p>
+        </div>
+      </div>
+      <div class="provider-card">
+        <div class="provider-icon">🤖</div>
+        <div class="provider-info">
+          <h4>OpenAI API</h4>
+          <p>GPT-4o, o1, o3</p>
+        </div>
+      </div>
+      <div class="provider-card">
+        <div class="provider-icon">💬</div>
+        <div class="provider-info">
+          <h4>ChatGPT / Codex</h4>
+          <p>PKCE OAuth — no API key</p>
+        </div>
+      </div>
+      <div class="provider-card">
+        <div class="provider-icon">🦙</div>
+        <div class="provider-info">
+          <h4>Ollama</h4>
+          <p>Local — any pulled model</p>
+        </div>
+      </div>
+      <div class="provider-card">
+        <div class="provider-icon">🧪</div>
+        <div class="provider-info">
+          <h4>Stub Provider</h4>
+          <p>Deterministic CI testing</p>
+        </div>
+      </div>
+      <div class="provider-card">
+        <div class="provider-icon">🌐</div>
+        <div class="provider-info">
+          <h4>litellm / OpenRouter</h4>
+          <p>100+ models via proxy</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Quick Start Code ── -->
+<section id="quickstart">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-label">Quick Start</span>
+      <h2 class="section-title">Up in 60 seconds.</h2>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dots"><span></span><span></span><span></span></div>
+        <span class="code-title">Terminal</span>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <pre><span class="cmt"># Install</span>
+<span class="fn">pip</span> install duh-cli
+
+<span class="cmt"># Set your Anthropic key</span>
+<span class="kw">export</span> <span class="val">ANTHROPIC_API_KEY</span>=sk-ant-...
+
+<span class="cmt"># Run a task (print mode — great for scripts)</span>
+<span class="fn">duh</span> <span class="flag">-p</span> <span class="str">"fix the bug in auth.py"</span>
+
+<span class="cmt"># Interactive REPL</span>
+<span class="fn">duh</span>
+
+<span class="cmt"># Use a different model / provider</span>
+<span class="fn">duh</span> <span class="flag">--provider</span> openai <span class="flag">--model</span> gpt-4o <span class="flag">-p</span> <span class="str">"refactor db.py"</span>
+
+<span class="cmt"># Local model with Ollama</span>
+<span class="fn">duh</span> <span class="flag">--provider</span> ollama <span class="flag">--model</span> qwen2.5-coder <span class="flag">-p</span> <span class="str">"write tests"</span>
+
+<span class="cmt"># Run diagnostics</span>
+<span class="fn">duh</span> doctor
+
+<span class="cmt"># Security scan (SARIF output)</span>
+<span class="fn">duh</span> security scan</pre>
+    </div>
+
+    <div style="margin-top: 32px;">
+      <a href="getting-started.html" class="btn btn-primary">Full Getting Started Guide →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ── Stats Row ── -->
+<section id="stats">
+  <div class="container">
+    <div class="section-header center">
+      <span class="section-label">By the numbers</span>
+      <h2 class="section-title">Built for production alpha.</h2>
+    </div>
+
+    <div class="benchmark-grid" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));">
+      <div class="stat-card">
+        <div class="stat-value blue">4160</div>
+        <div class="stat-label">Tests passing</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value green">100%</div>
+        <div class="stat-label">Line coverage</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value purple">54</div>
+        <div class="stat-label">Architecture Decision Records</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value blue">26</div>
+        <div class="stat-label">Built-in tools</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value blue">5</div>
+        <div class="stat-label">Provider adapters</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value purple">29</div>
+        <div class="stat-label">Hook event types</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value purple">13</div>
+        <div class="stat-label">Vulnerability scanners</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value blue">2.3x</div>
+        <div class="stat-label">Test:code ratio</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ── -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-logo"><span>D.U.H.</span> — D.U.H. is a Universal Harness</div>
+    <nav class="footer-links" aria-label="Footer navigation">
+      <a href="https://github.com/nikhilvallishayee/duh" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://pypi.org/project/duh-cli/" target="_blank" rel="noopener">PyPI</a>
+      <a href="getting-started.html">Get Started</a>
+      <a href="security.html">Security</a>
+      <a href="comparisons.html">Compare</a>
+      <a href="https://github.com/nikhilvallishayee/duh/blob/main/LICENSE" target="_blank" rel="noopener">Apache 2.0</a>
+      <a href="https://github.com/nikhilvallishayee/duh/tree/main/docs/adrs" target="_blank" rel="noopener">54 ADRs</a>
+    </nav>
+    <div class="footer-copy">Copyright 2026 Nikhil Vallishayee · Apache 2.0 License · Built with precision, tested with obsession.</div>
+  </div>
+</footer>
+
+<script src="nav.js"></script>
+</body>
+</html>

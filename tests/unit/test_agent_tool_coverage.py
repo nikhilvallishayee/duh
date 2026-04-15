@@ -24,6 +24,11 @@ def ctx() -> ToolContext:
 class FakeAgentResult:
     result_text: str
     agent_type: str = "general"
+    error: str = ""
+
+    @property
+    def is_error(self) -> bool:
+        return bool(self.error)
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +40,7 @@ class TestAgentToolConstruction:
     def test_default_construction(self):
         tool = AgentTool()
         assert tool._parent_deps is None
+        assert tool._parent_tools is None
 
     def test_construction_with_deps(self):
         deps = MagicMock()
@@ -105,12 +111,13 @@ class TestAgentToolCall:
             agent_type="general",
             model="",
             deps=tool._parent_deps,
+            tools=[],
         )
 
     @pytest.mark.asyncio
     async def test_call_uses_default_agent_type(self):
         """When agent_type is missing, defaults to 'general'."""
-        tool = AgentTool()
+        tool = AgentTool(parent_deps=MagicMock())
         fake_result = FakeAgentResult(result_text="ok")
 
         with patch("duh.agents.run_agent", new_callable=AsyncMock) as mock_run:
@@ -124,7 +131,7 @@ class TestAgentToolCall:
     @pytest.mark.asyncio
     async def test_call_uses_default_prompt(self):
         """When prompt is missing, defaults to empty string."""
-        tool = AgentTool()
+        tool = AgentTool(parent_deps=MagicMock())
         fake_result = FakeAgentResult(result_text="ok")
 
         with patch("duh.agents.run_agent", new_callable=AsyncMock) as mock_run:
@@ -137,7 +144,7 @@ class TestAgentToolCall:
     @pytest.mark.asyncio
     async def test_call_passes_coder_type(self):
         """agent_type='coder' is forwarded to run_agent."""
-        tool = AgentTool()
+        tool = AgentTool(parent_deps=MagicMock())
         fake_result = FakeAgentResult(result_text="coded it")
 
         with patch("duh.agents.run_agent", new_callable=AsyncMock) as mock_run:
@@ -152,25 +159,22 @@ class TestAgentToolCall:
         assert kwargs["agent_type"] == "coder"
 
     @pytest.mark.asyncio
-    async def test_call_fallback_str_when_no_result_text(self):
-        """If result has no result_text attr, falls back to str()."""
-        tool = AgentTool()
-
-        class PlainResult:
-            def __str__(self):
-                return "stringified"
+    async def test_call_empty_result_text(self):
+        """If agent produces no text, returns placeholder message."""
+        tool = AgentTool(parent_deps=MagicMock())
+        fake_result = FakeAgentResult(result_text="")
 
         with patch("duh.agents.run_agent", new_callable=AsyncMock) as mock_run:
-            mock_run.return_value = PlainResult()
+            mock_run.return_value = fake_result
             result = await tool.call({"prompt": "test"}, ctx())
 
-        assert result.output == "stringified"
+        assert result.output == "(agent produced no output)"
         assert result.is_error is False
 
     @pytest.mark.asyncio
     async def test_call_error_handling(self):
         """Exceptions from run_agent are caught and returned as errors."""
-        tool = AgentTool()
+        tool = AgentTool(parent_deps=MagicMock())
 
         with patch("duh.agents.run_agent", new_callable=AsyncMock) as mock_run:
             mock_run.side_effect = RuntimeError("agent crashed")
@@ -183,7 +187,7 @@ class TestAgentToolCall:
     @pytest.mark.asyncio
     async def test_call_error_with_value_error(self):
         """ValueError (e.g., invalid agent type) is caught gracefully."""
-        tool = AgentTool()
+        tool = AgentTool(parent_deps=MagicMock())
 
         with patch("duh.agents.run_agent", new_callable=AsyncMock) as mock_run:
             mock_run.side_effect = ValueError("Unknown agent type: 'bad'")
@@ -197,6 +201,48 @@ class TestAgentToolCall:
 
 
 # ---------------------------------------------------------------------------
+# No-deps guard
+# ---------------------------------------------------------------------------
+
+
+class TestAgentToolNoDeps:
+    @pytest.mark.asyncio
+    async def test_call_without_deps_returns_error(self):
+        """AgentTool without parent_deps returns a clear error."""
+        tool = AgentTool()  # no deps
+        result = await tool.call({"prompt": "hello"}, ctx())
+        assert result.is_error is True
+        assert "no parent deps" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Child tools filtering
+# ---------------------------------------------------------------------------
+
+
+class TestAgentToolChildTools:
+    def test_child_tools_excludes_agent(self):
+        """Child tools list excludes AgentTool to prevent recursion."""
+
+        class FakeTool:
+            name = "Read"
+
+        class FakeAgent:
+            name = "Agent"
+
+        tool = AgentTool(parent_tools=[FakeTool(), FakeAgent(), FakeTool()])
+        children = tool._child_tools()
+        names = [getattr(t, "name", "") for t in children]
+        assert "Agent" not in names
+        assert names == ["Read", "Read"]
+
+    def test_child_tools_empty_when_no_parent_tools(self):
+        """No parent tools → empty child tools."""
+        tool = AgentTool()
+        assert tool._child_tools() == []
+
+
+# ---------------------------------------------------------------------------
 # check_permissions
 # ---------------------------------------------------------------------------
 
@@ -204,6 +250,6 @@ class TestAgentToolCall:
 class TestAgentToolPermissions:
     @pytest.mark.asyncio
     async def test_check_permissions_always_allowed(self):
-        tool = AgentTool()
+        tool = AgentTool(parent_deps=MagicMock())
         perm = await tool.check_permissions({"prompt": "anything"}, ctx())
         assert perm == {"allowed": True}

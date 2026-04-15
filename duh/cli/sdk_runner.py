@@ -246,10 +246,11 @@ async def run_stream_json_mode(args: argparse.Namespace) -> int:
         approve=approver.check,
     )
 
-    # Wire AgentTool's parent deps now that Deps is built
+    # Wire AgentTool now that Deps and tools are both built.
     for t in tools:
         if getattr(t, "name", "") == "Agent":
             t._parent_deps = deps
+            t._parent_tools = tools
             break
 
     engine_config = EngineConfig(

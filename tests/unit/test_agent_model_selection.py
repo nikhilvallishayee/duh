@@ -38,6 +38,11 @@ def ctx() -> ToolContext:
 class FakeAgentResult:
     result_text: str
     agent_type: str = "general"
+    error: str = ""
+
+    @property
+    def is_error(self) -> bool:
+        return bool(self.error)
 
 
 # ---------------------------------------------------------------------------
@@ -333,11 +338,12 @@ class TestAgentToolModelCall:
             agent_type="coder",
             model="opus",
             deps=tool._parent_deps,
+            tools=[],
         )
 
     @pytest.mark.asyncio
     async def test_call_passes_haiku(self):
-        tool = AgentTool()
+        tool = AgentTool(parent_deps=MagicMock())
         fake = FakeAgentResult(result_text="ok")
 
         with patch("duh.agents.run_agent", new_callable=AsyncMock) as mock_run:
@@ -352,7 +358,7 @@ class TestAgentToolModelCall:
 
     @pytest.mark.asyncio
     async def test_call_passes_inherit(self):
-        tool = AgentTool()
+        tool = AgentTool(parent_deps=MagicMock())
         fake = FakeAgentResult(result_text="ok")
 
         with patch("duh.agents.run_agent", new_callable=AsyncMock) as mock_run:
@@ -368,7 +374,7 @@ class TestAgentToolModelCall:
     @pytest.mark.asyncio
     async def test_call_no_model_passes_empty(self):
         """When model is not in input, empty string is passed."""
-        tool = AgentTool()
+        tool = AgentTool(parent_deps=MagicMock())
         fake = FakeAgentResult(result_text="ok")
 
         with patch("duh.agents.run_agent", new_callable=AsyncMock) as mock_run:

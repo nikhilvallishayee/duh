@@ -16,7 +16,6 @@ def get_all_tools(
     *,
     skills: list[Any] | None = None,
     deferred_tools: list[Any] | None = None,
-    deps: Any = None,
 ) -> list[Any]:
     """Return instances of all available core tools.
 
@@ -197,10 +196,10 @@ def get_all_tools(
     except ImportError:
         pass
 
-    # AgentTool (multi-agent — requires parent deps to spawn subagents)
+    # AgentTool (multi-agent — deps and tools wired by runner after construction)
     try:
         from duh.tools.agent_tool import AgentTool
-        tools.append(AgentTool(parent_deps=deps))
+        tools.append(AgentTool())
     except ImportError:
         pass
 

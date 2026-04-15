@@ -313,10 +313,13 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         compact=compactor.compact,
     )
 
-    # Wire AgentTool's parent deps now that Deps is built
+    # Wire AgentTool now that Deps and tools are both built.
+    # Child agents get parent deps (call_model, run_tool) and parent tools
+    # (minus AgentTool itself to prevent recursion).
     for t in tools:
         if getattr(t, "name", "") == "Agent":
             t._parent_deps = deps
+            t._parent_tools = tools
             break
 
     # Resolve max_cost: CLI flag > env var > None

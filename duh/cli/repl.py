@@ -1304,10 +1304,11 @@ async def run_repl(args: argparse.Namespace) -> int:
         hook_registry=_hook_registry,
     )
 
-    # Wire AgentTool's parent deps now that Deps is built
+    # Wire AgentTool now that Deps and tools are both built.
     for t in tools:
         if getattr(t, "name", "") == "Agent":
             t._parent_deps = deps
+            t._parent_tools = tools
             break
 
     # Resolve max_cost: CLI flag > env var > None

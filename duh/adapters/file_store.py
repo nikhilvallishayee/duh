@@ -12,6 +12,7 @@ temp-file-then-rename for thread safety.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 from dataclasses import asdict
@@ -20,6 +21,8 @@ from pathlib import Path
 from typing import Any
 
 from duh.kernel.messages import Message
+
+logger = logging.getLogger(__name__)
 
 # Maximum session file size (64 MB). Matches Claude Code TS MAX_PERSISTED_SIZE.
 MAX_SESSION_BYTES = 64 * 1024 * 1024
@@ -111,6 +114,11 @@ class FileStore:
         """Load messages for a session, returning dicts (not Message objects).
 
         Returns ``None`` when the session file does not exist.
+
+        ADR-057: On load, detects and migrates sessions with broken role
+        alternation (consecutive same-role messages). The migration applies
+        ``validate_alternation()`` once and persists the corrected version
+        on the next save.
         """
         path = self._session_path(session_id)
         if not path.exists():
@@ -122,6 +130,12 @@ class FileStore:
                 stripped = line.strip()
                 if stripped:
                     messages.append(json.loads(stripped))
+
+        # ADR-057: Migrate broken sessions with consecutive same-role messages
+        if _needs_alternation_fix(messages):
+            logger.warning("Migrating session %s: fixing message alternation", session_id)
+            messages = _migrate_alternation(messages)
+
         return messages
 
     async def list_sessions(self) -> list[dict[str, Any]]:
@@ -163,3 +177,33 @@ class FileStore:
             path.unlink()
             return True
         return False
+
+
+# ---------------------------------------------------------------------------
+# ADR-057: Session migration helpers
+# ---------------------------------------------------------------------------
+
+def _needs_alternation_fix(messages: list[dict[str, Any]]) -> bool:
+    """Return True if consecutive assistant messages are detected.
+
+    The ADR-057 bug specifically caused missing tool_result user messages
+    between assistant messages. We only migrate that pattern — consecutive
+    user messages are left alone (they can occur legitimately in tests or
+    manual session construction).
+    """
+    for i in range(len(messages) - 1):
+        if (messages[i].get("role") == "assistant"
+                and messages[i + 1].get("role") == "assistant"):
+            return True
+    return False
+
+
+def _migrate_alternation(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fix broken alternation by converting to Message objects, applying
+    validate_alternation, then converting back to dicts."""
+    from dataclasses import asdict as _asdict
+    from duh.kernel.messages import Message as Msg, validate_alternation
+
+    msg_objs = [Msg(role=m.get("role", "user"), content=m.get("content", "")) for m in messages]
+    fixed = validate_alternation(msg_objs)
+    return [_asdict(m) for m in fixed]

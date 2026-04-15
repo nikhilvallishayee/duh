@@ -278,18 +278,20 @@ async def query(
             current_messages.append(_to_message(assistant_message))
 
         # All tool results in ONE user message (required by Anthropic API)
-        current_messages.append(
-            Message(
-                role="user",
-                content=[
-                    {"type": "tool_result",
-                     "tool_use_id": r.tool_use_id,
-                     "content": r.content,
-                     "is_error": r.is_error}
-                    for r in tool_results
-                ],
-            )
+        tool_result_msg = Message(
+            role="user",
+            content=[
+                {"type": "tool_result",
+                 "tool_use_id": r.tool_use_id,
+                 "content": r.content,
+                 "is_error": r.is_error}
+                for r in tool_results
+            ],
         )
+        current_messages.append(tool_result_msg)
+
+        # Yield the tool_result message so the engine can capture it
+        yield {"type": "tool_result_message", "message": tool_result_msg}
 
     # Max turns reached — grace turn: let the model summarize without tools
     yield {

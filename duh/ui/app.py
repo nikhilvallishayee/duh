@@ -197,10 +197,20 @@ class DuhApp(App[int]):
                 role = raw.get("role", "user") if isinstance(raw, dict) else getattr(raw, "role", "user")
                 content = raw.get("content", "") if isinstance(raw, dict) else getattr(raw, "text", str(raw))
                 if isinstance(content, list):
-                    content = " ".join(
-                        b.get("text", "") if isinstance(b, dict) else str(b)
-                        for b in content
-                    ).strip()
+                    # ADR-057: tool_result messages have list content with
+                    # tool_result blocks. Show abbreviated tool results.
+                    parts = []
+                    for b in content:
+                        if isinstance(b, dict) and b.get("type") == "tool_result":
+                            tr_content = str(b.get("content", ""))[:100]
+                            parts.append(f"[Tool result] {tr_content}...")
+                        elif isinstance(b, dict) and b.get("type") == "text":
+                            parts.append(b.get("text", ""))
+                        elif isinstance(b, dict):
+                            parts.append(b.get("text", str(b)))
+                        else:
+                            parts.append(str(b))
+                    content = " ".join(parts).strip()
                 text = str(content).strip()
                 if not text:
                     continue  # skip empty messages
@@ -692,19 +702,10 @@ def run_tui(args: argparse.Namespace) -> int:
                     )
                 engine._session_id = session_id_to_load
                 logger.info("Resumed session %s with %d messages", session_id_to_load, len(loaded))
-
-                # Force compact the resumed session to fit context window
-                if deps.compact and len(engine._messages) > 4:
-                    from duh.kernel.tokens import get_context_limit
-                    ctx_limit = get_context_limit(model)
-                    threshold = int(ctx_limit * 0.70)  # aggressive for resume
-                    try:
-                        engine._messages = _aio.run(
-                            deps.compact(engine._messages, token_limit=threshold)
-                        )
-                        logger.info("Post-resume compact: %d messages remaining", len(engine._messages))
-                    except Exception as e:
-                        logger.warning("Post-resume compact failed: %s", e)
+                # ADR-057: No post-resume force-compact needed — sessions
+                # now have correct alternation (including tool_result messages)
+                # so they load at the right size. Auto-compact in engine.run()
+                # handles context limits if needed.
 
     # Collect resumed messages for display
     _resumed_for_display = []

@@ -376,20 +376,17 @@ class Engine:
         if self._slog:
             self._slog.model_request(model=effective_model, turn=self._turn_count)
 
-        # --- Validate message alternation (API requires strict user/assistant) ---
-        # IMPORTANT: validate a copy — don't mutate self._messages, which is
-        # the canonical session history used for persistence. Merging consecutive
-        # messages for the API call would destroy context on save.
-        from duh.kernel.messages import validate_alternation
-        api_messages = validate_alternation(list(self._messages))
-
         # --- Query with PTL retry ---
+        # ADR-057: self._messages now has correct user/assistant alternation
+        # (including tool_result user messages) so validate_alternation is
+        # no longer needed on the hot path. A fresh copy is taken each
+        # iteration so PTL-retry after compaction sees the updated list.
         ptl_retries = 0
         while True:
             ptl_detected = False
 
             async for event in query(
-                messages=api_messages,
+                messages=list(self._messages),
                 system_prompt=self._config.system_prompt,
                 deps=self._deps,
                 tools=self._config.tools,
@@ -429,6 +426,13 @@ class Engine:
                         _turn_output_tokens += out_tokens
                     if self._slog:
                         self._slog.model_response(model=effective_model, turn=self._turn_count)
+
+                # Capture tool_result user messages into canonical history (ADR-057)
+                if event_type == "tool_result_message":
+                    msg = event.get("message")
+                    if isinstance(msg, Message):
+                        self._messages.append(msg)
+                    continue  # internal event — don't yield to caller
 
                 # Structured logging for tool & error events
                 if self._slog:
@@ -570,6 +574,13 @@ class Engine:
                         )
                         self._total_output_tokens += out_tokens
                         _turn_output_tokens += out_tokens
+
+                # ADR-057: Capture tool_result user messages in fallback path too
+                if event_type == "tool_result_message":
+                    msg = event.get("message")
+                    if isinstance(msg, Message):
+                        self._messages.append(msg)
+                    continue  # internal event — don't yield to caller
 
                 yield event
 

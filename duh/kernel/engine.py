@@ -377,8 +377,11 @@ class Engine:
             self._slog.model_request(model=effective_model, turn=self._turn_count)
 
         # --- Validate message alternation (API requires strict user/assistant) ---
+        # IMPORTANT: validate a copy — don't mutate self._messages, which is
+        # the canonical session history used for persistence. Merging consecutive
+        # messages for the API call would destroy context on save.
         from duh.kernel.messages import validate_alternation
-        self._messages = validate_alternation(self._messages)
+        api_messages = validate_alternation(list(self._messages))
 
         # --- Query with PTL retry ---
         ptl_retries = 0
@@ -386,7 +389,7 @@ class Engine:
             ptl_detected = False
 
             async for event in query(
-                messages=self._messages,
+                messages=api_messages,
                 system_prompt=self._config.system_prompt,
                 deps=self._deps,
                 tools=self._config.tools,

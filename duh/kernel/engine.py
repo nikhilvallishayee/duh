@@ -58,7 +58,17 @@ MAX_PTL_RETRIES = 3
 # Progressive compaction targets (ADR-031): 70% → 50% → 30% on successive retries.
 _PTL_COMPACTION_TARGETS = [0.70, 0.50, 0.30]
 
-_PTL_TRIGGERS = ("prompt is too long", "prompt_too_long", "prompttoolong", "context length exceeded")
+_PTL_TRIGGERS = (
+    "prompt is too long",
+    "prompt_too_long",
+    "prompttoolong",
+    "context length exceeded",
+    "maximum context length",
+    "max_tokens",
+    "too many tokens",
+    "content too large",
+    "request too large",
+)
 
 
 def _is_ptl_error(error_text: str) -> bool:

@@ -80,6 +80,29 @@ Screen {
 Markdown {
     margin: 0 0;
     padding: 0 0;
+    color: $text;
+    background: transparent;
+}
+
+MarkdownH1, MarkdownH2, MarkdownH3, MarkdownH4 {
+    color: $primary-lighten-2;
+    margin: 1 0 0 0;
+}
+
+MarkdownFence {
+    background: $primary-darken-3;
+    color: $text;
+    margin: 1 0;
+    padding: 1 2;
+}
+
+MarkdownBulletList, MarkdownOrderedList {
+    color: $text;
+    margin: 0 0 0 2;
+}
+
+.message-assistant Markdown {
+    color: #e5e5e5;
 }
 
 /* ── Tool call widget ───────────────────────────────────────── */

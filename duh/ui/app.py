@@ -319,6 +319,17 @@ class DuhApp(App[int]):
                     error_text = str(event.get("error", "unknown error"))
                     await self._add_error_message(error_text)
 
+                elif event_type == "done":
+                    stop = event.get("stop_reason", "")
+                    turns = event.get("turns", 0)
+                    if stop == "max_turns":
+                        await self._add_error_message(
+                            f"Reached {turns}-turn limit. Use --max-turns to increase."
+                        )
+                    if self._active_assistant is not None:
+                        self._active_assistant.finish()
+                        self._active_assistant = None
+
                 elif event_type == "budget_warning":
                     msg = event.get("message", "")
                     await self._add_error_message(f"Budget warning: {msg}")

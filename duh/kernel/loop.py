@@ -291,5 +291,31 @@ async def query(
             )
         )
 
-    # Max turns reached
+    # Max turns reached — grace turn: let the model summarize without tools
+    yield {
+        "type": "text_delta",
+        "text": f"\n\n---\n*Reached {max_turns}-turn limit. Summarizing...*\n\n",
+    }
+
+    try:
+        grace_messages = list(current_messages)
+        grace_messages.append(Message(
+            role="user",
+            content=(
+                f"You've reached the {max_turns}-turn limit. "
+                "Give a brief summary of what you accomplished and what remains. "
+                "Do NOT use any tools — just respond with text."
+            ),
+        ))
+        async for event in deps.call_model(
+            messages=grace_messages,
+            model=model,
+            system_prompt=system_prompt,
+            tools=[],  # no tools — text only
+        ):
+            if event.get("type") in ("text_delta", "thinking_delta"):
+                yield event
+    except Exception:
+        pass  # grace turn is best-effort
+
     yield {"type": "done", "stop_reason": "max_turns", "turns": turn}

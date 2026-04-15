@@ -539,7 +539,7 @@ def run_tui(args: argparse.Namespace) -> int:
         fallback_model=getattr(args, "fallback_model", None),
         system_prompt=system_prompt,
         tools=tools,
-        max_turns=getattr(app_config, "max_turns", None) or getattr(args, "max_turns", 10),
+        max_turns=getattr(app_config, "max_turns", None) or getattr(args, "max_turns", 100),
         max_cost=max_cost,
         trifecta_acknowledged=trifecta_ack,
     )

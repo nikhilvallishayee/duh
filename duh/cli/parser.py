@@ -22,8 +22,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--provider", type=str, choices=["anthropic", "litellm", "ollama", "openai"],
                         default=None,
                         help="LLM provider (default: auto-detect from API keys or Ollama).")
-    parser.add_argument("--max-turns", type=int, default=10,
-                        help="Maximum agentic turns (default: 10).")
+    parser.add_argument("--max-turns", type=int, default=100,
+                        help="Maximum agentic turns (default: 100).")
     parser.add_argument("--max-cost", type=float, default=None,
                         help="Maximum cost in USD for this session.")
     parser.add_argument("--max-tokens", type=int, default=None,

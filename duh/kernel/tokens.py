@@ -160,15 +160,17 @@ def estimate_cost(
 # ---------------------------------------------------------------------------
 
 MODEL_CONTEXT_LIMITS: dict[str, int] = {
-    # Anthropic
-    "claude-sonnet-4-6": 200_000,
+    # Anthropic — Sonnet 4.6 and Opus 4.6 support 1M context
+    "claude-sonnet-4-6": 1_000_000,
+    "claude-opus-4-6": 1_000_000,
+    # Older Claude models — 200K
     "claude-sonnet-4-5-20250514": 200_000,
     "claude-sonnet-4-20250514": 200_000,
     "claude-3-5-sonnet-20241022": 200_000,
     "claude-3-5-sonnet": 200_000,
-    "claude-opus-4-6": 200_000,
     "claude-opus-4-20250514": 200_000,
     "claude-3-opus": 200_000,
+    "claude-haiku-4-5": 200_000,
     "claude-haiku-3-5": 200_000,
     "claude-3-5-haiku-20241022": 200_000,
     "claude-3-haiku": 200_000,
@@ -192,6 +194,8 @@ def get_context_limit(model: str) -> int:
 
     # Pattern matching for common families
     lower = model.lower()
+    if "sonnet-4-6" in lower or "opus-4-6" in lower:
+        return 1_000_000
     if any(k in lower for k in ("claude", "sonnet", "opus", "haiku")):
         return 200_000
     if "gpt-4o" in lower:

@@ -8,6 +8,31 @@
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)]()
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
+**[Website](https://nikhilvallishayee.github.io/duh/site/)** | **[Comparisons](https://nikhilvallishayee.github.io/duh/site/comparisons.html)** | **[Security](https://nikhilvallishayee.github.io/duh/site/security.html)**
+
+---
+
+```
+$ duh -p "fix the bug in auth.py"
+⠋ Thinking...
+I'll read the file first to understand the issue.
+
+⠸ Running Read(file="auth.py")
+Found the bug: token validation checks `expires_at < now` but should be `<=` —
+tokens expiring at exactly the current second are incorrectly rejected.
+
+⠹ Running Edit(file="auth.py", old_string="expires_at < now", new_string="expires_at <= now")
+✓ Applied edit to auth.py (line 42).
+
+⠼ Running Bash(command="python -m pytest tests/test_auth.py -q")
+...........
+11 passed in 0.43s
+
+Done in 3 turns.
+```
+
+---
+
 A universal, open-source AI coding agent. One harness, any provider — Anthropic Claude, OpenAI API, ChatGPT Plus/Pro subscription (Codex-family models), local Ollama, or a deterministic stub for tests. Drop-in compatible with the Claude Agent SDK NDJSON protocol, so it can replace `claude` wherever that binary is expected.
 
 ## Install

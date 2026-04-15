@@ -266,11 +266,118 @@ class DuhApp(App[int]):
         if not text:
             return
         inp.value = ""
+
+        # Slash command dispatch — handle locally, don't send to model
+        if text.startswith("/"):
+            handled = await self._handle_slash(text)
+            if handled:
+                return
+
         inp.disabled = True
         self.query_one("#send-button", Button).disabled = True
 
         await self._new_user_message(text)
         self._run_query(text)
+
+    # ----------------------------------------------------------------- slash commands
+
+    async def _handle_slash(self, text: str) -> bool:
+        """Handle /commands locally. Returns True if handled."""
+        parts = text.split(maxsplit=1)
+        cmd = parts[0].lower()
+        arg = parts[1] if len(parts) > 1 else ""
+
+        if cmd == "/help":
+            await self._add_widget(Static(
+                "[bold]Available commands:[/]\n"
+                "  [cyan]/help[/]          — Show this help\n"
+                "  [cyan]/model[/] [name]  — Show or switch model\n"
+                "  [cyan]/cost[/]          — Show token usage and cost\n"
+                "  [cyan]/compact[/]       — Force context compaction\n"
+                "  [cyan]/clear[/]         — Clear message display\n"
+                "  [cyan]/session[/]       — Show session info\n"
+                "  [cyan]/quit[/]          — Exit D.U.H.\n",
+                classes="welcome-banner",
+            ))
+            return True
+
+        if cmd == "/model":
+            if arg:
+                self._model = arg
+                self._engine._config.model = arg
+                self._refresh_status()
+                await self._add_widget(Static(
+                    f"[green]Model switched to:[/] {arg}", classes="session-divider",
+                ))
+            else:
+                await self._add_widget(Static(
+                    f"[dim]Current model:[/] {self._model}", classes="session-divider",
+                ))
+            return True
+
+        if cmd == "/cost":
+            from duh.kernel.tokens import estimate_cost
+            cost = estimate_cost(self._model, self._input_tokens, self._output_tokens)
+            await self._add_widget(Static(
+                f"[bold]Session cost:[/]\n"
+                f"  Input tokens:  {self._input_tokens:,}\n"
+                f"  Output tokens: {self._output_tokens:,}\n"
+                f"  Estimated cost: ${cost:.4f}\n"
+                f"  Turn: {self._turn}\n"
+                f"  Model: {self._model}",
+                classes="welcome-banner",
+            ))
+            return True
+
+        if cmd == "/compact":
+            try:
+                compact_fn = self._engine._deps.compact
+                if compact_fn:
+                    import asyncio
+                    before = len(self._engine._messages)
+                    from duh.kernel.tokens import get_context_limit
+                    limit = int(get_context_limit(self._model) * 0.50)
+                    self._engine._messages = await compact_fn(
+                        self._engine._messages, token_limit=limit,
+                    )
+                    after = len(self._engine._messages)
+                    await self._add_widget(Static(
+                        f"[green]Compacted:[/] {before} → {after} messages",
+                        classes="session-divider",
+                    ))
+                else:
+                    await self._add_error_message("No compactor configured")
+            except Exception as e:
+                await self._add_error_message(f"Compact failed: {e}")
+            return True
+
+        if cmd == "/clear":
+            log = self.query_one("#message-log", ScrollableContainer)
+            await log.remove_children()
+            await self._add_widget(Static(
+                "[dim]Messages cleared. Context retained in engine.[/]",
+                classes="session-divider",
+            ))
+            return True
+
+        if cmd == "/session":
+            msg_count = len(getattr(self._engine, "_messages", []))
+            await self._add_widget(Static(
+                f"[bold]Session info:[/]\n"
+                f"  ID: {self._session_id}\n"
+                f"  Messages: {msg_count}\n"
+                f"  Turn: {self._turn}\n"
+                f"  Model: {self._model}",
+                classes="welcome-banner",
+            ))
+            return True
+
+        if cmd in ("/quit", "/exit", "/q"):
+            self.exit(0)
+            return True
+
+        # Unknown slash command — let the model handle it
+        return False
 
     # ----------------------------------------------------------------- worker
 

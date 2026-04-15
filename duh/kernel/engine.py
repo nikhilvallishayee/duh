@@ -84,6 +84,7 @@ class EngineConfig:
     """Configuration for an Engine session."""
     model: str = ""
     fallback_model: str | None = None
+    max_fallback_retries: int = 1
     system_prompt: str | list[str] = ""
     tools: list[Any] = field(default_factory=list)
     thinking: dict[str, Any] | None = None
@@ -496,7 +497,7 @@ class Engine:
                             self._session_id, self._messages,
                         )
                     except Exception:
-                        logger.debug("Session auto-save failed", exc_info=True)
+                        logger.warning("Session auto-save failed; conversation history may be lost", exc_info=True)
 
             if ptl_detected:
                 ptl_retries += 1

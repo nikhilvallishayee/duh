@@ -1,15 +1,8 @@
 <div align="center">
 
-```
- ____        _   _       _   _ 
-|  _ \   _  | | | |  _  | | | |
-| | | | (_) | | | | (_) | |_| |
-| | | |     | | | |     |  _  |
-| |_| |  _  | |_| |  _  | | | |
-|____/  (_)  \___/  (_) |_| |_|
-```
+<img src="docs/site/assets/duh-logo.png" alt="D.U.H. — Duh is a Universal Harness" width="600">
 
-### **D**.U.H. is a **U**niversal **H**arness
+<br>
 
 *One harness. Any model. Your machine.*
 

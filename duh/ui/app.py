@@ -282,7 +282,17 @@ class DuhApp(App[int]):
             pass
         except Exception as exc:
             _log.exception("Query error: %s", exc)
-            await self._add_error_message(str(exc))
+            # Show the error prominently — don't swallow it
+            error_msg = str(exc)
+            if "400" in error_msg or "Bad Request" in error_msg:
+                error_msg = f"API Error (400 Bad Request): {error_msg}\n\nThis usually means the conversation context is too long. Try starting a new session or use /compact."
+            elif "401" in error_msg or "Unauthorized" in error_msg:
+                error_msg = f"API Error (401): Check your API key. {error_msg}"
+            elif "429" in error_msg or "rate" in error_msg.lower():
+                error_msg = f"Rate limited: {error_msg}\n\nWait a moment and try again."
+            elif "timeout" in error_msg.lower():
+                error_msg = f"Request timed out: {error_msg}\n\nThe API took too long to respond. Try again."
+            await self._add_error_message(error_msg)
         finally:
             # Update token counts from engine
             try:
@@ -451,6 +461,36 @@ def run_tui(args: argparse.Namespace) -> int:
     )
 
     engine = Engine(deps=deps, config=engine_config, session_store=store)
+
+    # --- Session resume (--continue / --resume) ---
+    resume_id = getattr(args, "resume", None)
+    continue_session = getattr(args, "continue_session", False)
+
+    if continue_session or resume_id:
+        import asyncio as _aio
+        session_id_to_load = None
+
+        if resume_id:
+            session_id_to_load = resume_id
+        else:
+            sessions = _aio.run(store.list_sessions())
+            if sessions:
+                sessions.sort(key=lambda s: s.get("modified", ""), reverse=True)
+                session_id_to_load = sessions[0]["session_id"]
+                logger.info("Continuing most recent session: %s", session_id_to_load)
+            else:
+                sys.stderr.write("No sessions found to continue.\n")
+
+        if session_id_to_load:
+            loaded = _aio.run(store.load(session_id_to_load))
+            if loaded:
+                from duh.kernel.messages import Message as Msg
+                for raw in loaded:
+                    engine._messages.append(
+                        Msg(role=raw.get("role", "user"), content=raw.get("content", ""))
+                    )
+                engine._session_id = session_id_to_load
+                logger.info("Resumed session %s with %d messages", session_id_to_load, len(loaded))
 
     app = DuhApp(
         engine=engine,

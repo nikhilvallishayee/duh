@@ -9,6 +9,7 @@ import os
 import sys
 from typing import Any
 
+from duh.cli import exit_codes
 from duh.kernel.untrusted import TaintSource, UntrustedStr
 
 
@@ -114,7 +115,7 @@ async def run_print_mode(args: argparse.Namespace) -> int:
             "  Option 3: start Ollama (ollama serve)\n"
             "  Option 4: duh --provider ollama --model qwen2.5-coder:1.5b\n"
         )
-        return 1
+        return exit_codes.PROVIDER_ERROR
 
     # Build provider
     backend = build_model_backend(
@@ -127,7 +128,7 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     )
     if not backend.ok:
         sys.stderr.write(f"Error: {backend.error}\n")
-        return 1
+        return exit_codes.PROVIDER_ERROR
     model = backend.model
     call_model = backend.call_model
 
@@ -402,9 +403,19 @@ async def run_print_mode(args: argparse.Namespace) -> int:
                 for m in prev:
                     role = m.get("role", "user") if isinstance(m, dict) else getattr(m, "role", "user")
                     content = m.get("content", "") if isinstance(m, dict) else getattr(m, "content", "")
-                    engine._messages.append(Msg(role=role, content=content))
+                    meta = m.get("metadata", {}) if isinstance(m, dict) else getattr(m, "metadata", {})
+                    engine._messages.append(Msg(role=role, content=content, metadata=meta or {}))
                 if debug:
                     logger.debug("resumed %d messages", len(prev))
+
+                # --- ADR-063: Restore coordinator mode from session metadata ---
+                if engine._messages and engine._messages[0].metadata.get("coordinator_mode"):
+                    from duh.kernel.coordinator import COORDINATOR_SYSTEM_PROMPT
+                    current_prompt = engine._config.system_prompt
+                    if isinstance(current_prompt, str) and not current_prompt.startswith(COORDINATOR_SYSTEM_PROMPT):
+                        engine._config.system_prompt = (
+                            COORDINATOR_SYSTEM_PROMPT + "\n\n" + current_prompt
+                        )
 
                 # --- ADR-058 Phase 3: --summarize compacts on resume ---
                 if getattr(args, "summarize", False) and engine._messages:
@@ -438,7 +449,8 @@ async def run_print_mode(args: argparse.Namespace) -> int:
 
     json_events: list[dict[str, Any]] = []
     had_output = False
-    had_error = False
+    exit_code = exit_codes.SUCCESS
+    last_stop_reason: str | None = None
 
     async for event in engine.run(args.prompt):
         event_type = event.get("type", "")
@@ -454,11 +466,12 @@ async def run_print_mode(args: argparse.Namespace) -> int:
             if event_type == "text_delta":
                 had_output = True
             elif event_type == "error":
-                had_error = True
+                error_text = event.get("error", "")
+                exit_code = exit_codes.classify_error(error_text)
             elif event_type == "assistant":
                 msg = event.get("message")
                 if isinstance(msg, Message) and msg.metadata.get("is_error"):
-                    had_error = True
+                    exit_code = exit_codes.classify_error(msg.text)
         else:
             if event_type == "text_delta":
                 sys.stdout.write(event.get("text", ""))
@@ -479,7 +492,11 @@ async def run_print_mode(args: argparse.Namespace) -> int:
 
             elif event_type == "tool_result":
                 if event.get("is_error"):
-                    sys.stderr.write(f"  \033[31m! {event.get('output', '')[:200]}\033[0m\n")
+                    output_text = event.get("output", "")
+                    sys.stderr.write(f"  \033[31m! {output_text[:200]}\033[0m\n")
+                    # Track permission denials for NEEDS_HUMAN
+                    if "denied" in output_text.lower():
+                        exit_code = exit_codes.NEEDS_HUMAN
                 elif debug:
                     sys.stderr.write(f"  \033[32m< {str(event.get('output', ''))[:100]}\033[0m\n")
 
@@ -490,17 +507,28 @@ async def run_print_mode(args: argparse.Namespace) -> int:
                     error_text = msg.text
                     hint = _interpret_error(error_text)
                     sys.stderr.write(f"\n\033[31mError: {hint}\033[0m\n")
-                    had_error = True
+                    exit_code = exit_codes.classify_error(error_text)
 
             elif event_type == "error":
-                hint = _interpret_error(event.get("error", "unknown"))
+                error_text = event.get("error", "unknown")
+                hint = _interpret_error(error_text)
                 sys.stderr.write(f"\n\033[31mError: {hint}\033[0m\n")
-                had_error = True
+                exit_code = exit_codes.classify_error(error_text)
 
             elif event_type == "done":
+                last_stop_reason = event.get("stop_reason")
                 if debug:
                     logger.debug("done: turns=%s reason=%s",
-                                 event.get("turns"), event.get("stop_reason"))
+                                 event.get("turns"), last_stop_reason)
+
+        # budget_exceeded is emitted as a separate event by the engine
+        if event_type == "budget_exceeded":
+            exit_code = exit_codes.BUDGET_EXCEEDED
+
+    # --- Map stop_reason to exit code (only if no error already recorded) ---
+    if exit_code == exit_codes.SUCCESS and last_stop_reason:
+        if last_stop_reason == "max_turns":
+            exit_code = exit_codes.TIMEOUT
 
     if args.output_format == "json":
         sys.stdout.write(json.dumps(json_events, indent=2, default=str))
@@ -531,7 +559,7 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         except Exception:
             logger.debug("MCP disconnect failed", exc_info=True)
 
-    return 1 if had_error else 0
+    return exit_code
 
 
 def _summarize_event(event: dict[str, Any]) -> str:

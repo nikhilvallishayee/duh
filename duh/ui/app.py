@@ -364,13 +364,17 @@ class DuhApp(App[int]):
         if cmd == "/cost":
             from duh.kernel.tokens import estimate_cost
             cost = estimate_cost(self._model, self._input_tokens, self._output_tokens)
+            cache_line = ""
+            if self._engine is not None:
+                cache_line = f"\n  {self._engine.cache_tracker.summary()}"
             await self._add_widget(Static(
                 f"[bold]Session cost:[/]\n"
                 f"  Input tokens:  {self._input_tokens:,}\n"
                 f"  Output tokens: {self._output_tokens:,}\n"
                 f"  Estimated cost: ${cost:.4f}\n"
                 f"  Turn: {self._turn}\n"
-                f"  Model: {self._model}",
+                f"  Model: {self._model}"
+                f"{cache_line}",
                 classes="welcome-banner",
             ))
             return True
@@ -460,6 +464,9 @@ class DuhApp(App[int]):
                             COORDINATOR_SYSTEM_PROMPT + "\n\n" + self._engine._config.system_prompt
                         )
                     self._coordinator_mode = True
+                    # Persist mode in session metadata (ADR-063)
+                    if self._engine._messages:
+                        self._engine._messages[0].metadata["coordinator_mode"] = True
                     await self._add_widget(Static(
                         "[green]Mode switched to:[/] coordinator",
                         classes="session-divider",
@@ -472,6 +479,9 @@ class DuhApp(App[int]):
                         if prompt.startswith(prefix):
                             self._engine._config.system_prompt = prompt[len(prefix):]
                     self._coordinator_mode = False
+                    # Persist mode in session metadata (ADR-063)
+                    if self._engine._messages:
+                        self._engine._messages[0].metadata["coordinator_mode"] = False
                     await self._add_widget(Static(
                         "[green]Mode switched to:[/] normal",
                         classes="session-divider",
@@ -727,6 +737,10 @@ class DuhApp(App[int]):
                     msg = event.get("message", "")
                     await self._add_error_message(f"Budget exceeded: {msg}")
 
+                elif event_type == "context_blocked":
+                    msg = event.get("message", "")
+                    await self._add_error_message(f"Context blocked: {msg}")
+
         except asyncio.CancelledError:
             pass
         except Exception as exc:
@@ -978,11 +992,21 @@ def run_tui(args: argparse.Namespace) -> int:
             if loaded:
                 from duh.kernel.messages import Message as Msg
                 for raw in loaded:
+                    meta = raw.get("metadata", {}) if isinstance(raw, dict) else getattr(raw, "metadata", {})
                     engine._messages.append(
-                        Msg(role=raw.get("role", "user"), content=raw.get("content", ""))
+                        Msg(role=raw.get("role", "user"), content=raw.get("content", ""), metadata=meta or {})
                     )
                 engine._session_id = session_id_to_load
                 logger.info("Resumed session %s with %d messages", session_id_to_load, len(loaded))
+
+                # --- ADR-063: Restore coordinator mode from session metadata ---
+                if engine._messages and engine._messages[0].metadata.get("coordinator_mode"):
+                    from duh.kernel.coordinator import COORDINATOR_SYSTEM_PROMPT
+                    if not engine._config.system_prompt.startswith(COORDINATOR_SYSTEM_PROMPT):
+                        engine._config.system_prompt = (
+                            COORDINATOR_SYSTEM_PROMPT + "\n\n" + engine._config.system_prompt
+                        )
+
                 # ADR-057: No post-resume force-compact needed — sessions
                 # now have correct alternation (including tool_result messages)
                 # so they load at the right size. Auto-compact in engine.run()
@@ -1017,5 +1041,9 @@ def run_tui(args: argparse.Namespace) -> int:
         resumed_messages=_resumed_for_display,
         cwd=cwd,
     )
+    # Restore coordinator mode from CLI flag or session metadata (ADR-063)
     app._coordinator_mode = getattr(args, "coordinator", False)
+    if not app._coordinator_mode and engine._messages:
+        if engine._messages[0].metadata.get("coordinator_mode"):
+            app._coordinator_mode = True
     return app.run() or 0

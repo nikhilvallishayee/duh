@@ -127,6 +127,11 @@ def build_parser() -> argparse.ArgumentParser:
     _audit.add_argument("--json", action="store_true", default=False, dest="audit_json",
                         help="Output as raw JSONL.")
 
+    review_parser = subparsers.add_parser("review", help="Review a pull request")
+    review_parser.add_argument("--pr", type=int, required=True, help="PR number to review")
+    review_parser.add_argument("--repo", type=str, default=None,
+                               help="Repository (owner/repo). Default: auto-detect from git remote.")
+
     bridge_parser = subparsers.add_parser("bridge", help="Start the remote bridge server.")
     bridge_sub = bridge_parser.add_subparsers(dest="bridge_command", required=True)
     start_parser = bridge_sub.add_parser("start", help="Start the WebSocket bridge server.")

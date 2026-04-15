@@ -57,9 +57,9 @@ Instead of clearing tool result content (which changes the prefix and breaks cac
 
 ## Implementation Plan
 
-- [ ] Phase 1: Add `cache_control` to system prompt in Anthropic adapter
-- [ ] Phase 2: Add `cache_control` to message prefix boundary
-- [ ] Phase 3: Track cache hit rates, detect breaks
+- [x] Phase 1: Add `cache_control` to system prompt in Anthropic adapter
+- [x] Phase 2: Add `cache_control` to message prefix boundary
+- [x] Phase 3: Track cache hit rates, detect breaks
 - [ ] Phase 4: Cache-edits API for microcompact
 
 ## Consequences

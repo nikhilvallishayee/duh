@@ -204,6 +204,9 @@ class AnthropicProvider:
                                     usage = {
                                         "input_tokens": getattr(msg_usage, "input_tokens", 0),
                                         "output_tokens": getattr(msg_usage, "output_tokens", 0),
+                                        # ADR-061 Phase 3: prompt cache tracking
+                                        "cache_creation_input_tokens": getattr(msg_usage, "cache_creation_input_tokens", 0) or 0,
+                                        "cache_read_input_tokens": getattr(msg_usage, "cache_read_input_tokens", 0) or 0,
                                     }
 
                         elif event_type == "message_delta":

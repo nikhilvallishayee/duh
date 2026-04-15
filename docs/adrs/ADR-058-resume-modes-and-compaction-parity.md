@@ -122,24 +122,24 @@ duh -p "continue working" --continue --summarize  # SDK resume with summary
 ### Phase 1: Resume as-is (mostly done)
 - [x] ADR-057: fix message flow so sessions save correctly
 - [x] Remove TUI force-compact on resume
-- [ ] Remove REPL force-compact on resume (if any)
-- [ ] Verify SDK runner resume works without compaction
+- [x] Remove REPL force-compact on resume (if any)
+- [x] Verify SDK runner resume works without compaction
 
 ### Phase 2: Model-based summary compaction
-- [ ] Implement `SummaryCompactor` — forked model call to summarize
-- [ ] Add compact boundary marker message type
-- [ ] Implement post-compact file state rebuild
-- [ ] Add circuit breaker (max 3 consecutive failures)
-- [ ] Wire into `AdaptiveCompactor` as Tier 1
+- [x] Implement `SummaryCompactor` — forked model call to summarize
+- [x] Add compact boundary marker message type
+- [x] Implement post-compact file state rebuild
+- [x] Add circuit breaker (max 3 consecutive failures)
+- [x] Wire into `AdaptiveCompactor` as Tier 1
 
 ### Phase 3: Resume with summary
-- [ ] Add `--summarize` flag to CLI parser
+- [x] Add `--summarize` flag to CLI parser
 - [ ] Implement summarize-on-resume in REPL runner
-- [ ] Implement summarize-on-resume in TUI runner
-- [ ] Implement summarize-on-resume in SDK runner
+- [x] Implement summarize-on-resume in TUI runner
+- [x] Implement summarize-on-resume in SDK runner
 
 ### Phase 4: Competitive-parity enhancements
-- [ ] Time-based microcompact trigger (gap > 5 minutes)
+- [x] Time-based microcompact trigger (gap > 5 minutes)
 - [ ] Post-compact plan restoration
 - [ ] Post-compact skill/tool restoration
-- [ ] Compact analytics (token savings, frequency)
+- [x] Compact analytics (token savings, frequency)

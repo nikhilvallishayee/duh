@@ -63,11 +63,11 @@ engine._messages[0].metadata["coordinator_mode"] = True
 
 ## Implementation Plan
 
-- [ ] `SwarmTool` — parallel agent execution via asyncio.gather
-- [ ] Coordinator system prompt variant
-- [ ] `--coordinator` CLI flag
-- [ ] Mode persistence in session metadata
-- [ ] `/mode coordinator|normal` slash command
+- [x] `SwarmTool` — parallel agent execution via asyncio.gather
+- [x] Coordinator system prompt variant
+- [x] `--coordinator` CLI flag
+- [x] Mode persistence in session metadata
+- [x] `/mode coordinator|normal` slash command
 
 ## Consequences
 

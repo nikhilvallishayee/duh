@@ -73,18 +73,18 @@ def estimate_snip_savings(messages, keep_last=6) -> int:
 ## Implementation Plan
 
 ### Phase 1: SnipCompactor class
-- [ ] `duh/adapters/compact/snip.py` — SnipCompactor with snip() and estimate()
-- [ ] Snip boundary marker message
-- [ ] Unit tests: snip preserves first+last, correct round removal, alternation maintained
+- [x] `duh/adapters/compact/snip.py` — SnipCompactor with snip() and estimate()
+- [x] Snip boundary marker message
+- [x] Unit tests: snip preserves first+last, correct round removal, alternation maintained
 
 ### Phase 2: Wire into AdaptiveCompactor
-- [ ] Add snip as Tier 0.5 (between microcompact and model summary)
-- [ ] 75% threshold trigger
-- [ ] Skip model summary if snip freed enough tokens
+- [x] Add snip as Tier 0.5 (between microcompact and model summary)
+- [x] 75% threshold trigger
+- [x] Skip model summary if snip freed enough tokens
 
 ### Phase 3: Snip projection
-- [ ] Token estimation for snip savings
-- [ ] Decision logic: snip-only vs snip+summarize
+- [x] Token estimation for snip savings
+- [x] Decision logic: snip-only vs snip+summarize
 
 ## Consequences
 

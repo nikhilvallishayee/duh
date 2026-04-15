@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from duh.cli import exit_codes
 from duh.cli.runner import (
     BRIEF_INSTRUCTION,
     SYSTEM_PROMPT,
@@ -187,7 +188,7 @@ class TestProviderAutoDetection:
 
     @pytest.mark.asyncio
     async def test_no_provider_available(self, monkeypatch, capsys):
-        """No keys, no Ollama → error to stderr, exit 1."""
+        """No keys, no Ollama → error to stderr, PROVIDER_ERROR."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
@@ -196,18 +197,18 @@ class TestProviderAutoDetection:
         with patch("httpx.get", side_effect=Exception("no ollama")):
             code = await run_print_mode(args)
 
-        assert code == 1
+        assert code == exit_codes.PROVIDER_ERROR
         captured = capsys.readouterr()
         assert "No provider available" in captured.err
 
     @pytest.mark.asyncio
     async def test_unknown_provider_error(self, capsys):
-        """Explicit unknown provider → error to stderr, exit 1."""
+        """Explicit unknown provider → error to stderr, PROVIDER_ERROR."""
         args = _make_args(provider="google")
 
         code = await run_print_mode(args)
 
-        assert code == 1
+        assert code == exit_codes.PROVIDER_ERROR
         captured = capsys.readouterr()
         assert "Unknown provider" in captured.err
 
@@ -358,7 +359,7 @@ class TestStreamJsonOutput:
         with _InfraContext(mock_engine, extra_patches=extra):
             code = await run_print_mode(args)
 
-        assert code == 1
+        assert code == exit_codes.ERROR  # generic "api failure" → ERROR
 
 
 # ===================================================================
@@ -561,25 +562,25 @@ class TestProviderModelDefaults:
 
     @pytest.mark.asyncio
     async def test_openai_no_key_error(self, monkeypatch, capsys):
-        """Explicit openai provider but no key → exit 1."""
+        """Explicit openai provider but no key → PROVIDER_ERROR."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
         args = _make_args(provider="openai")
         code = await run_print_mode(args)
 
-        assert code == 1
+        assert code == exit_codes.PROVIDER_ERROR
         captured = capsys.readouterr()
         assert "OPENAI_API_KEY" in captured.err
 
     @pytest.mark.asyncio
     async def test_anthropic_no_key_error(self, monkeypatch, capsys):
-        """Explicit anthropic provider but no key → exit 1."""
+        """Explicit anthropic provider but no key → PROVIDER_ERROR."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
         args = _make_args(provider="anthropic")
         code = await run_print_mode(args)
 
-        assert code == 1
+        assert code == exit_codes.PROVIDER_ERROR
         captured = capsys.readouterr()
         assert "ANTHROPIC_API_KEY" in captured.err
 
@@ -669,7 +670,7 @@ class TestTextModeEvents:
         with _InfraContext(mock_engine):
             code = await run_print_mode(args)
 
-        assert code == 1
+        assert code == exit_codes.PROVIDER_ERROR  # "credit balance is too low"
         captured = capsys.readouterr()
         assert "credits" in captured.err.lower()
 
@@ -735,7 +736,7 @@ class TestTextModeEvents:
         with _InfraContext(mock_engine, extra_patches=extra):
             code = await run_print_mode(args)
 
-        assert code == 1
+        assert code == exit_codes.PROVIDER_ERROR  # "rate_limit exceeded"
 
 
 # ===================================================================

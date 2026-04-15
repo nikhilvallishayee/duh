@@ -22,10 +22,14 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 from duh.hooks import HookEvent, execute_hooks
+from duh.kernel.cache_tracker import CacheTracker
+from duh.kernel.compact_analytics import CompactStats
 from duh.kernel.confirmation import ConfirmationMinter
 from duh.kernel.deps import Deps
 from duh.kernel.loop import query
 from duh.kernel.messages import Message, UserMessage
+from duh.kernel.context_gate import ContextGate
+from duh.kernel.post_compact import rebuild_post_compact_context
 from duh.kernel.tokens import (
     count_tokens,
     count_tokens_for_model,
@@ -126,11 +130,17 @@ class Engine:
         if self._slog:
             self._slog.session_id = self._session_id
         self._confirmation_minter = ConfirmationMinter(session_key=os.urandom(32))
+        self._cache_tracker = CacheTracker()
+        self._compact_stats = CompactStats()
 
         # SESSION_START: refuse sessions where all three trifecta capabilities
         # are simultaneously present without explicit acknowledgement.
         _caps = compute_session_capabilities(self._config.tools)
         check_trifecta(_caps, acknowledged=self._config.trifecta_acknowledged)
+
+    @property
+    def compact_stats(self) -> CompactStats:
+        return self._compact_stats
 
     @property
     def messages(self) -> list[Message]:
@@ -155,6 +165,10 @@ class Engine:
     @property
     def model(self) -> str:
         return self._config.model
+
+    @property
+    def cache_tracker(self) -> CacheTracker:
+        return self._cache_tracker
 
     @property
     def max_cost(self) -> float | None:
@@ -224,6 +238,10 @@ class Engine:
                 lines.append(
                     f"  Turn {i:>2d}: in={inp:>6,}  out={out:>6,}  cost={format_cost(turn_cost)}"
                 )
+        # ADR-061 Phase 3: cache stats
+        cache_summary = self._cache_tracker.summary()
+        if cache_summary:
+            lines.append(cache_summary)
         remaining = self.budget_remaining(m)
         if remaining is not None:
             lines.append(f"Budget remaining: {format_cost(remaining)} of {format_cost(self._config.max_cost or 0.0)}")
@@ -260,6 +278,15 @@ class Engine:
                 call_model=self._deps.call_model,
             )
         return self._adaptive_compactor
+
+    def _estimate_messages_tokens(self, model: str) -> int:
+        """Estimate total tokens for all current messages using model calibration."""
+        total = 0
+        for m in self._messages:
+            total += count_tokens_for_model(
+                m.text if isinstance(m, Message) else str(m), model,
+            )
+        return total
 
     async def run(
         self,
@@ -353,8 +380,24 @@ class Engine:
                 )
 
             count_before = len(self._messages)
+            tokens_before = input_estimate
             self._messages = await compact_fn(
                 self._messages, token_limit=threshold,
+            )
+            # ADR-061 Phase 3: suppress false cache-break after compaction
+            self._cache_tracker.notify_compaction()
+
+            # ADR-058: Post-compact file state rebuild
+            file_tracker = getattr(self._deps, "file_tracker", None)
+            if file_tracker is not None:
+                self._messages = await rebuild_post_compact_context(
+                    self._messages, file_tracker,
+                )
+
+            # ADR-058: Record compact analytics
+            tokens_after = self._estimate_messages_tokens(effective_model)
+            self._compact_stats.record(
+                "auto", tokens_freed=max(0, tokens_before - tokens_after),
             )
 
             # Emit POST_COMPACT hook
@@ -367,6 +410,23 @@ class Engine:
                         "message_count_after": len(self._messages),
                     },
                 )
+
+        # --- Context gate: block at 95% AFTER auto-compact (ADR-059) ---
+        # Placed after compaction so compaction has a chance to free context first.
+        # Only blocks if context is still over 95% after all compaction attempts.
+        gate_limit = get_context_limit(model or self._config.model)
+        gate = ContextGate(gate_limit)
+        post_compact_estimate = sum(
+            count_tokens_for_model(
+                m.text if isinstance(m, Message) else str(m),
+                model or self._config.model,
+            )
+            for m in self._messages
+        )
+        allowed, reason = gate.check(post_compact_estimate)
+        if not allowed:
+            yield {"type": "context_blocked", "message": reason}
+            return
 
         # Run the query loop
         effective_model = model or self._config.model
@@ -424,6 +484,8 @@ class Engine:
                             )
                         self._total_output_tokens += out_tokens
                         _turn_output_tokens += out_tokens
+                        # ADR-061 Phase 3: track cache hit rates
+                        self._cache_tracker.record_usage(usage)
                     if self._slog:
                         self._slog.model_response(model=effective_model, turn=self._turn_count)
 
@@ -526,8 +588,24 @@ class Engine:
                     )
 
                 count_before = len(self._messages)
+                tokens_before_ptl = self._estimate_messages_tokens(effective_model)
                 self._messages = await compact_fn(
                     self._messages, token_limit=target,
+                )
+                # ADR-061 Phase 3: suppress false cache-break after PTL compaction
+                self._cache_tracker.notify_compaction()
+
+                # ADR-058: Post-compact file state rebuild (PTL path)
+                file_tracker = getattr(self._deps, "file_tracker", None)
+                if file_tracker is not None:
+                    self._messages = await rebuild_post_compact_context(
+                        self._messages, file_tracker,
+                    )
+
+                # ADR-058: Record compact analytics (PTL path)
+                tokens_after_ptl = self._estimate_messages_tokens(effective_model)
+                self._compact_stats.record(
+                    "ptl_retry", tokens_freed=max(0, tokens_before_ptl - tokens_after_ptl),
                 )
 
                 # Emit POST_COMPACT hook

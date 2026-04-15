@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from duh.cli import exit_codes
 from duh.cli.runner import (
     _interpret_error,
     _make_serializable,
@@ -205,7 +206,7 @@ class TestPrintModeEventHandlers:
             args = parser.parse_args(["-p", "test"])
             code = await run_print_mode(args)
 
-        assert code == 1
+        assert code == exit_codes.PROVIDER_ERROR  # "credit balance is too low"
         captured = capsys.readouterr()
         assert "credits" in captured.err.lower()
 
@@ -324,7 +325,7 @@ class TestProviderResolution:
         args = parser.parse_args(["-p", "test", "--provider", "anthropic"])
         code = await run_print_mode(args)
 
-        assert code == 1
+        assert code == exit_codes.PROVIDER_ERROR
         captured = capsys.readouterr()
         assert "ANTHROPIC_API_KEY" in captured.err
 
@@ -338,7 +339,7 @@ class TestProviderResolution:
         args.provider = "unknown_provider"
         code = await run_print_mode(args)
 
-        assert code == 1
+        assert code == exit_codes.PROVIDER_ERROR
         captured = capsys.readouterr()
         assert "Unknown provider" in captured.err
 

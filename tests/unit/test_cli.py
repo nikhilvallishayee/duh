@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from duh.cli import exit_codes
 from duh.cli.parser import build_parser
 from duh.cli.doctor import run_doctor
 from duh.cli.main import main
@@ -190,7 +191,7 @@ class TestPrintModeMocked:
         parser = build_parser()
         args = parser.parse_args(["-p", "hello"])
         code = await run_print_mode(args)
-        assert code == 1
+        assert code == exit_codes.PROVIDER_ERROR
         captured = capsys.readouterr()
         assert "ANTHROPIC_API_KEY" in captured.err
 

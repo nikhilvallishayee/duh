@@ -418,6 +418,7 @@ SLASH_COMMANDS = {
     "/health": "Run provider and MCP health checks",
     "/clear": "Clear conversation history",
     "/compact": "Compact older messages",
+    "/compact-stats": "Show compaction analytics for this session",
     "/snapshot": "Ghost snapshot (/snapshot, /snapshot apply, /snapshot discard)",
     "/attach": "Attach a file to the next message (/attach path/to/file)",
     "/memory": "Memory facts (/memory list|search <q>|show <key>|delete <key>)",
@@ -600,6 +601,18 @@ def context_breakdown(
         f"  {'Used':<22s} {_fmt(used):>10s} {_pct(used):>7s}",
         f"  {'Available':<22s} {_fmt(available):>10s} {_pct(available):>7s}",
     ]
+
+    # ADR-061 Phase 3: prompt cache stats
+    cache_summary = engine.cache_tracker.summary()
+    if cache_summary:
+        lines.append(f"")
+        lines.append(f"  {cache_summary}")
+
+    # ADR-058: compact analytics
+    if engine.compact_stats.total_compactions > 0:
+        lines.append(f"")
+        lines.append(f"  {engine.compact_stats.summary()}")
+
     return "\n".join(lines)
 
 def _handle_slash(
@@ -1029,6 +1042,10 @@ def _handle_slash(
                 sys.stdout.write(f"  Compact failed: {e}\n")
         else:
             sys.stdout.write("  No compactor configured.\n")
+        return True, model
+
+    if name == "/compact-stats":
+        sys.stdout.write(f"  {engine.compact_stats.summary()}\n")
         return True, model
 
     if name == "/snapshot":

@@ -100,13 +100,30 @@ class SummarizeCompactor:
 
         if dropped_count > 0:
             dropped = conversation[:dropped_count]
+            tokens_before = self.estimate_tokens(messages)
             # Try model summary, fall back to mechanical
             summary_text = await self._summarize(dropped)
             summary_msg = Message(
                 role="system",
                 content=f"Previous conversation summary:\n{summary_text}",
             )
-            result = system_msgs + [summary_msg] + kept
+            # Compact boundary marker (ADR-058): signals where compaction
+            # happened so sessions show the compaction point.
+            tokens_after_est = (
+                self.estimate_tokens(system_msgs)
+                + self.estimate_tokens([summary_msg])
+                + self.estimate_tokens(kept)
+            )
+            boundary = Message(
+                role="user",
+                content="[Conversation compacted. Summary of prior context follows.]",
+                metadata={
+                    "subtype": "compact_boundary",
+                    "pre_compact_count": len(messages),
+                    "tokens_freed": tokens_before - tokens_after_est,
+                },
+            )
+            result = system_msgs + [boundary, summary_msg] + kept
         else:
             result = system_msgs + kept
 

@@ -33,7 +33,7 @@ class TestConfig:
         c = Config()
         assert c.model == ""
         assert c.provider == ""
-        assert c.max_turns == 10
+        assert c.max_turns == 100
         assert c.permissions == {}
         assert c.hooks == {}
         assert c.mcp_servers == {}
@@ -224,7 +224,7 @@ class TestLoadConfig:
         with patch("duh.config.config_dir", return_value=Path("/nonexistent")):
             c = load_config(cwd="/nonexistent")
         assert c.model == ""
-        assert c.max_turns == 10
+        assert c.max_turns == 100
 
     def test_cli_args_override_everything(self, tmp_path: Path):
         # Write user config

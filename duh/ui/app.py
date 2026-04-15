@@ -187,20 +187,25 @@ class DuhApp(App[int]):
                 role = raw.get("role", "user") if isinstance(raw, dict) else getattr(raw, "role", "user")
                 content = raw.get("content", "") if isinstance(raw, dict) else getattr(raw, "text", str(raw))
                 if isinstance(content, list):
-                    # ADR-057: tool_result messages have list content with
-                    # tool_result blocks. Show abbreviated tool results.
+                    # Render each content block type appropriately
                     parts = []
                     for b in content:
-                        if isinstance(b, dict) and b.get("type") == "tool_result":
-                            tr_content = str(b.get("content", ""))[:100]
-                            parts.append(f"[Tool result] {tr_content}...")
-                        elif isinstance(b, dict) and b.get("type") == "text":
-                            parts.append(b.get("text", ""))
-                        elif isinstance(b, dict):
-                            parts.append(b.get("text", str(b)))
-                        else:
+                        if not isinstance(b, dict):
                             parts.append(str(b))
-                    content = " ".join(parts).strip()
+                            continue
+                        btype = b.get("type", "")
+                        if btype == "text":
+                            parts.append(b.get("text", ""))
+                        elif btype == "tool_use":
+                            name = b.get("name", "?")
+                            parts.append(f"[Used {name}]")
+                        elif btype == "tool_result":
+                            tr = str(b.get("content", ""))[:80]
+                            parts.append(f"[Result: {tr}]")
+                        elif btype == "thinking":
+                            parts.append("[thinking]")
+                        # skip unknown block types
+                    content = " ".join(p for p in parts if p).strip()
                 text = str(content).strip()
                 if not text:
                     continue  # skip empty messages

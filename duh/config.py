@@ -39,7 +39,7 @@ class Config:
 
     model: str = ""
     provider: str = ""
-    max_turns: int = 10
+    max_turns: int = 100
     max_cost: float | None = None
     system_prompt: str = ""
     approval_mode: str = ""

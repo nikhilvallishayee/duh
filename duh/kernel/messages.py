@@ -136,13 +136,16 @@ def merge_consecutive(messages: list[Message]) -> list[Message]:
     merged: list[Message] = [messages[0]]
     for msg in messages[1:]:
         if msg.role == merged[-1].role:
-            # Merge content
+            # Merge content — extract text from both
             prev = merged[-1]
-            prev_content = prev.content if isinstance(prev.content, str) else prev.text
-            new_content = msg.content if isinstance(msg.content, str) else msg.text
+            prev_text = prev.content if isinstance(prev.content, str) else prev.text
+            new_text = msg.content if isinstance(msg.content, str) else msg.text
+            combined = f"{prev_text}\n\n{new_text}".strip()
+            if not combined:
+                combined = "(continued)"
             merged[-1] = Message(
                 role=prev.role,
-                content=f"{prev_content}\n\n{new_content}",
+                content=combined,
                 metadata=prev.metadata,
             )
         else:

@@ -177,12 +177,9 @@ class DuhApp(App[int]):
         )
         await log.mount(Static(banner, classes="welcome-banner"))
 
-        # Show restored session messages
+        # Show restored session messages (skip empty ones)
         if self._resumed_messages:
-            await log.mount(Static(
-                f"[dim]--- Resumed session with {len(self._resumed_messages)} messages ---[/]",
-                classes="session-divider",
-            ))
+            shown = 0
             for raw in self._resumed_messages:
                 role = raw.get("role", "user") if isinstance(raw, dict) else getattr(raw, "role", "user")
                 content = raw.get("content", "") if isinstance(raw, dict) else getattr(raw, "text", str(raw))
@@ -190,18 +187,20 @@ class DuhApp(App[int]):
                     content = " ".join(
                         b.get("text", "") if isinstance(b, dict) else str(b)
                         for b in content
-                    )
-                text = str(content)[:500]  # truncate for display
-                if role == "user":
-                    widget = MessageWidget(role="user", text=text)
-                else:
-                    widget = MessageWidget(role="assistant", text=text)
+                    ).strip()
+                text = str(content).strip()
+                if not text:
+                    continue  # skip empty messages
+                text = text[:500]  # truncate for display
+                widget = MessageWidget(role=role, text=text)
                 await log.mount(widget)
+                shown += 1
 
-            await log.mount(Static(
-                "[dim]--- End of restored messages ---[/]",
-                classes="session-divider",
-            ))
+            if shown > 0:
+                await log.mount(Static(
+                    f"[dim]--- Restored {shown} messages ---[/]",
+                    classes="session-divider",
+                ))
 
         log.scroll_end(animate=False)
         self.query_one("#prompt-input", Input).focus()

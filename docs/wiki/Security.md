@@ -470,4 +470,45 @@ All MCP tool output is tagged as `TaintSource.MCP_OUTPUT` via `_wrap_mcp_output(
 
 MCP tool schemas are validated at discovery time using the same `validate_tool_schema()` function used for native tools. Critical schema errors are logged. This prevents malformed schemas from causing cryptic API failures during tool execution.
 
+### MCP Output Tainting
+
+Output returned by MCP tools in `MCPExecutor.run()` is wrapped via `_wrap_mcp_output()` so it carries `TaintSource.MCP_OUTPUT` through the taint-tracking system. Downstream tools that see the output can then enforce confirmation gates or deny-listed capabilities on the basis of origin.
+
 **Source:** `duh/adapters/mcp_executor.py`, `duh/adapters/mcp_unicode.py`
+
+---
+
+## 12. Filesystem Boundary (PathPolicy)
+
+### What It Is
+
+`PathPolicy` enforces that file tool operations stay within the project root. Each of `Read`, `Write`, `Edit`, `MultiEdit` consults its configured `PathPolicy` before any I/O.
+
+### How It Works
+
+1. The CLI runners (`runner.py`, `repl.py`, `sdk_runner.py`) construct a `PathPolicy` with `project_root = _find_git_root(cwd) or cwd`.
+2. `SessionBuilder` propagates the policy to tools via `get_all_tools(path_policy=...)`.
+3. Tools call `path = path.resolve()` **before** boundary check — this closes the symlink-traversal attack (CWE-59, CWE-22). A symlink at `project/innocent.txt -> /etc/shadow` is resolved to `/etc/shadow` and rejected.
+4. `check_permissions()` also consults the policy, so the approval layer sees the boundary decision.
+
+### Allowed Paths
+
+By default `PathPolicy` admits `/tmp` in addition to the project root. Pass `allowed_paths=[]` for strict mode (tests use this).
+
+**Source:** `duh/security/path_policy.py`, `duh/tools/read.py`, `duh/tools/write.py`, `duh/tools/edit.py`, `duh/tools/multi_edit.py`
+
+---
+
+## 13. WebFetch SSRF Protection
+
+`WebFetchTool` resolves the target hostname before issuing HTTP and rejects:
+
+- Loopback (`127.0.0.0/8`, `::1`)
+- Private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`)
+- Link-local (`169.254.0.0/16`, `fe80::/10`) — includes AWS/GCP metadata at `169.254.169.254`
+- Reserved/multicast/unspecified (`0.0.0.0`, `224.0.0.0/4`)
+- Cloud metadata hostnames (`metadata.google.internal`, `metadata.gcp.internal`)
+
+DNS resolution failures are treated as blocks (fail-closed). If any resolved IP in a multi-home DNS response is private, the fetch is rejected — DNS rebinding protection.
+
+**Source:** `duh/tools/web_fetch.py` (`_is_private_ip`, `_validate_url_ssrf`)

@@ -38,9 +38,10 @@ def run_duh(
 
 class TestVersionE2E:
     def test_version_output(self):
+        from duh import __version__
         result = run_duh("--version")
         assert result.returncode == 0
-        assert "0.6.0" in result.stdout
+        assert __version__ in result.stdout
 
 
 class TestHelpE2E:

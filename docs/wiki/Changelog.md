@@ -1,5 +1,60 @@
 # Changelog
 
+## v0.7.0 (2026-04-17) — QE hardening release
+
+Comprehensive response to the external QE swarm audit ([#8](https://github.com/nikhilvallishayee/duh/issues/8)). Six merged PRs closed every finding across all seven reports — code quality, security, performance, quality experience, test suite, SFDIPOT, and the executive summary. No functional regressions; 347 net new tests.
+
+### Security
+
+- **SEC-CRITICAL**: `Read`/`Write`/`Edit` now call `path.resolve()` before boundary checks, preventing symlink-based path traversal (CWE-59, CWE-22)
+- **SEC-HIGH**: `WebFetchTool` SSRF protection — rejects private, loopback, link-local, reserved, multicast, and cloud-metadata hostnames; fail-closed on unparseable IPs or DNS failure
+- **SEC-HIGH**: `PathPolicy` wired into all file tools (`Read`, `Write`, `Edit`, `MultiEdit`) — `check_permissions()` consults boundary instead of returning `True`
+- **SEC-HIGH**: OAuth `wait_state` moved from class-level to factory-returned handler class (concurrent flows no longer share state); JWT structural validation; ephemeral port replaces hardcoded 1455
+- **SEC-MEDIUM**: Trust store `chmod 0o600`; entry-point plugin TOFU verification with opt-in trust flag; Seatbelt explicit read allow-list replaces `(allow file-read*)`; `skip_permissions` audit logging; AST parse failure logs `WARNING` instead of silent fallback; dependency version upper bounds
+- **SEC-LOW/INFO**: `eval` regex tightened to command position only; `UntrustedStr.__format__()` preserves taint through f-string interpolation; MCP output taint-wrapped in `run()` via `TaintSource.MCP_OUTPUT`
+
+### Performance
+
+- **PERF-CRITICAL**: Engine token estimation replaced with per-message cache + running total — O(N×M) → O(1) amortized, ~100× faster at 200 messages
+- **PERF-HIGH**: `subprocess.run` replaced with `asyncio.create_subprocess_exec` across `Write`, `Edit`, `FileTracker`; `diff_summary()` batches all paths into a single `git diff --stat`; `GrepTool` bounded by `max_results=500`, binary-file detection, line-by-line reading
+- **PERF-MEDIUM**: `JobQueue` evicts oldest completed jobs (cap 50); `CacheTracker` O(1) running totals, bounded history; `memory_store` append-only fast path for new keys; lazy tool loading via `LazyTool` proxy; parallel read-only tool execution via `asyncio.gather`; security scanners run in parallel (max 4)
+- **PERF-LOW**: `recall_facts` uses on-the-fly casefold (no temp string concatenation); redundant message-list copies removed; OpenAI dedup uses `set` (O(1)); MCP disconnect uses per-server tool index; `UndoStack` byte budget (8 MiB cap) with spill-to-disk
+
+### Code quality
+
+- **CQ-1**: `_handle_slash()` decomposed from 580 LOC / CC 52 into `SlashDispatcher` with 27 handlers (each <30 LOC, CC <8), `SlashContext` dataclass replaces 9-parameter cluster
+- **CQ-2**: `Engine.run()` decomposed from 393 LOC / CC 35 into 58-line orchestrator + 14 focused helpers (each <80 LOC, CC ≤12); shared `_process_query_events()` eliminates 80% duplication between primary and fallback paths
+- **CQ-4**: Extracted `SessionBuilder` from `runner.py` and `repl.py` — 16 phase methods (Rule of 7); 601 lines of duplication removed
+- **CQ-26**: Renderers extracted to `repl_renderers.py`; `repl.py` dropped from 1754 → 864 LOC (−51%); `runner.py` 639 → 332 LOC (−48%)
+- **CQ-P4**: `OpenAIChatGPTProvider.stream()` decomposed from 230 LOC / CC 22 into `stream` (CC 7) + `_pump_sse_events` (CC 8) + `_dispatch_sse_event` (CC 8) + per-event handlers dispatched via `_EXACT_SSE_HANDLERS` table
+
+### Quality Experience
+
+- **QX**: `duh security scan` default output is now a severity-sorted ANSI table with summary line; `--format sarif` preserved for CI; `--fail-on` valid values documented
+- **QX**: Interactive `duh security init` wizard — scanner selection, `--fail-on` severity, allowed paths; writes `.duh/security.json`
+- **QX**: No-provider error now suggests `duh doctor` with per-provider env var hints
+- **QX**: `/model` switch warns on ≥10× cost delta (e.g. haiku → opus = 60×)
+- **QX**: OAuth errors include HTTP status and `duh doctor` remediation hint
+- **QX**: OAuth token expiry shown in `/health` ("ChatGPT OAuth: ✓ token valid for 2h 15m")
+- **QX**: `duh security scan` shows `Scanning [3/13] bash_ast…` progress on stderr TTY (silent in CI)
+- **QX**: New `/errors` slash command — shows last N errors from the current session (100-entry bounded buffer)
+- **QX fix**: `/compact` no longer crashes on Python 3.12+ (removed `run_until_complete` inside running event loop; uses sentinel + await pattern)
+
+### Testing
+
+- `pytest-timeout=30` default, `--strict-markers`, CI-portable E2E smoke tests (removed hardcoded `/Users/nomind/...` paths)
+- 36 new property-based tests: bash AST tokenizer invariants, redaction regex robustness + idempotence, message serialization round-trip
+- 8-test taint-through-full-loop integration test
+- 60 coverage-chasing tests with weak assertions removed (after triage: 588 kept, 77 moved to module-named files, 59 deleted)
+- New test coverage for: taint serialization through FileStore (with fix to persist taint metadata), disk-full (ENOSPC) scenarios, concurrent job queue access, confirmation token boundary (exactly 300s)
+
+### Stats
+
+- **5665 tests passing** (up from 5318), **0 failing**, **100% line coverage**
+- **+347 net new tests**, 60 coverage-chasing tests removed
+- **6 PRs merged**, all CI-green before merge
+- Hotspot files: `repl.py` −51%, `runner.py` −48%, `_handle_slash()` CC −85%, `Engine.run()` CC −66%, `stream()` CC −68%
+
 ## v0.5.0 (2026-04-14)
 
 The first public alpha release of D.U.H., delivering a complete provider-agnostic AI coding agent with production-grade security, multi-agent support, and full tool parity.

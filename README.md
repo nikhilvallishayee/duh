@@ -8,7 +8,7 @@
 
 [![CI](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml/badge.svg)](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/duh-cli?color=blue)](https://pypi.org/project/duh-cli/)
-[![Tests](https://img.shields.io/badge/tests-4471%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-5665%20passing-brightgreen)]()
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)]()
 [![Security](https://img.shields.io/badge/security-ADR--053%20%2B%20ADR--054-blueviolet)]()
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)]()
@@ -89,7 +89,7 @@ Provider and model auto-detect: give `--model gpt-5.2-codex` and D.U.H. will rou
 
 ## Slash commands (REPL)
 
-`/help` `/model` `/connect` `/models` `/cost` `/status` `/context` `/changes` `/git` `/tasks` `/brief` `/search` `/template` `/plan` `/pr` `/undo` `/jobs` `/health` `/clear` `/compact` `/snapshot` `/exit`
+`/help` `/model` `/connect` `/models` `/cost` `/status` `/context` `/changes` `/git` `/tasks` `/brief` `/search` `/template` `/plan` `/pr` `/undo` `/jobs` `/health` `/errors` `/clear` `/compact` `/snapshot` `/exit`
 
 Run `/help` in the REPL for the full description of each command. Highlights: `/connect openai` runs the ChatGPT OAuth flow; `/snapshot` takes a ghost filesystem snapshot you can `apply` or `discard`; `/plan` switches to design-first two-phase execution; `/pr list|view|diff|checks` integrates with `gh`.
 
@@ -130,7 +130,7 @@ MCP servers connect via four transports: **stdio** (via the `mcp` SDK), **SSE**,
 
 ## Tests and coverage
 
-**4160 tests, 100% line coverage**, ~28s on a laptop. Includes 330+ security-specific tests (unit, integration, property-based), CVE replay fixtures, and performance regression gates. CI runs on GitHub Actions with a `--cov-fail-under=85` floor (current actual: 100%).
+**5665 tests, 100% line coverage**, ~55s on a laptop. Includes 330+ security-specific tests (unit, integration, property-based), CVE replay fixtures, and performance regression gates. CI runs on GitHub Actions with a `--cov-fail-under=85` floor (current actual: 100%).
 
 ```bash
 .venv/bin/python -m pytest tests/                         # full suite

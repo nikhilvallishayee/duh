@@ -138,6 +138,14 @@ class Engine:
         self._cache_tracker = CacheTracker()
         self._compact_stats = CompactStats()
 
+        # Incremental token tracking (PERF-1): avoid O(N×M) re-scan every turn.
+        # Messages are immutable once appended, so their token count is cached
+        # by message id. Only compaction (which replaces the message list)
+        # needs to invalidate the cache.
+        self._msg_token_cache: dict[str, int] = {}
+        self._cached_token_total: int = 0
+        self._cache_model: str = ""  # model the cache was built for
+
         # SESSION_START: refuse sessions where all three trifecta capabilities
         # are simultaneously present without explicit acknowledgement.
         _caps = compute_session_capabilities(self._config.tools)
@@ -285,13 +293,79 @@ class Engine:
         return self._adaptive_compactor
 
     def _estimate_messages_tokens(self, model: str) -> int:
-        """Estimate total tokens for all current messages using model calibration."""
+        """Estimate total tokens for all current messages using model calibration.
+
+        Uses the incremental cache when the model matches; falls back to a
+        full scan (and rebuilds the cache) otherwise.
+        """
+        if model == self._cache_model and self._msg_token_cache:
+            # Validate the cache covers exactly the current message list.
+            # Fast path: if every message id is cached, return the running total.
+            if all(
+                (m.id if isinstance(m, Message) else id(m)) in self._msg_token_cache
+                for m in self._messages
+            ):
+                return self._cached_token_total
+        # Cache miss or model changed — full rebuild.
+        self._rebuild_token_cache(model)
+        return self._cached_token_total
+
+    def _token_count_for_message(self, msg: Message, model: str) -> int:
+        """Return token count for a single message, using cache if available."""
+        key = msg.id if isinstance(msg, Message) else id(msg)
+        if model == self._cache_model and key in self._msg_token_cache:
+            return self._msg_token_cache[key]
+        text = msg.text if isinstance(msg, Message) else str(msg)
+        tokens = count_tokens_for_model(text, model)
+        # Only store if model matches the current cache model
+        if model == self._cache_model:
+            self._msg_token_cache[key] = tokens
+            self._cached_token_total += tokens
+        return tokens
+
+    def _track_new_message(self, msg: Message, model: str) -> int:
+        """Compute tokens for a newly appended message and add to running total.
+
+        Call this right after appending a message to self._messages.
+        Returns the token count for the message.
+        """
+        if model != self._cache_model:
+            # Model changed — rebuild everything
+            self._rebuild_token_cache(model)
+            key = msg.id if isinstance(msg, Message) else id(msg)
+            return self._msg_token_cache.get(key, 0)
+        text = msg.text if isinstance(msg, Message) else str(msg)
+        tokens = count_tokens_for_model(text, model)
+        key = msg.id if isinstance(msg, Message) else id(msg)
+        self._msg_token_cache[key] = tokens
+        self._cached_token_total += tokens
+        return tokens
+
+    def _rebuild_token_cache(self, model: str) -> None:
+        """Full rebuild of the token cache from scratch.
+
+        Called on model change or after cache invalidation.
+        """
+        self._msg_token_cache.clear()
+        self._cache_model = model
         total = 0
         for m in self._messages:
-            total += count_tokens_for_model(
-                m.text if isinstance(m, Message) else str(m), model,
-            )
-        return total
+            key = m.id if isinstance(m, Message) else id(m)
+            text = m.text if isinstance(m, Message) else str(m)
+            tokens = count_tokens_for_model(text, model)
+            self._msg_token_cache[key] = tokens
+            total += tokens
+        self._cached_token_total = total
+
+    def _invalidate_token_cache(self) -> None:
+        """Invalidate the token cache after compaction replaces the message list.
+
+        The next call to _estimate_messages_tokens or _track_new_message will
+        trigger a full rebuild.
+        """
+        self._msg_token_cache.clear()
+        self._cached_token_total = 0
+        self._cache_model = ""
 
     async def _run_auto_memory(self, model: str) -> list[dict[str, str]]:
         """Run auto-memory extraction and store results (ADR-069 P1).
@@ -344,23 +418,24 @@ class Engine:
 
         # Estimate input tokens (all messages + system prompt sent to model)
         # Use model-calibrated chars/token ratio for better accuracy.
+        # PERF-1: Use incremental token cache — only compute tokens for the
+        # new user message; prior messages are already cached.
         effective_model_for_count = model or self._config.model
-        prompt_text = prompt if isinstance(prompt, str) else str(prompt)
         sys_text = (
             self._config.system_prompt
             if isinstance(self._config.system_prompt, str)
             else " ".join(self._config.system_prompt)
         )
+        # Ensure cache is initialized / matches current model
+        if self._cache_model != effective_model_for_count:
+            self._rebuild_token_cache(effective_model_for_count)
+        else:
+            # Track the newly appended user message incrementally
+            self._track_new_message(user_msg, effective_model_for_count)
         input_estimate = (
-            count_tokens_for_model(prompt_text, effective_model_for_count)
+            self._cached_token_total
             + count_tokens_for_model(sys_text, effective_model_for_count)
         )
-        # Include prior message context sent with this turn
-        for m in self._messages[:-1]:
-            input_estimate += count_tokens_for_model(
-                m.text if isinstance(m, Message) else str(m),
-                effective_model_for_count,
-            )
         self._total_input_tokens += input_estimate
         # Track per-turn: start with estimated input; output updated below after response
         _turn_input_tokens = input_estimate
@@ -421,6 +496,8 @@ class Engine:
             self._messages = await compact_fn(
                 self._messages, token_limit=threshold,
             )
+            # PERF-1: Invalidate token cache — compaction replaced the message list.
+            self._invalidate_token_cache()
             # ADR-061 Phase 3: suppress false cache-break after compaction
             self._cache_tracker.notify_compaction()
 
@@ -430,6 +507,8 @@ class Engine:
                 self._messages = await rebuild_post_compact_context(
                     self._messages, file_tracker,
                 )
+                # Invalidate again — rebuild may have replaced the list.
+                self._invalidate_token_cache()
 
             # ADR-058 Phase 4: Restore plan and skill context
             plan_ctx = restore_plan_context(self)
@@ -447,7 +526,8 @@ class Engine:
                     metadata={"subtype": "post_compact_skill_restore"},
                 ))
 
-            # ADR-058: Record compact analytics
+            # ADR-058: Record compact analytics — _estimate_messages_tokens
+            # will rebuild the cache from the compacted message list.
             tokens_after = self._estimate_messages_tokens(effective_model)
             self._compact_stats.record(
                 "auto", tokens_freed=max(0, tokens_before - tokens_after),
@@ -469,12 +549,9 @@ class Engine:
         # Only blocks if context is still over 95% after all compaction attempts.
         gate_limit = get_context_limit(model or self._config.model)
         gate = ContextGate(gate_limit)
-        post_compact_estimate = sum(
-            count_tokens_for_model(
-                m.text if isinstance(m, Message) else str(m),
-                model or self._config.model,
-            )
-            for m in self._messages
+        # PERF-1: Use cached total instead of full-scan sum.
+        post_compact_estimate = self._estimate_messages_tokens(
+            model or self._config.model,
         )
         allowed, reason = gate.check(post_compact_estimate)
         if not allowed:
@@ -517,6 +594,8 @@ class Engine:
                     msg = event.get("message")
                     if isinstance(msg, Message):
                         self._messages.append(msg)
+                        # PERF-1: Track new message in incremental token cache.
+                        self._track_new_message(msg, effective_model)
                         usage = msg.metadata.get("usage", {}) if msg.metadata else {}
                         real_input = usage.get("input_tokens", 0)
                         real_output = usage.get("output_tokens", 0)
@@ -547,6 +626,8 @@ class Engine:
                     msg = event.get("message")
                     if isinstance(msg, Message):
                         self._messages.append(msg)
+                        # PERF-1: Track tool_result message in incremental token cache.
+                        self._track_new_message(msg, effective_model)
                     continue  # internal event — don't yield to caller
 
                 # Structured logging for tool & error events
@@ -654,6 +735,8 @@ class Engine:
                 self._messages = await compact_fn(
                     self._messages, token_limit=target,
                 )
+                # PERF-1: Invalidate token cache — compaction replaced the message list.
+                self._invalidate_token_cache()
                 # ADR-061 Phase 3: suppress false cache-break after PTL compaction
                 self._cache_tracker.notify_compaction()
 
@@ -663,6 +746,8 @@ class Engine:
                     self._messages = await rebuild_post_compact_context(
                         self._messages, file_tracker,
                     )
+                    # Invalidate again — rebuild may have replaced the list.
+                    self._invalidate_token_cache()
 
                 # ADR-058 Phase 4: Restore plan and skill context (PTL path)
                 plan_ctx = restore_plan_context(self)
@@ -680,7 +765,7 @@ class Engine:
                         metadata={"subtype": "post_compact_skill_restore"},
                     ))
 
-                # ADR-058: Record compact analytics (PTL path)
+                # ADR-058: Record compact analytics (PTL path) — will rebuild cache.
                 tokens_after_ptl = self._estimate_messages_tokens(effective_model)
                 self._compact_stats.record(
                     "ptl_retry", tokens_freed=max(0, tokens_before_ptl - tokens_after_ptl),
@@ -723,6 +808,8 @@ class Engine:
                     msg = event.get("message")
                     if isinstance(msg, Message):
                         self._messages.append(msg)
+                        # PERF-1: Track in incremental cache (fallback model).
+                        self._track_new_message(msg, fallback_model or effective_model)
                         usage = msg.metadata.get("usage", {}) if msg.metadata else {}
                         real_output = usage.get("output_tokens", 0)
                         out_tokens = real_output if real_output > 0 else count_tokens_for_model(
@@ -736,6 +823,8 @@ class Engine:
                     msg = event.get("message")
                     if isinstance(msg, Message):
                         self._messages.append(msg)
+                        # PERF-1: Track in incremental cache (fallback model).
+                        self._track_new_message(msg, fallback_model or effective_model)
                     continue  # internal event — don't yield to caller
 
                 yield event

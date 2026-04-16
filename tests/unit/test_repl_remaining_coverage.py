@@ -628,12 +628,20 @@ class TestReplMcpExceptionPath:
 
 
 class TestRichImportFallback:
-    """Cover lines 91-92 — fallback when rich is not installed."""
+    """Fallback when rich is not installed.
+
+    The rich-optional import now lives in ``duh.cli.repl_renderers`` (issue #26
+    extraction). ``duh.cli.repl`` re-exports the resulting ``HAS_RICH`` flag as
+    ``_HAS_RICH`` for backward compatibility, so both modules must be reloaded
+    with ``rich`` blocked to exercise the fallback path.
+    """
 
     def test_reimport_with_rich_blocked(self):
         import builtins
         import importlib
         import sys as _sys
+
+        import duh.cli as _duh_cli
 
         real_import = builtins.__import__
 
@@ -642,27 +650,45 @@ class TestRichImportFallback:
                 raise ImportError("simulated: no rich")
             return real_import(name, *args, **kwargs)
 
-        # Temporarily remove rich from sys.modules so re-import runs
-        saved = {k: v for k, v in _sys.modules.items() if k == "rich" or k.startswith("rich.")}
+        # Temporarily remove rich from sys.modules so re-import runs.
+        saved = {
+            k: v
+            for k, v in _sys.modules.items()
+            if k == "rich" or k.startswith("rich.")
+        }
         for k in list(saved.keys()):
             del _sys.modules[k]
 
-        # Also drop duh.cli.repl so a fresh import runs the top-level try/except
+        # Drop both modules so a fresh import runs their top-level try/except.
         saved_repl = _sys.modules.pop("duh.cli.repl", None)
+        saved_renderers = _sys.modules.pop("duh.cli.repl_renderers", None)
+        saved_repl_attr = getattr(_duh_cli, "repl", None)
+        saved_renderers_attr = getattr(_duh_cli, "repl_renderers", None)
 
         try:
             with patch("builtins.__import__", side_effect=blocker):
+                import duh.cli.repl_renderers  # noqa: F401
                 import duh.cli.repl  # noqa: F401
-            # After the fresh import with rich blocked, _HAS_RICH must be False
-            reloaded = _sys.modules["duh.cli.repl"]
-            assert reloaded._HAS_RICH is False
+            reloaded_renderers = _sys.modules["duh.cli.repl_renderers"]
+            reloaded_repl = _sys.modules["duh.cli.repl"]
+            # Without rich, both the canonical flag and its legacy alias go
+            # False.
+            assert reloaded_renderers.HAS_RICH is False
+            assert reloaded_repl._HAS_RICH is False
         finally:
-            # Restore original modules so other tests still see rich
+            # Restore modules in sys.modules AND on the package object so
+            # ``from duh.cli import repl`` in later tests returns the original.
             _sys.modules.update(saved)
+            if saved_renderers is not None:
+                _sys.modules["duh.cli.repl_renderers"] = saved_renderers
             if saved_repl is not None:
                 _sys.modules["duh.cli.repl"] = saved_repl
             else:
                 importlib.reload(_sys.modules["duh.cli.repl"])
+            if saved_renderers_attr is not None:
+                _duh_cli.repl_renderers = saved_renderers_attr
+            if saved_repl_attr is not None:
+                _duh_cli.repl = saved_repl_attr
 
 
 class TestRichRendererMarkdownFlush:

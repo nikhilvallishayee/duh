@@ -79,6 +79,54 @@ def _short_name(model: str) -> str:
     return model
 
 
+def _format_expiry_delta(expires_at_ms: int, now_ms: int) -> str:
+    """Render a human-friendly ``Xh Ym``/``Xm``/``expired`` string.
+
+    ``expires_at_ms`` and ``now_ms`` are Unix epoch milliseconds.  Used by
+    ``/health`` to surface ChatGPT OAuth token freshness alongside the
+    provider reachability check.
+    """
+    remaining_s = (expires_at_ms - now_ms) // 1000
+    if remaining_s <= 0:
+        return "expired"
+    hours, rem = divmod(remaining_s, 3600)
+    minutes = rem // 60
+    if hours >= 24:
+        days, extra_h = divmod(hours, 24)
+        return f"{days}d {extra_h}h"
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m"
+    return f"{remaining_s}s"
+
+
+def _chatgpt_oauth_status_line() -> str:
+    """Return a ``ChatGPT OAuth: ...`` status line, or ``""`` if absent.
+
+    Loads the stored OAuth blob without triggering a network refresh — we
+    only want to describe what's currently on disk for the ``/health`` view.
+    """
+    import time
+
+    from duh.auth.openai_chatgpt import _load_oauth
+
+    oauth = _load_oauth()
+    if not oauth:
+        return ""
+    access = oauth.get("access_token", "")
+    if not access:
+        return ""
+    expires_at = int(oauth.get("expires_at_ms", 0) or 0)
+    if expires_at <= 0:
+        return "ChatGPT OAuth: ✓ token valid (no expiry recorded)"
+    now_ms = int(time.time() * 1000)
+    delta = _format_expiry_delta(expires_at, now_ms)
+    if delta == "expired":
+        return "ChatGPT OAuth: ✗ token expired (refresh on next call)"
+    return f"ChatGPT OAuth: ✓ token valid for {delta}"
+
+
 def _format_cost_delta_warning(current: str, target: str) -> str:
     """Return a one-line warning when switching to a much pricier model.
 
@@ -537,6 +585,11 @@ class SlashDispatcher:
                 disabled.append(pname)
             sys.stdout.write(f"    {pname:12s} {status}\n")
 
+        # QX: show ChatGPT OAuth token expiry when available.
+        oauth_line = _chatgpt_oauth_status_line()
+        if oauth_line:
+            sys.stdout.write(f"    {oauth_line}\n")
+
         mcp_executor = self.ctx.mcp_executor
         if mcp_executor is not None:
             connections = getattr(mcp_executor, "_connections", {})
@@ -557,6 +610,43 @@ class SlashDispatcher:
             sys.stdout.write(f"  Unhealthy: {', '.join(disabled)}\n")
         else:
             sys.stdout.write("  All checks passed.\n")
+        return True, model
+
+    def _handle_errors(self, arg: str) -> _HandlerResult:
+        """Show the last N errors recorded in the current session.
+
+        Usage: ``/errors`` (last 10) or ``/errors <N>`` (last N).
+        Errors are pulled from the engine's in-session error buffer, which
+        is populated by the turn loop whenever an ``event.type == "error"``
+        is observed or a tool call comes back with ``is_error=True``.
+        """
+        model = self.ctx.model
+        limit = 10
+        raw = arg.strip()
+        if raw:
+            try:
+                limit = max(1, int(raw))
+            except ValueError:
+                sys.stdout.write("  Usage: /errors [N]\n")
+                return True, model
+
+        errors: list[dict[str, Any]] = list(
+            getattr(self.ctx.engine, "_session_errors", []) or []
+        )
+        if not errors:
+            sys.stdout.write("  No errors recorded in this session.\n")
+            return True, model
+
+        shown = errors[-limit:]
+        sys.stdout.write(f"  Last {len(shown)} error(s):\n")
+        for entry in shown:
+            ts = entry.get("timestamp", "?")
+            ctx_s = entry.get("context", "")
+            msg = entry.get("message", "")
+            prefix = f"    {ts}"
+            if ctx_s:
+                prefix += f"  [{ctx_s}]"
+            sys.stdout.write(f"{prefix}  {msg}\n")
         return True, model
 
     def _handle_audit(self, arg: str) -> _HandlerResult:
@@ -785,6 +875,7 @@ SlashDispatcher._HANDLERS = {
     "/pr": SlashDispatcher._handle_pr,
     "/undo": SlashDispatcher._handle_undo,
     "/health": SlashDispatcher._handle_health,
+    "/errors": SlashDispatcher._handle_errors,
     "/audit": SlashDispatcher._handle_audit,
     "/clear": SlashDispatcher._handle_clear,
     "/compact": SlashDispatcher._handle_compact,

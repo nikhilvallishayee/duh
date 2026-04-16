@@ -145,7 +145,11 @@ DANGEROUS_PATTERNS: list[_DangerousPattern] = [
      "Piping wget output to sudo"),
 
     # -- Arbitrary code execution --
-    (re.compile(r"\beval\s+"),
+    # SEC-LOW-1: anchor eval to command-position only (start of string,
+    # or after a command separator / pipe / subshell opener). This avoids
+    # false positives on arguments like ``git commit -m "eval tests"`` or
+    # on prefixed identifiers like ``safe_eval`` / ``my_eval``.
+    (re.compile(r"(?:^|[;&|`(\n]|\$\()\s*\beval\s+"),
      "Arbitrary code execution via eval"),
     (re.compile(r"\bexec\s+[0-9]*[<>]"),
      "File descriptor manipulation via exec"),

@@ -156,6 +156,10 @@ class Engine:
         self._slog = structured_logger
         if self._slog:
             self._slog.session_id = self._session_id
+        # QX: bounded in-session error buffer used by the ``/errors`` slash
+        # command.  Populated by ``_record_session_error`` as error events
+        # flow through ``_slog_event``.
+        self._session_errors: list[dict[str, Any]] = []
         self._confirmation_minter = ConfirmationMinter(session_key=os.urandom(32))
         self._cache_tracker = CacheTracker()
         self._compact_stats = CompactStats()
@@ -608,9 +612,17 @@ class Engine:
 
     def _slog_event(self, event: dict[str, Any]) -> None:
         """Forward tool/error events to the structured logger when present."""
+        event_type = event.get("type", "")
+        # QX: always mirror error-shaped events into the in-session buffer
+        # that ``/errors`` reads from, regardless of whether a structured
+        # logger is configured.
+        if event_type == "error" or (
+            event_type == "tool_result" and event.get("is_error", False)
+        ):
+            self._record_session_error(event)
+
         if not self._slog:
             return
-        event_type = event.get("type", "")
         if event_type == "tool_use":
             self._slog.tool_call(
                 name=event.get("name", ""),
@@ -624,6 +636,38 @@ class Engine:
             )
         elif event_type == "error":
             self._slog.error(error=event.get("error", ""))
+
+    def _record_session_error(self, event: dict[str, Any]) -> None:
+        """Append one entry to the in-session error buffer.
+
+        Bounded to the last 100 entries so the buffer can't grow without
+        limit on a long-running REPL session.  Each entry records an ISO-8601
+        UTC timestamp, a short context tag, and a human-readable message.
+        """
+        from datetime import datetime, timezone
+
+        if not hasattr(self, "_session_errors"):
+            self._session_errors: list[dict[str, Any]] = []
+
+        event_type = event.get("type", "")
+        if event_type == "error":
+            context = "error"
+            message = str(event.get("error", "") or "(unknown error)")
+        else:
+            context = f"tool:{event.get('name', '?')}"
+            message = str(event.get("output", "") or "(tool error)")
+
+        self._session_errors.append(
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "context": context,
+                "message": message[:500],
+                "turn": self._turn_count,
+            }
+        )
+        # Cap to the last 100 entries.
+        if len(self._session_errors) > 100:
+            del self._session_errors[: len(self._session_errors) - 100]
 
     async def _on_done(
         self,
@@ -822,8 +866,12 @@ class Engine:
         ptl_retries = 0
         while True:
             state.ptl_detected = False
+            # PERF-12: query() makes its own defensive copy of messages
+            # before appending tool turns, so we pass self._messages
+            # directly rather than building a redundant shallow copy
+            # that is immediately discarded.
             query_iter = query(
-                messages=list(self._messages),
+                messages=self._messages,
                 system_prompt=self._config.system_prompt,
                 deps=self._deps,
                 tools=self._config.tools,

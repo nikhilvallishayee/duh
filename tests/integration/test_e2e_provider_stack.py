@@ -781,6 +781,9 @@ class TestMCPTransportFactoryE2E:
         executor = MCPExecutor({"srv": cfg})
         info = MCPToolInfo(name="ping", server_name="srv")
         executor._tool_index["mcp__srv__ping"] = info
+        # PERF-14: also seed the per-server index so the circuit-breaker
+        # teardown (_mark_degraded) can find the tool via O(k) lookup.
+        executor._server_tools.setdefault("srv", set()).add("mcp__srv__ping")
 
         class _FailSession:
             async def call_tool(self, name, arguments=None):

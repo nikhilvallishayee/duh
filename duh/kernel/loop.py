@@ -503,8 +503,12 @@ async def query(
     }
 
     try:
-        grace_messages = list(current_messages)
-        grace_messages.append(Message(
+        # PERF-12: ``current_messages`` is not used after this grace turn
+        # (we yield ``done`` immediately below and the function returns),
+        # so we can append the summarization prompt in place rather than
+        # taking a full shallow copy of the message list just to add one
+        # element.
+        current_messages.append(Message(
             role="user",
             content=(
                 f"You've reached the {max_turns}-turn limit. "
@@ -513,7 +517,7 @@ async def query(
             ),
         ))
         async for event in deps.call_model(
-            messages=grace_messages,
+            messages=current_messages,
             model=model,
             system_prompt=system_prompt,
             tools=[],  # no tools — text only

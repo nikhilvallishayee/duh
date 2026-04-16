@@ -8,13 +8,17 @@ import time
 from dataclasses import dataclass, field
 from importlib import metadata as importlib_metadata
 from pathlib import Path
-from typing import Iterable, Literal
+from typing import Callable, Iterable, Literal
 
 from duh.security.config import ScannerConfig, SecurityPolicy
 from duh.security.finding import Finding
 from duh.security.scanners import Scanner
 
 ENTRY_POINT_GROUP = "duh.security.scanners"
+
+# QX: callback signature for per-scanner progress notifications.
+# Invoked once per scanner completion with ``(scanner_name, current, total)``.
+ProgressCallback = Callable[[str, int, int], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,18 +93,41 @@ class Runner:
         *,
         scanners: Iterable[str],
         changed_files: list[Path] | None = None,
+        progress: ProgressCallback | None = None,
     ) -> list[ScannerResult]:
+        """Run all *scanners* concurrently against *target*.
+
+        ``progress``, when supplied, is invoked once per scanner the moment
+        it finishes with ``(scanner_name, completed_so_far, total)``.  The
+        CLI uses this to draw a live ``Scanning [3/13] bash_ast...`` line
+        on stderr when the user is interactive.  The callback must be
+        non-blocking — errors are swallowed so a broken progress hook can't
+        bring down the scan itself.
+        """
         names = list(scanners)
         if not names:
             return []
 
         semaphore = asyncio.Semaphore(self._max_parallel)
+        total = len(names)
+        completed = 0
+        lock = asyncio.Lock()
 
         async def _bounded(name: str) -> ScannerResult:
+            nonlocal completed
             scanner = self._registry.get(name)
             cfg = self._policy.scanners.get(name, ScannerConfig())
             async with semaphore:
-                return await self._run_one(scanner, target, cfg, changed_files)
+                result = await self._run_one(scanner, target, cfg, changed_files)
+            if progress is not None:
+                async with lock:
+                    completed += 1
+                    try:
+                        progress(name, completed, total)
+                    except Exception:
+                        # Never let a broken progress hook abort a scan.
+                        pass
+            return result
 
         # gather preserves input order in its return list, even when
         # individual coroutines complete out of order.

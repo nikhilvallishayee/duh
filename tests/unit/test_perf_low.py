@@ -25,6 +25,8 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+_DUH_ROOT = Path(__file__).resolve().parent.parent.parent
 from types import ModuleType
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -102,7 +104,7 @@ class TestRecallFactsNoTempStrings:
         ``" ".join([...]).lower()`` inside the recall loop.
         """
         source = Path(
-            "/Users/nomind/Code/duh/duh/adapters/memory_store.py"
+            str(_DUH_ROOT / "duh" / "adapters/memory_store.py")
         ).read_text(encoding="utf-8")
         # No ``.lower()`` call inside a haystack construction — we use
         # ``.casefold()`` instead and we never build the combined string.
@@ -140,7 +142,7 @@ class TestNoRedundantMessageCopies:
         """engine.py source no longer wraps self._messages in list() before
         handing it to query()."""
         source = Path(
-            "/Users/nomind/Code/duh/duh/kernel/engine.py"
+            str(_DUH_ROOT / "duh" / "kernel/engine.py")
         ).read_text(encoding="utf-8")
 
         # The old redundant wrap was ``messages=list(self._messages),``.
@@ -150,7 +152,7 @@ class TestNoRedundantMessageCopies:
     def test_loop_grace_turn_does_not_copy_current_messages(self) -> None:
         """loop.py grace turn no longer takes ``grace_messages = list(...)``."""
         source = Path(
-            "/Users/nomind/Code/duh/duh/kernel/loop.py"
+            str(_DUH_ROOT / "duh" / "kernel/loop.py")
         ).read_text(encoding="utf-8")
         assert "grace_messages = list(current_messages)" not in source
 
@@ -197,7 +199,7 @@ class TestOpenAIChatGPTDedupSet:
 
     def test_source_declares_text_chunks_seen_set(self) -> None:
         source = Path(
-            "/Users/nomind/Code/duh/duh/adapters/openai_chatgpt.py"
+            str(_DUH_ROOT / "duh" / "adapters/openai_chatgpt.py")
         ).read_text(encoding="utf-8")
         # The set must be declared alongside the ordered list.
         assert "text_chunks_seen: set[str]" in source

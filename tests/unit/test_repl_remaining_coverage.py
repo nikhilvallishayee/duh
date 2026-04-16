@@ -574,31 +574,18 @@ class TestContextLimitZero:
 
 
 class TestCompactSuccess:
-    """Exercise the /compact success path (line 876)."""
+    """Exercise the /compact sentinel path."""
 
-    def test_compact_success_fresh_loop(self, capsys, monkeypatch):
-        import asyncio
+    def test_compact_returns_sentinel(self, capsys):
+        engine = _make_engine()
 
-        # Create a fresh event loop for run_until_complete to use
-        new_loop = asyncio.new_event_loop()
+        async def noop(messages):
+            return messages
 
-        original_get = asyncio.get_event_loop
-        monkeypatch.setattr(asyncio, "get_event_loop", lambda: new_loop)
-
-        try:
-            engine = _make_engine()
-
-            async def noop(messages):
-                return messages
-
-            deps = Deps(call_model=AsyncMock(), run_tool=AsyncMock(), compact=noop)
-            keep, _ = _handle_slash("/compact", engine, "m", deps)
-            assert keep is True
-            out = capsys.readouterr().out
-            assert "Compacted" in out or "Compact failed" in out
-        finally:
-            new_loop.close()
-            monkeypatch.setattr(asyncio, "get_event_loop", original_get)
+        deps = Deps(call_model=AsyncMock(), run_tool=AsyncMock(), compact=noop)
+        keep, model = _handle_slash("/compact", engine, "m", deps)
+        assert keep is True
+        assert model == "\x00compact\x00"
 
 
 class TestReplMcpExceptionPath:

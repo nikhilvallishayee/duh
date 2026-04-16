@@ -183,7 +183,7 @@ class TestWriteToolGitDirty:
         target = tmp_path / "out.txt"
         ctx = ToolContext(cwd=str(tmp_path))
 
-        with patch("duh.tools.write._run_git", return_value=" M out.txt"):
+        with patch("duh.tools.write._run_git_async", new_callable=AsyncMock, return_value=" M out.txt"):
             result = await WriteTool().call(
                 {"file_path": str(target), "content": "hello"},
                 ctx,
@@ -197,7 +197,7 @@ class TestWriteToolGitDirty:
         target = tmp_path / "out.txt"
         ctx = ToolContext(cwd=str(tmp_path))
 
-        with patch("duh.tools.write._run_git", return_value=None):
+        with patch("duh.tools.write._run_git_async", new_callable=AsyncMock, return_value=None):
             result = await WriteTool().call(
                 {"file_path": str(target), "content": "hello"},
                 ctx,
@@ -214,7 +214,7 @@ class TestEditToolGitDirty:
         target.write_text("old text here", encoding="utf-8")
         ctx = ToolContext(cwd=str(tmp_path))
 
-        with patch("duh.tools.edit._run_git", return_value=" M test.txt"):
+        with patch("duh.tools.edit._run_git_async", new_callable=AsyncMock, return_value=" M test.txt"):
             result = await EditTool().call(
                 {
                     "file_path": str(target),
@@ -234,7 +234,7 @@ class TestEditToolGitDirty:
         target.write_text("old text here", encoding="utf-8")
         ctx = ToolContext(cwd=str(tmp_path))
 
-        with patch("duh.tools.edit._run_git", return_value=None):
+        with patch("duh.tools.edit._run_git_async", new_callable=AsyncMock, return_value=None):
             result = await EditTool().call(
                 {
                     "file_path": str(target),

@@ -327,7 +327,7 @@ class TestSlashChangesWithGitDiff:
         executor.file_tracker = tracker
         executor._cwd = "/fake"
 
-        with patch.object(tracker, "diff_summary", return_value=" bar.py | 3 ++-"):
+        with patch.object(tracker, "diff_summary_sync", return_value=" bar.py | 3 ++-"):
             keep, _ = _handle_slash("/changes", engine, "m", deps, executor=executor)
 
         assert keep is True

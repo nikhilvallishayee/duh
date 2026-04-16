@@ -8,6 +8,7 @@ and formats it for injection into the system prompt.  Gracefully returns
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import subprocess
 from typing import Optional
@@ -16,7 +17,12 @@ logger = logging.getLogger(__name__)
 
 
 def _run_git(cmd: list[str], cwd: str) -> Optional[str]:
-    """Run a git command and return stripped stdout, or None on failure."""
+    """Run a git command synchronously and return stripped stdout, or None on failure.
+
+    .. deprecated::
+        Legacy synchronous helper.  Prefer :func:`_run_git_async` in async
+        code paths to avoid blocking the event loop.
+    """
     try:
         result = subprocess.run(
             ["git"] + cmd,
@@ -29,6 +35,40 @@ def _run_git(cmd: list[str], cwd: str) -> Optional[str]:
             return result.stdout.strip()
         return None
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+
+
+async def _run_git_async(
+    cmd: list[str], cwd: str, timeout: float = 5
+) -> Optional[str]:
+    """Run a git command asynchronously and return stripped stdout, or None on failure.
+
+    Uses ``asyncio.create_subprocess_exec`` so the event loop is never blocked.
+    Semantics match :func:`_run_git` — returns the stripped stdout string on
+    success (returncode 0) and ``None`` on any failure or timeout.
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
+        )
+        try:
+            stdout, _stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            return None
+        if proc.returncode == 0:
+            return stdout.decode("utf-8", errors="replace").strip()
+        return None
+    except (FileNotFoundError, OSError):
         return None
 
 

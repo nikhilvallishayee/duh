@@ -73,10 +73,10 @@ class TestReadTool:
 
         def _bad_stat(self, *a, **kw):
             # Only fail when called inside the file_size try/except block,
-            # not for exists() / is_file() earlier checks.
+            # not for resolve() / exists() / is_file() earlier checks.
             if self.name == "a.txt":
                 call_count["n"] += 1
-                if call_count["n"] >= 3:  # exists(), is_file(), then stat()
+                if call_count["n"] >= 4:  # resolve(), exists(), is_file(), then stat()
                     raise OSError("no stat")
             return real_stat(self, *a, **kw)
 

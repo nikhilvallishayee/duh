@@ -6,11 +6,12 @@ can see what changed at a glance.
     tracker = FileTracker()
     tracker.track("/foo/bar.py", "read")
     tracker.track("/foo/bar.py", "edit")
-    print(tracker.summary())
+    print(await tracker.diff_summary())
 """
 
 from __future__ import annotations
 
+import asyncio
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -114,40 +115,86 @@ class FileTracker:
 
         return "\n\n".join(sections)
 
-    def diff_summary(self, *, cwd: str = ".") -> str:
-        """Return git-style diff info for files that were written or edited.
-
-        Runs ``git diff`` for each modified file and collects the stat lines.
-        Files not under git control are listed as "untracked".
-        If git is unavailable the method falls back to a simple list.
-        """
-        modified_paths: list[str] = []
+    def _modified_paths(self) -> list[str]:
+        """Return deduplicated list of paths that were written or edited."""
         seen: set[str] = set()
+        paths: list[str] = []
         for op in self._ops:
             if op.operation in ("write", "edit") and op.path not in seen:
                 seen.add(op.path)
-                modified_paths.append(op.path)
+                paths.append(op.path)
+        return paths
 
+    async def diff_summary(self, *, cwd: str = ".") -> str:
+        """Return git-style diff info for files that were written or edited.
+
+        Runs a single batched ``git diff --stat -- file1 file2 ...`` command
+        using ``asyncio.create_subprocess_exec`` so the event loop is never
+        blocked.  Files not under git control are listed as "untracked".
+        If git is unavailable the method falls back to a simple list.
+        """
+        modified_paths = self._modified_paths()
         if not modified_paths:
             return "No files modified."
 
-        lines: list[str] = []
-        for path in modified_paths:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git", "diff", "--stat", "--", *modified_paths,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=cwd,
+            )
             try:
-                result = subprocess.run(
-                    ["git", "diff", "--stat", "--", path],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    cwd=cwd,
+                stdout, _stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=5
                 )
-                stat = result.stdout.strip()
-                if stat:
-                    lines.append(stat)
-                else:
-                    # Might be a new untracked file
-                    lines.append(f" {path} (new/untracked)")
-            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-                lines.append(f" {path} (git unavailable)")
+            except asyncio.TimeoutError:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+                return "\n".join(
+                    f" {p} (git timed out)" for p in modified_paths
+                )
+            stat = stdout.decode("utf-8", errors="replace").strip()
+            if stat:
+                return stat
+            # All files are new/untracked (git diff produces no output)
+            return "\n".join(
+                f" {p} (new/untracked)" for p in modified_paths
+            )
+        except (FileNotFoundError, OSError):
+            return "\n".join(
+                f" {p} (git unavailable)" for p in modified_paths
+            )
 
-        return "\n".join(lines)
+    def diff_summary_sync(self, *, cwd: str = ".") -> str:
+        """Synchronous fallback for ``diff_summary``.
+
+        .. deprecated::
+            Legacy synchronous helper.  Prefer the async :meth:`diff_summary`
+            to avoid blocking the event loop.  Uses a single batched
+            ``git diff --stat`` call (same as the async version).
+        """
+        modified_paths = self._modified_paths()
+        if not modified_paths:
+            return "No files modified."
+
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--stat", "--", *modified_paths],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=cwd,
+            )
+            stat = result.stdout.strip()
+            if stat:
+                return stat
+            return "\n".join(
+                f" {p} (new/untracked)" for p in modified_paths
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return "\n".join(
+                f" {p} (git unavailable)" for p in modified_paths
+            )

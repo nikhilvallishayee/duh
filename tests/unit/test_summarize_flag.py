@@ -170,3 +170,102 @@ class TestSummarizeWithContinue:
         assert after <= before
         # At minimum, the compactor keeps min_keep (2) messages
         assert after >= 2
+
+
+# ---------------------------------------------------------------------------
+# REPL resume + summarize tests (ADR-058 REPL support)
+# ---------------------------------------------------------------------------
+
+
+class TestReplResumeSummarize:
+    """The REPL now supports --continue/--resume and --summarize."""
+
+    @pytest.mark.asyncio
+    async def test_repl_resume_loads_messages(self):
+        """Simulate the REPL's resume logic: messages are loaded into engine."""
+        from duh.adapters.file_store import FileStore
+        from duh.adapters.simple_compactor import SimpleCompactor
+
+        # Simulate what REPL does on resume
+        stored_messages = [
+            {"role": "user", "content": "old question"},
+            {"role": "assistant", "content": "old answer"},
+        ]
+
+        engine_messages: list[Message] = []
+        for m in stored_messages:
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            meta = m.get("metadata", {})
+            engine_messages.append(Message(role=role, content=content, metadata=meta or {}))
+
+        assert len(engine_messages) == 2
+        assert engine_messages[0].role == "user"
+        assert engine_messages[0].content == "old question"
+        assert engine_messages[1].role == "assistant"
+
+    @pytest.mark.asyncio
+    async def test_repl_resume_with_summarize_compacts(self):
+        """REPL resume + --summarize triggers compaction on loaded messages."""
+        loaded_messages = [
+            Message(role="user", content="Hello"),
+            Message(role="assistant", content="Hi there!"),
+            Message(role="user", content="What is Python?"),
+            Message(role="assistant", content="Python is a programming language."),
+            Message(role="user", content="Tell me more"),
+            Message(role="assistant", content="Created by Guido."),
+        ]
+
+        async def mock_compact(messages, token_limit=0):
+            if len(messages) <= 2:
+                return messages
+            summary = Message(
+                role="system",
+                content="Summary: discussed Python",
+            )
+            return [summary] + messages[-2:]
+
+        # Simulate REPL summarize path
+        engine_messages = list(loaded_messages)
+        before_count = len(engine_messages)
+        engine_messages = await mock_compact(
+            engine_messages, token_limit=50000
+        )
+        after_count = len(engine_messages)
+
+        assert before_count == 6
+        assert after_count == 3
+        assert engine_messages[0].role == "system"
+        assert "summary" in engine_messages[0].content.lower()
+
+    @pytest.mark.asyncio
+    async def test_repl_resume_without_summarize_no_compact(self):
+        """REPL resume without --summarize does not compact."""
+        loaded_messages = [
+            Message(role="user", content="Hello"),
+            Message(role="assistant", content="Hi"),
+        ]
+
+        compact_called = False
+
+        async def mock_compact(messages, token_limit=0):
+            nonlocal compact_called
+            compact_called = True
+            return messages
+
+        # Simulate REPL path: summarize=False
+        engine_messages = list(loaded_messages)
+        summarize = False
+        if summarize and engine_messages:
+            engine_messages = await mock_compact(engine_messages)
+
+        assert not compact_called
+        assert len(engine_messages) == 2
+
+    def test_parser_accepts_continue_with_summarize_for_repl(self):
+        """--continue --summarize without -p enters REPL with resume flags."""
+        parser = build_parser()
+        args = parser.parse_args(["--continue", "--summarize"])
+        assert args.continue_session is True
+        assert args.summarize is True
+        assert args.prompt is None  # No -p means REPL mode

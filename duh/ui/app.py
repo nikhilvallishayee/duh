@@ -37,6 +37,7 @@ from __future__ import annotations
 import asyncio
 import argparse
 import sys
+import time
 from typing import Any
 
 from textual import on, work
@@ -48,8 +49,12 @@ from textual.widgets import Button, Footer, Header, Input, Label, Static
 from duh.ui.styles import OutputStyle
 from duh.ui.theme import APP_CSS
 from duh.ui.logo import LOGO_COMPACT
+from duh.ui.file_tree import RecentFilesWidget
 from duh.ui.widgets import MessageWidget, ThinkingWidget, ToolCallWidget
 from duh.kernel.model_caps import model_context_block, rebuild_system_prompt
+
+# Tools whose input contains a file path we want to track.
+_FILE_TOOLS = frozenset({"Read", "Write", "Edit", "MultiEdit", "Glob", "Grep"})
 
 
 # ---------------------------------------------------------------------------
@@ -92,12 +97,14 @@ class DuhApp(App[int]):
         debug: bool = False,
         resumed_messages: list | None = None,
         cwd: str = "",
+        approval_label: str = "auto-approve",
     ) -> None:
         super().__init__()
         self._engine = engine
         self._model = model
         self._session_id = session_id
         self._debug = debug
+        self._approval_label = approval_label
         self._resumed_messages = resumed_messages or []
         self._cwd = cwd
         self._output_style: OutputStyle = OutputStyle.DEFAULT
@@ -115,6 +122,13 @@ class DuhApp(App[int]):
         self._active_thinking: ThinkingWidget | None = None
         self._active_tool: ToolCallWidget | None = None
 
+        # Progress indicators (ADR-067 P1): elapsed time per tool call
+        self._tool_start: float = 0.0
+
+        # Recent files sidebar (ADR-067 P2)
+        self._recent_files: list[str] = []
+        self._recent_files_widget: RecentFilesWidget | None = None
+
     # ---------------------------------------------------------------- compose
 
     def compose(self) -> ComposeResult:
@@ -130,12 +144,14 @@ class DuhApp(App[int]):
     # ----------------------------------------------------------------- sidebar
 
     def _make_sidebar(self) -> Vertical:
+        self._recent_files_widget = RecentFilesWidget(id="recent-files")
         sidebar = Vertical(
             Static(
                 "[bold magenta]D[/].U.[bold magenta]H[/].\n"
                 "[dim]Universal Harness[/]",
                 id="sidebar-logo",
             ),
+            self._recent_files_widget,
             id="sidebar",
         )
         return sidebar
@@ -178,6 +194,17 @@ class DuhApp(App[int]):
         else:
             sidebar.add_class("visible")
 
+    # ----------------------------------------------------------------- recent files
+
+    def _track_recent_file(self, path: str) -> None:
+        """Add *path* to the recent-files list (deduped, max 10)."""
+        if path in self._recent_files:
+            self._recent_files.remove(path)
+        self._recent_files.insert(0, path)
+        self._recent_files = self._recent_files[:10]
+        if self._recent_files_widget is not None:
+            self._recent_files_widget.set_files(self._recent_files)
+
     # ----------------------------------------------------------------- on_mount
 
     async def on_mount(self) -> None:
@@ -208,7 +235,7 @@ class DuhApp(App[int]):
             f"{project_line}"
             f"[dim]Model:[/] {self._model}  "
             f"[dim]Session:[/] {sid_short}  "
-            f"[dim]Permissions:[/] auto-approve\n"
+            f"[dim]Permissions:[/] {self._approval_label}\n"
             f"[dim]Type a message below. Ctrl+Q to quit. Ctrl+B for sidebar.[/]\n"
             f"[dim]Select text with mouse, Ctrl+C to copy.[/]"
         )
@@ -635,6 +662,27 @@ class DuhApp(App[int]):
                             classes="session-divider",
                         ))
 
+            elif sub == "gc":
+                from duh.kernel.memory_decay import gc_memories
+
+                max_facts = 200
+                if sub_arg:
+                    try:
+                        max_facts = int(sub_arg)
+                    except ValueError:
+                        await self._add_widget(Static(
+                            "[dim]Usage: /memory gc [max_facts][/]",
+                            classes="session-divider",
+                        ))
+                        return True
+                removed = gc_memories(mem_store, max_facts=max_facts)
+                remaining = len(mem_store.list_facts())
+                await self._add_widget(Static(
+                    f"[green]Memory GC:[/] removed {removed} stale fact(s), "
+                    f"{remaining} remaining.",
+                    classes="session-divider",
+                ))
+
             else:
                 await self._add_widget(Static(
                     "[bold]Usage:[/]\n"
@@ -642,7 +690,8 @@ class DuhApp(App[int]):
                     "  [cyan]/memory list[/]          — list all facts\n"
                     "  [cyan]/memory search <q>[/]    — search facts by keyword\n"
                     "  [cyan]/memory show <key>[/]    — show a specific fact\n"
-                    "  [cyan]/memory delete <key>[/]  — delete a fact\n",
+                    "  [cyan]/memory delete <key>[/]  — delete a fact\n"
+                    "  [cyan]/memory gc [max][/]      — garbage-collect stale facts\n",
                     classes="welcome-banner",
                 ))
 
@@ -699,13 +748,29 @@ class DuhApp(App[int]):
                     self._active_assistant = None
                     name = event.get("name", "?")
                     inp = event.get("input", {})
+                    self._tool_start = time.monotonic()
                     self._active_tool = await self._new_tool_widget(name, inp)
 
                 elif event_type == "tool_result":
                     if self._active_tool is not None:
+                        elapsed_ms = (time.monotonic() - self._tool_start) * 1000
                         output = str(event.get("output", ""))
                         is_error = bool(event.get("is_error"))
-                        self._active_tool.set_result(output, is_error)
+                        self._active_tool.set_result(
+                            output, is_error, elapsed_ms=elapsed_ms,
+                        )
+                        # Track file paths for recent-files sidebar (ADR-067 P2)
+                        tool_name = self._active_tool._tool_name
+                        if tool_name in _FILE_TOOLS:
+                            tool_input = self._active_tool._input
+                            path = (
+                                tool_input.get("file_path")
+                                or tool_input.get("path")
+                                or tool_input.get("pattern")
+                                or ""
+                            )
+                            if path:
+                                self._track_recent_file(path)
                         self._active_tool = None
 
                 elif event_type == "assistant":
@@ -915,12 +980,21 @@ def run_tui(args: argparse.Namespace) -> int:
     executor = NativeExecutor(tools=tools, cwd=cwd)
 
     # TUI mode: InteractiveApprover blocks on stdin (impossible in Textual).
-    # Default to AutoApprover; user can still restrict via --approval-mode.
+    # When --approval-mode full-auto is set, skip prompts entirely.
+    # When a tiered mode is set, use TieredApprover for rule-based gating.
+    # Otherwise use TUIApprover (ADR-066 P1) which shows a modal dialog.
+    # TUIApprover is wired after the DuhApp is constructed (it needs the app ref).
     approval_mode_str = getattr(args, "approval_mode", None)
-    if approval_mode_str:
-        approver: Any = TieredApprover(mode=ApprovalMode(approval_mode_str), cwd=cwd)
+    if approval_mode_str and approval_mode_str == "full-auto":
+        approver: Any = AutoApprover()
+        _approval_label = "full-auto"
+    elif approval_mode_str:
+        approver = TieredApprover(mode=ApprovalMode(approval_mode_str), cwd=cwd)
+        _approval_label = approval_mode_str
     else:
+        # Placeholder — replaced with TUIApprover after DuhApp is constructed
         approver = AutoApprover()
+        _approval_label = "interactive"
 
     compactor = SimpleCompactor()
     store = FileStore(cwd=cwd)
@@ -1040,7 +1114,20 @@ def run_tui(args: argparse.Namespace) -> int:
         debug=getattr(args, "debug", False),
         resumed_messages=_resumed_for_display,
         cwd=cwd,
+        approval_label=_approval_label,
     )
+
+    # ADR-066 P1: Wire TUIApprover now that we have the app instance.
+    # TUIApprover needs the app to push_screen_wait, so it can only be
+    # created after the DuhApp is instantiated.
+    if _approval_label == "interactive":
+        from duh.kernel.permission_cache import SessionPermissionCache
+        from duh.ui.tui_approver import TUIApprover
+
+        _tui_cache = SessionPermissionCache()
+        tui_approver = TUIApprover(app=app, permission_cache=_tui_cache)
+        deps.approve = tui_approver.check
+
     # Restore coordinator mode from CLI flag or session metadata (ADR-063)
     app._coordinator_mode = getattr(args, "coordinator", False)
     if not app._coordinator_mode and engine._messages:

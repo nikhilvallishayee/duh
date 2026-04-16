@@ -29,7 +29,11 @@ from duh.kernel.deps import Deps
 from duh.kernel.loop import query
 from duh.kernel.messages import Message, UserMessage
 from duh.kernel.context_gate import ContextGate
-from duh.kernel.post_compact import rebuild_post_compact_context
+from duh.kernel.post_compact import (
+    rebuild_post_compact_context,
+    restore_plan_context,
+    restore_skill_context,
+)
 from duh.kernel.tokens import (
     count_tokens,
     count_tokens_for_model,
@@ -97,6 +101,7 @@ class EngineConfig:
     max_cost: float | None = None
     cwd: str = "."
     trifecta_acknowledged: bool = False
+    auto_memory: bool = False
 
 
 class Engine:
@@ -288,6 +293,38 @@ class Engine:
             )
         return total
 
+    async def _run_auto_memory(self, model: str) -> list[dict[str, str]]:
+        """Run auto-memory extraction and store results (ADR-069 P1).
+
+        Returns the list of extracted facts (may be empty).
+        """
+        if self._deps.call_model is None:
+            return []
+        try:
+            from duh.kernel.auto_memory import extract_memories
+            from duh.adapters.memory_store import FileMemoryStore
+
+            extracted = await extract_memories(
+                self._messages,
+                self._deps.call_model,
+                model=model,
+            )
+            if extracted:
+                store = FileMemoryStore(cwd=self._config.cwd)
+                for fact in extracted:
+                    store.store_fact(
+                        key=fact["key"],
+                        value=fact["value"],
+                        tags=["auto-extracted"],
+                    )
+                logger.info(
+                    "Auto-memory: extracted %d fact(s)", len(extracted),
+                )
+            return extracted
+        except Exception:
+            logger.warning("Auto-memory extraction failed", exc_info=True)
+            return []
+
     async def run(
         self,
         prompt: str | list[Any],
@@ -393,6 +430,22 @@ class Engine:
                 self._messages = await rebuild_post_compact_context(
                     self._messages, file_tracker,
                 )
+
+            # ADR-058 Phase 4: Restore plan and skill context
+            plan_ctx = restore_plan_context(self)
+            if plan_ctx:
+                self._messages.append(Message(
+                    role="system",
+                    content=f"[Post-compaction plan restoration]\n{plan_ctx}",
+                    metadata={"subtype": "post_compact_plan_restore"},
+                ))
+            skill_ctx = restore_skill_context(self)
+            if skill_ctx:
+                self._messages.append(Message(
+                    role="system",
+                    content=f"[Post-compaction skill restoration]\n{skill_ctx}",
+                    metadata={"subtype": "post_compact_skill_restore"},
+                ))
 
             # ADR-058: Record compact analytics
             tokens_after = self._estimate_messages_tokens(effective_model)
@@ -568,6 +621,15 @@ class Engine:
                     except Exception:
                         logger.warning("Session auto-save failed; conversation history may be lost", exc_info=True)
 
+                # ADR-069 P1: Auto-memory extraction after each turn
+                if event_type == "done" and self._config.auto_memory:
+                    extracted = await self._run_auto_memory(effective_model)
+                    if extracted:
+                        yield {
+                            "type": "auto_memory",
+                            "facts": extracted,
+                        }
+
             if ptl_detected:
                 ptl_retries += 1
                 logger.info(
@@ -601,6 +663,22 @@ class Engine:
                     self._messages = await rebuild_post_compact_context(
                         self._messages, file_tracker,
                     )
+
+                # ADR-058 Phase 4: Restore plan and skill context (PTL path)
+                plan_ctx = restore_plan_context(self)
+                if plan_ctx:
+                    self._messages.append(Message(
+                        role="system",
+                        content=f"[Post-compaction plan restoration]\n{plan_ctx}",
+                        metadata={"subtype": "post_compact_plan_restore"},
+                    ))
+                skill_ctx = restore_skill_context(self)
+                if skill_ctx:
+                    self._messages.append(Message(
+                        role="system",
+                        content=f"[Post-compaction skill restoration]\n{skill_ctx}",
+                        metadata={"subtype": "post_compact_skill_restore"},
+                    ))
 
                 # ADR-058: Record compact analytics (PTL path)
                 tokens_after_ptl = self._estimate_messages_tokens(effective_model)

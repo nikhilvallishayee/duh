@@ -421,7 +421,7 @@ SLASH_COMMANDS = {
     "/compact-stats": "Show compaction analytics for this session",
     "/snapshot": "Ghost snapshot (/snapshot, /snapshot apply, /snapshot discard)",
     "/attach": "Attach a file to the next message (/attach path/to/file)",
-    "/memory": "Memory facts (/memory list|search <q>|show <key>|delete <key>)",
+    "/memory": "Memory facts (/memory list|search <q>|show <key>|delete <key>|gc)",
     "/sessions": "List sessions for this project",
     "/audit": "Show recent audit log entries (/audit [N])",
     "/exit": "Exit the REPL",
@@ -1145,6 +1145,24 @@ def _handle_slash(
                 else:
                     sys.stdout.write(f"  No fact with key '{sub_arg}'.\n")
 
+        elif sub == "gc":
+            from duh.kernel.memory_decay import gc_memories
+
+            # Parse optional max_facts from sub_arg
+            max_facts = 200
+            if sub_arg:
+                try:
+                    max_facts = int(sub_arg)
+                except ValueError:
+                    sys.stdout.write("  Usage: /memory gc [max_facts]\n")
+                    return True, model
+            removed = gc_memories(mem_store, max_facts=max_facts)
+            remaining = len(mem_store.list_facts())
+            sys.stdout.write(
+                f"  Memory GC: removed {removed} stale fact(s), "
+                f"{remaining} remaining.\n"
+            )
+
         else:
             sys.stdout.write(
                 "  Usage:\n"
@@ -1153,6 +1171,7 @@ def _handle_slash(
                 "    /memory search <q>   — search facts by keyword\n"
                 "    /memory show <key>   — show a specific fact\n"
                 "    /memory delete <key> — delete a fact\n"
+                "    /memory gc [max]     — garbage-collect stale facts\n"
             )
         return True, model
 
@@ -1511,6 +1530,52 @@ async def run_repl(args: argparse.Namespace) -> int:
 
     engine = Engine(deps=deps, config=engine_config, session_store=store,
                     structured_logger=structured_logger)
+
+    # --- Resume session if --continue or --resume (ADR-058) ---
+    should_resume = getattr(args, "continue_session", False) or getattr(args, "resume", None)
+    if should_resume:
+        try:
+            resume_id = getattr(args, "resume", None)
+            if resume_id:
+                prev = await store.load(resume_id)
+            else:
+                sessions = await store.list_sessions()
+                if sessions:
+                    latest = sorted(sessions, key=lambda s: s.get("modified", ""), reverse=True)[0]
+                    prev = await store.load(latest.get("session_id") or latest.get("id", ""))
+                else:
+                    prev = None
+            if prev:
+                for m in prev:
+                    role = m.get("role", "user") if isinstance(m, dict) else getattr(m, "role", "user")
+                    content = m.get("content", "") if isinstance(m, dict) else getattr(m, "content", "")
+                    meta = m.get("metadata", {}) if isinstance(m, dict) else getattr(m, "metadata", {})
+                    engine._messages.append(Message(role=role, content=content, metadata=meta or {}))
+                if debug:
+                    logger.debug("REPL resumed %d messages", len(prev))
+
+                # --- ADR-058: --summarize compacts on resume ---
+                if getattr(args, "summarize", False) and engine._messages:
+                    compact_fn = deps.compact
+                    if compact_fn:
+                        before_count = len(engine._messages)
+                        engine._messages = await compact_fn(
+                            engine._messages, token_limit=compactor.default_limit // 2
+                        )
+                        after_count = len(engine._messages)
+                        if debug:
+                            logger.debug(
+                                "REPL summarize: compacted %d -> %d messages",
+                                before_count, after_count,
+                            )
+            elif debug:
+                logger.debug("REPL: no session to resume")
+        except Exception as e:
+            logger.debug("REPL resume failed: %s", e)
+            if debug:
+                import traceback
+                traceback.print_exc(file=sys.stderr)
+
     _query_guard = QueryGuard()
     _plan_mode = PlanMode(engine)
 

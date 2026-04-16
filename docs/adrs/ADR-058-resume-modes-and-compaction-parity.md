@@ -140,6 +140,6 @@ duh -p "continue working" --continue --summarize  # SDK resume with summary
 
 ### Phase 4: Competitive-parity enhancements
 - [x] Time-based microcompact trigger (gap > 5 minutes)
-- [ ] Post-compact plan restoration
-- [ ] Post-compact skill/tool restoration
+- [x] Post-compact plan restoration
+- [x] Post-compact skill/tool restoration
 - [x] Compact analytics (token savings, frequency)

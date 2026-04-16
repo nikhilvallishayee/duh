@@ -1,4 +1,4 @@
-"""MCP transport implementations -- SSE, HTTP, WebSocket.
+"""MCP transport implementations -- SSE, HTTP, WebSocket, Streamable HTTP.
 
 The stdio transport lives in mcp_executor.py (via the ``mcp`` SDK).
 These transports handle remote MCP servers over HTTP-based protocols.
@@ -8,7 +8,8 @@ Each transport implements the Transport protocol:
     send(message) -> response
     disconnect()
 
-Requires the ``httpx`` package for SSE/HTTP and ``websockets`` for WS.
+Requires the ``httpx`` package for SSE/HTTP/Streamable-HTTP and
+``websockets`` for WS.
 """
 
 from __future__ import annotations
@@ -403,3 +404,171 @@ class WebSocketTransport:
                 future.cancel()
         self._pending.clear()
         logger.info("WebSocket transport disconnected: %s", self._url)
+
+
+# ---------------------------------------------------------------------------
+# Streamable HTTP Transport (MCP spec 2025-03-26)
+# ---------------------------------------------------------------------------
+
+
+class StreamableHTTPTransport:
+    """MCP transport over streamable HTTP (MCP spec ``streamable-http``).
+
+    The streamable HTTP transport from the MCP specification uses a single
+    HTTP endpoint for both requests and responses:
+
+    - **Requests**: HTTP POST with a JSON-RPC body.
+    - **Responses**: The server MAY respond with either:
+      - ``application/json`` -- a single JSON-RPC response.
+      - ``text/event-stream`` -- one or more JSON-RPC responses as
+        newline-delimited JSON lines (NDJSON / JSON Lines), allowing the
+        server to stream partial results or notifications before the
+        final response.
+
+    Configuration example::
+
+        {
+            "transport": "streamable-http",
+            "url": "http://localhost:8080/mcp"
+        }
+
+    The transport also tracks an optional ``Mcp-Session-Id`` header
+    returned by the server for session affinity.
+    """
+
+    def __init__(
+        self,
+        url: str,
+        headers: dict[str, str] | None = None,
+        timeout: float = 30.0,
+    ) -> None:
+        _require_httpx()
+        self._url = url.rstrip("/")
+        self._headers: dict[str, str] = headers or {}
+        self._timeout = timeout
+        self._connected = False
+        self._client: Any = None  # httpx.AsyncClient
+        self._session_id: str | None = None
+
+    @property
+    def connected(self) -> bool:
+        return self._connected
+
+    @property
+    def session_id(self) -> str | None:
+        """The ``Mcp-Session-Id`` returned by the server, if any."""
+        return self._session_id
+
+    async def connect(self) -> tuple[Any, Any]:
+        """Create the HTTP client.  No handshake -- the first POST
+        implicitly starts the session.
+
+        Returns (read_stream, write_stream) as asyncio.Queue objects
+        for compatibility with the Transport protocol.
+        """
+        self._client = httpx.AsyncClient(
+            headers=self._headers,
+            timeout=httpx.Timeout(self._timeout),
+        )
+        self._connected = True
+
+        read_stream: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        write_stream: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        logger.info("Streamable HTTP transport connected: %s", self._url)
+        return read_stream, write_stream
+
+    async def send(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Send a JSON-RPC request via POST and handle the response.
+
+        Handles both ``application/json`` (single response) and
+        ``text/event-stream`` (streaming JSON lines) content types.
+
+        For streaming responses, individual JSON lines are collected;
+        the *last* JSON-RPC response (the one with a matching ``id``)
+        is returned.  Intermediate lines without a matching ``id`` are
+        treated as notifications and logged.
+
+        Returns the parsed JSON-RPC response dict.
+        """
+        if not self._connected or self._client is None:
+            raise RuntimeError("Streamable HTTP transport not connected")
+
+        request_headers: dict[str, str] = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            **self._headers,
+        }
+        if self._session_id:
+            request_headers["Mcp-Session-Id"] = self._session_id
+
+        response = await self._client.post(
+            self._url,
+            json=message,
+            headers=request_headers,
+        )
+        response.raise_for_status()
+
+        # Capture session id from response if present
+        new_session_id = response.headers.get("mcp-session-id")
+        if new_session_id:
+            self._session_id = new_session_id
+
+        content_type = response.headers.get("content-type", "")
+
+        if "text/event-stream" in content_type:
+            return self._parse_streaming_response(response.text, message)
+        else:
+            # Standard JSON response
+            return response.json()
+
+    def _parse_streaming_response(
+        self,
+        body: str,
+        original_message: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Parse a streaming (NDJSON / JSON Lines) response body.
+
+        Each non-empty line is a JSON object.  Returns the last JSON-RPC
+        response whose ``id`` matches the request, or the very last
+        parsed object if no match is found.
+        """
+        request_id = original_message.get("id")
+        last_match: dict[str, Any] | None = None
+        last_parsed: dict[str, Any] | None = None
+
+        for line in body.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            # SSE-style "data:" prefix is also tolerated
+            if line.startswith("data:"):
+                line = line[len("data:"):].strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                logger.debug(
+                    "Streamable HTTP: skipping non-JSON line: %s", line[:120]
+                )
+                continue
+
+            last_parsed = obj
+            if request_id is not None and obj.get("id") == request_id:
+                last_match = obj
+
+        result = last_match or last_parsed
+        if result is None:
+            raise RuntimeError(
+                "Streamable HTTP: empty or unparseable streaming response"
+            )
+        return result
+
+    async def disconnect(self) -> None:
+        """Close the HTTP client and clear session state."""
+        self._connected = False
+        self._session_id = None
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+        logger.info("Streamable HTTP transport disconnected: %s", self._url)

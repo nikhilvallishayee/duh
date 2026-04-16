@@ -63,6 +63,14 @@ class HTTPTool:
     """Send an HTTP request and return the response."""
 
     name = "HTTP"
+
+    def __init__(
+        self,
+        *,
+        network_policy: "NetworkPolicy | None" = None,
+    ) -> None:
+        from duh.security.network_policy import NetworkPolicy  # noqa: F811
+        self._network_policy: NetworkPolicy | None = network_policy
     capabilities = Capability.NETWORK_EGRESS
     description = (
         "Send an HTTP request (GET/POST/PUT/DELETE/PATCH) and return the "
@@ -112,6 +120,12 @@ class HTTPTool:
         req_headers: dict[str, str] = input.get("headers") or {}
         body: str | None = input.get("body")
         timeout: int = input.get("timeout") or _DEFAULT_TIMEOUT
+
+        # Network policy check (before validation so we fail fast)
+        if self._network_policy is not None and url:
+            allowed, reason = self._network_policy.check(url)
+            if not allowed:
+                return ToolResult(output=reason, is_error=True)
 
         # -- validation --
         if not method:

@@ -31,6 +31,14 @@ class ReadTool:
     """Read a file and return its contents with line numbers."""
 
     name = "Read"
+
+    def __init__(
+        self,
+        *,
+        path_policy: "PathPolicy | None" = None,
+    ) -> None:
+        from duh.security.path_policy import PathPolicy  # noqa: F811
+        self._path_policy: PathPolicy | None = path_policy
     capabilities = Capability.READ_PRIVATE
     description = "Read a file from disk. Returns contents prefixed with line numbers."
     input_schema: dict[str, Any] = {
@@ -73,6 +81,13 @@ class ReadTool:
         path = Path(file_path)
         if not path.is_absolute():
             path = Path(context.cwd) / path
+
+        # Filesystem boundary check
+        if self._path_policy is not None:
+            allowed, reason = self._path_policy.check(str(path))
+            if not allowed:
+                return ToolResult(output=reason, is_error=True)
+
         if not path.exists():
             return ToolResult(
                 output=f"File not found: {file_path}", is_error=True

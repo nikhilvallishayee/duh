@@ -1,11 +1,14 @@
-"""Post-compact file state rebuild (ADR-058).
+"""Post-compact state rebuild (ADR-058).
 
 After compaction, re-read the most recently accessed files so the model
-retains file context.  The function appends file-content messages for
-each file that (a) still exists on disk and (b) fits within the
-per-file token budget.
+retains file context.  Also restores awareness of the active plan and
+any invoked skills so the model doesn't lose working context.
 
-    from duh.kernel.post_compact import rebuild_post_compact_context
+    from duh.kernel.post_compact import (
+        rebuild_post_compact_context,
+        restore_plan_context,
+        restore_skill_context,
+    )
 
     messages = await rebuild_post_compact_context(
         messages, file_tracker, max_files=5, max_tokens_per_file=5000,
@@ -115,3 +118,91 @@ async def rebuild_post_compact_context(
         )
 
     return result
+
+
+def restore_plan_context(engine: Any) -> str | None:
+    """If plan mode is active, return the plan content as a context string.
+
+    Inspects the engine for a ``_plan_mode`` attribute (set by the REPL
+    or TUI when plan mode is in use).  If a plan is currently proposed
+    or executing, returns a formatted string describing the plan and its
+    steps so the model retains awareness after compaction.
+
+    Args:
+        engine: An ``Engine`` instance (or any object that may carry
+            ``_plan_mode``).
+
+    Returns:
+        A context string if a plan is active, or ``None``.
+    """
+    plan_mode = getattr(engine, "_plan_mode", None)
+    if plan_mode is None:
+        return None
+
+    # Import locally to avoid circular imports
+    from duh.kernel.plan_mode import PlanState
+
+    state = getattr(plan_mode, "state", None)
+    if state is None or state in (PlanState.EMPTY, PlanState.DONE):
+        return None
+
+    # Build a summary of the active plan
+    description = getattr(plan_mode, "description", "") or ""
+    steps = getattr(plan_mode, "steps", []) or []
+
+    if not description and not steps:
+        return None
+
+    parts: list[str] = [f"Active plan: {description}"]
+    if steps:
+        parts.append(f"State: {state.name}")
+        for step in steps:
+            marker = "[x]" if step.done else "[ ]"
+            parts.append(f"  {marker} {step.number}. {step.description}")
+
+    return "\n".join(parts)
+
+
+def restore_skill_context(engine: Any) -> str | None:
+    """If skills were loaded, return their names and descriptions.
+
+    Inspects the engine's tool list (``engine._config.tools``) for a
+    ``SkillTool`` instance and returns a summary of all registered skills
+    so the model retains awareness of available skills after compaction.
+
+    Args:
+        engine: An ``Engine`` instance (or any object with
+            ``_config.tools``).
+
+    Returns:
+        A context string listing loaded skills, or ``None``.
+    """
+    config = getattr(engine, "_config", None)
+    if config is None:
+        return None
+
+    tools = getattr(config, "tools", None)
+    if not tools:
+        return None
+
+    # Find the SkillTool in the tools list
+    skill_tool = None
+    for tool in tools:
+        # Check by class name to avoid importing SkillTool (circular risk)
+        if type(tool).__name__ == "SkillTool":
+            skill_tool = tool
+            break
+
+    if skill_tool is None:
+        return None
+
+    skills = getattr(skill_tool, "skills", [])
+    if not skills:
+        return None
+
+    lines: list[str] = ["Loaded skills (invoke via the Skill tool):"]
+    for skill in skills:
+        hint = f" ({skill.argument_hint})" if skill.argument_hint else ""
+        lines.append(f"- {skill.name}: {skill.description}{hint}")
+
+    return "\n".join(lines)

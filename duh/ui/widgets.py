@@ -167,6 +167,7 @@ class ToolCallWidget(Widget):
         is_error: bool,
         style: str = "default",
         tool_name: str | None = None,
+        elapsed_ms: float | None = None,
     ) -> None:
         """Update the widget with the tool result.
 
@@ -185,37 +186,52 @@ class ToolCallWidget(Widget):
             Name of the tool that produced this result.  When the tool is
             ``"Edit"`` or ``"Write"`` and the output looks like a diff,
             lines are rendered with green/red coloring.
+        elapsed_ms:
+            Wall-clock milliseconds the tool call took.  When provided the
+            elapsed time is shown next to the status indicator, e.g.
+            ``"OK (1.2s)"`` or ``"Error (0.3s)"``.
         """
         self._running = False
         if self._result_label is None:
             return
 
         effective_name = tool_name or self._tool_name
+        time_suffix = _format_elapsed(elapsed_ms)
 
         if is_error:
             if style == "concise":
-                self._result_label.update("[red]ERR[/red]")
+                self._result_label.update(f"[red]ERR[/red]{time_suffix}")
             else:
                 limit = 300
                 preview = escape_markup(output[:limit]) if output else "(empty)"
-                self._result_label.update(f"[red]Error:[/red] {preview}")
+                self._result_label.update(f"[red]Error[/red]{time_suffix}: {preview}")
             self._result_label.remove_class("spinner-message")
             self._result_label.add_class("tool-result-error")
         else:
             # Check for diff-like output from Edit/Write tools
             if effective_name in ("Edit", "Write") and _looks_like_diff(output):
-                rendered = _render_diff(output)
+                rendered = _render_diff(output, time_suffix=time_suffix)
                 self._result_label.update(rendered)
             elif style == "concise":
-                self._result_label.update("[green]OK[/green]")
+                self._result_label.update(f"[green]OK[/green]{time_suffix}")
             elif style == "verbose":
                 preview = escape_markup(output[:1000]) if output else "(empty)"
-                self._result_label.update(f"[green]OK:[/green] {preview}")
+                self._result_label.update(f"[green]OK[/green]{time_suffix}: {preview}")
             else:
                 first_line = escape_markup(output.split("\n", 1)[0][:120]) if output else "(empty)"
-                self._result_label.update(f"[green]OK:[/green] {first_line}")
+                self._result_label.update(f"[green]OK[/green]{time_suffix}: {first_line}")
             self._result_label.remove_class("spinner-message")
             self._result_label.add_class("tool-result-ok")
+
+
+def _format_elapsed(elapsed_ms: float | None) -> str:
+    """Return a human-readable elapsed-time suffix like `` (1.2s)``."""
+    if elapsed_ms is None:
+        return ""
+    secs = elapsed_ms / 1000.0
+    if secs < 0.1:
+        return f" ({elapsed_ms:.0f}ms)"
+    return f" ({secs:.1f}s)"
 
 
 def _summarise_input(inp: dict[str, Any]) -> str:
@@ -246,7 +262,7 @@ def _looks_like_diff(text: str) -> bool:
     return False
 
 
-def _render_diff(text: str, max_lines: int = 60) -> str:
+def _render_diff(text: str, max_lines: int = 60, *, time_suffix: str = "") -> str:
     """Render a diff with Rich markup: green for additions, red for removals.
 
     Lines starting with ``+`` (but not ``+++``) are green.
@@ -255,7 +271,7 @@ def _render_diff(text: str, max_lines: int = 60) -> str:
     Everything else is left as-is.
     """
     lines = text.split("\n")[:max_lines]
-    rendered: list[str] = ["[green]OK:[/green] diff preview"]
+    rendered: list[str] = [f"[green]OK[/green]{time_suffix}: diff preview"]
     for line in lines:
         safe = escape_markup(line)
         stripped = line.lstrip()

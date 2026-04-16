@@ -74,7 +74,7 @@ class MCPServerConfig:
     command: str = ""
     args: list[str] = field(default_factory=list)
     env: dict[str, str] | None = None
-    transport: str = "stdio"  # stdio | sse | http | ws
+    transport: str = "stdio"  # stdio | sse | http | ws | streamable-http
     url: str = ""
     headers: dict[str, str] = field(default_factory=dict)
 
@@ -112,7 +112,12 @@ def _create_transport(config: MCPServerConfig) -> Any | None:
     if transport_type == "stdio":
         return None
 
-    from duh.adapters.mcp_transports import SSETransport, HTTPTransport, WebSocketTransport
+    from duh.adapters.mcp_transports import (
+        SSETransport,
+        HTTPTransport,
+        WebSocketTransport,
+        StreamableHTTPTransport,
+    )
 
     if transport_type == "sse":
         return SSETransport(
@@ -129,10 +134,15 @@ def _create_transport(config: MCPServerConfig) -> Any | None:
             url=config.url,
             headers=config.headers or {},
         )
+    elif transport_type == "streamable-http":
+        return StreamableHTTPTransport(
+            url=config.url,
+            headers=config.headers or {},
+        )
     else:
         raise ValueError(
             f"Unsupported MCP transport type: '{transport_type}'. "
-            f"Valid options: stdio, sse, http, ws"
+            f"Valid options: stdio, sse, http, ws, streamable-http"
         )
 
 
@@ -625,7 +635,7 @@ class MCPExecutor:
                         "command": "...",
                         "args": [...],
                         "env": {...},
-                        "transport": "stdio|sse|http|ws",
+                        "transport": "stdio|sse|http|ws|streamable-http",
                         "url": "http://...",
                         "headers": {...}
                     }

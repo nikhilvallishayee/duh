@@ -72,6 +72,14 @@ def main(argv: list[str] | None = None) -> int:
                 sys.stdout.write(f"  {ts}  {sid}  {tool:20s}  {status:7s}  {ms}ms\n")
         return 0
 
+    if args.command == "batch":
+        from duh.cli.batch import run_batch
+        try:
+            return asyncio.run(run_batch(args))
+        except KeyboardInterrupt:
+            sys.stderr.write("\nInterrupted.\n")
+            return 130
+
     if args.command == "review":
         from duh.cli.review import run_review
         try:

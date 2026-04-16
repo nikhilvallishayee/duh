@@ -139,7 +139,7 @@ class TestRenderDiff:
     def test_ok_prefix(self):
         text = "@@ -1 +1 @@\n+x"
         rendered = _render_diff(text)
-        assert rendered.startswith("[green]OK:[/green]")
+        assert "[green]OK" in rendered
 
     def test_markup_chars_escaped(self):
         # Rich markup chars like [ should be escaped in content

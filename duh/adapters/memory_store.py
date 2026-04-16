@@ -259,10 +259,13 @@ class FileMemoryStore:
         """Search facts by keyword. Matches against key, value, and tags.
 
         Returns up to *limit* results, newest first.
+        Also records access tracking (last_accessed, access_count) for
+        memory decay scoring (ADR-069 P2).
         """
         all_facts = self._read_all_facts()
         query_lower = query.lower()
         matched: list[dict[str, Any]] = []
+        matched_keys: set[str] = set()
         for fact in reversed(all_facts):  # newest first
             haystack = " ".join([
                 fact.get("key", ""),
@@ -271,9 +274,31 @@ class FileMemoryStore:
             ]).lower()
             if query_lower in haystack:
                 matched.append(fact)
+                matched_keys.add(fact.get("key", ""))
                 if len(matched) >= limit:
                     break
+
+        # Update access tracking for matched facts
+        if matched_keys:
+            self._record_access(all_facts, matched_keys)
+
         return matched
+
+    def _record_access(
+        self,
+        all_facts: list[dict[str, Any]],
+        accessed_keys: set[str],
+    ) -> None:
+        """Bump last_accessed and access_count for the given keys."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        changed = False
+        for fact in all_facts:
+            if fact.get("key", "") in accessed_keys:
+                fact["last_accessed"] = now_iso
+                fact["access_count"] = fact.get("access_count", 0) + 1
+                changed = True
+        if changed:
+            self._write_all_facts(all_facts)
 
     def list_facts(self) -> list[dict[str, Any]]:
         """Return all stored facts, oldest first."""

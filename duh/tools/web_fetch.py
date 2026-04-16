@@ -43,6 +43,14 @@ class WebFetchTool:
     """Fetch a URL and return the text content."""
 
     name = "WebFetch"
+
+    def __init__(
+        self,
+        *,
+        network_policy: "NetworkPolicy | None" = None,
+    ) -> None:
+        from duh.security.network_policy import NetworkPolicy  # noqa: F811
+        self._network_policy: NetworkPolicy | None = network_policy
     capabilities = Capability.NETWORK_EGRESS
     description = "Fetch a URL and return its text content with HTML tags stripped."
     input_schema: dict[str, Any] = {
@@ -74,6 +82,12 @@ class WebFetchTool:
 
         if not url:
             return ToolResult(output="url is required", is_error=True)
+
+        # Network policy check
+        if self._network_policy is not None:
+            allowed, reason = self._network_policy.check(url)
+            if not allowed:
+                return ToolResult(output=reason, is_error=True)
 
         # Basic URL validation
         if not url.startswith(("http://", "https://")):

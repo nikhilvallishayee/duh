@@ -132,6 +132,13 @@ def build_parser() -> argparse.ArgumentParser:
     review_parser.add_argument("--repo", type=str, default=None,
                                help="Repository (owner/repo). Default: auto-detect from git remote.")
 
+    batch_parser = subparsers.add_parser("batch", help="Process multiple prompts from a file")
+    batch_parser.add_argument("file", type=str, help="Path to file with one prompt per line")
+    batch_parser.add_argument("--model", type=str, default=None)
+    batch_parser.add_argument("--max-turns", type=int, default=10)
+    batch_parser.add_argument("--output-dir", type=str, default=None,
+                              help="Write results to files in this directory")
+
     bridge_parser = subparsers.add_parser("bridge", help="Start the remote bridge server.")
     bridge_sub = bridge_parser.add_subparsers(dest="bridge_command", required=True)
     start_parser = bridge_sub.add_parser("start", help="Start the WebSocket bridge server.")

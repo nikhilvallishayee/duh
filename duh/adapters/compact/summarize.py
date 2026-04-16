@@ -38,12 +38,14 @@ class SummarizeCompactor:
         min_keep: int = 2,
         file_tracker: Any = None,
         skill_context: str | None = None,
+        plan_context: str | None = None,
     ):
         self._call_model = call_model
         self._bytes_per_token = bytes_per_token
         self._min_keep = min_keep
         self._file_tracker = file_tracker
         self._skill_context = skill_context
+        self._plan_context = plan_context
 
     def estimate_tokens(self, messages: list[Any]) -> int:
         """Estimate token count for messages."""
@@ -132,6 +134,7 @@ class SummarizeCompactor:
             result,
             file_tracker=self._file_tracker,
             skill_context=self._skill_context,
+            plan_context=self._plan_context,
         )
 
         return result
@@ -209,9 +212,10 @@ def _restore_context(
     *,
     file_tracker: Any = None,
     skill_context: str | None = None,
+    plan_context: str | None = None,
     token_budget: int = POST_COMPACT_TOKEN_BUDGET,
 ) -> list[Any]:
-    """Re-inject recently accessed files and active skills after compaction."""
+    """Re-inject recently accessed files, active plan, and skills after compaction."""
     parts: list[str] = []
 
     if file_tracker is not None:
@@ -231,6 +235,9 @@ def _restore_context(
                 file_section = "Recently accessed files:\n"
                 file_section += "\n".join(f"- {p}" for p in recent_paths)
                 parts.append(file_section)
+
+    if plan_context and plan_context.strip():
+        parts.append(f"Active plan:\n{plan_context.strip()}")
 
     if skill_context and skill_context.strip():
         parts.append(f"Active context:\n{skill_context.strip()}")

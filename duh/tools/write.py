@@ -18,6 +18,14 @@ class WriteTool:
     """Write content to a file. Creates parent directories if they don't exist."""
 
     name = "Write"
+
+    def __init__(
+        self,
+        *,
+        path_policy: "PathPolicy | None" = None,
+    ) -> None:
+        from duh.security.path_policy import PathPolicy  # noqa: F811
+        self._path_policy: PathPolicy | None = path_policy
     capabilities = Capability.FS_WRITE
     description = "Write content to a file. Creates parent directories as needed."
     input_schema: dict[str, Any] = {
@@ -62,6 +70,12 @@ class WriteTool:
         path = Path(file_path)
         if not path.is_absolute():
             path = Path(context.cwd) / path
+
+        # Filesystem boundary check
+        if self._path_policy is not None:
+            allowed, reason = self._path_policy.check(str(path))
+            if not allowed:
+                return ToolResult(output=reason, is_error=True)
 
         # Permission checks before attempting write
         parent = path.parent

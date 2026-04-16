@@ -33,6 +33,14 @@ class EditTool:
     """Perform an exact string replacement in a file."""
 
     name = "Edit"
+
+    def __init__(
+        self,
+        *,
+        path_policy: "PathPolicy | None" = None,
+    ) -> None:
+        from duh.security.path_policy import PathPolicy  # noqa: F811
+        self._path_policy: PathPolicy | None = path_policy
     capabilities = Capability.FS_WRITE
     description = (
         "Replace an exact occurrence of old_string with new_string in a file. "
@@ -84,6 +92,13 @@ class EditTool:
         path = Path(file_path)
         if not path.is_absolute():
             path = Path(context.cwd) / path
+
+        # Filesystem boundary check
+        if self._path_policy is not None:
+            allowed, reason = self._path_policy.check(str(path))
+            if not allowed:
+                return ToolResult(output=reason, is_error=True)
+
         if not path.is_file():
             return ToolResult(
                 output=f"File not found: {file_path}", is_error=True

@@ -48,6 +48,7 @@ class Config:
     hooks: dict[str, Any] = field(default_factory=dict)
     mcp_servers: dict[str, Any] = field(default_factory=dict)
     trifecta_acknowledged: bool = False
+    auto_memory: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +113,8 @@ def _merge_into(config: Config, data: dict[str, Any]) -> None:
         config.hooks.update(data["hooks"])
     if "mcpServers" in data and isinstance(data["mcpServers"], dict):
         config.mcp_servers.update(data["mcpServers"])
+    if "auto_memory" in data:
+        config.auto_memory = bool(data["auto_memory"])
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +127,7 @@ _ENV_MAP: dict[str, str] = {
     "DUH_MAX_TURNS": "max_turns",
     "DUH_MAX_COST": "max_cost",
     "DUH_SYSTEM_PROMPT": "system_prompt",
+    "DUH_AUTO_MEMORY": "auto_memory",
 }
 
 

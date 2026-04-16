@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
+import socket
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -21,6 +24,76 @@ def _wrap_network_body(text: str) -> UntrustedStr:
 
 _MAX_CONTENT_BYTES = 100_000  # 100 KB
 _DEFAULT_TIMEOUT = 30  # seconds
+
+# Hostnames that cloud providers use for instance metadata services.
+_BLOCKED_METADATA_HOSTNAMES: frozenset[str] = frozenset({
+    "metadata.google.internal",
+    "metadata.gcp.internal",
+    "metadata",  # short alias sometimes used inside GCP
+})
+
+
+def _is_private_ip(addr: str) -> bool:
+    """Return True if *addr* is a private, loopback, link-local, or reserved IP.
+
+    Uses the ``ipaddress`` stdlib module which covers:
+    - Loopback: 127.0.0.0/8, ::1
+    - Private: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+    - Link-local: 169.254.0.0/16 (AWS metadata), fe80::/10
+    - Reserved: 0.0.0.0/8, and various IANA reserved blocks
+    """
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        # If we can't parse it, treat as suspicious and block.
+        return True
+
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified  # 0.0.0.0, ::
+    )
+
+
+def _validate_url_ssrf(url: str) -> None:
+    """Raise ``ValueError`` if *url* targets a private/internal address (SSRF protection).
+
+    Steps:
+    1. Parse the URL and extract the hostname.
+    2. Check hostname against known cloud metadata hostnames.
+    3. Resolve hostname to IP(s) via ``socket.getaddrinfo``.
+    4. Check every resolved IP against ``_is_private_ip``.
+    """
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+
+    if not hostname:
+        raise ValueError("URL has no hostname")
+
+    # Block cloud metadata hostnames directly (before DNS resolution).
+    if hostname in _BLOCKED_METADATA_HOSTNAMES:
+        raise ValueError(
+            f"SSRF blocked: hostname {hostname!r} is a cloud metadata endpoint"
+        )
+
+    # Resolve hostname to IP addresses.
+    try:
+        addrinfos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError(f"DNS resolution failed for {hostname!r}: {exc}") from exc
+
+    if not addrinfos:
+        raise ValueError(f"DNS resolution returned no results for {hostname!r}")
+
+    for family, _type, _proto, _canonname, sockaddr in addrinfos:
+        ip_str = sockaddr[0]
+        if _is_private_ip(ip_str):
+            raise ValueError(
+                f"SSRF blocked: {hostname!r} resolves to private/internal address {ip_str}"
+            )
 
 
 def _strip_html(html: str) -> str:
@@ -95,6 +168,12 @@ class WebFetchTool:
                 output=f"Invalid URL: must start with http:// or https://: {url}",
                 is_error=True,
             )
+
+        # SSRF protection — block private/internal IPs
+        try:
+            _validate_url_ssrf(url)
+        except ValueError as exc:
+            return ToolResult(output=str(exc), is_error=True)
 
         try:
             async with httpx.AsyncClient(

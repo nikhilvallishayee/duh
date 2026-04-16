@@ -82,6 +82,39 @@ def _interpret_error(error_text: str) -> str:
     return error_text
 
 
+# Per-provider env-var documentation surfaced to first-time users when no
+# provider can be detected.  Keep the labels short -- the error message is
+# already verbose.
+_PROVIDER_ENV_HELP: tuple[tuple[str, str], ...] = (
+    ("Anthropic", "ANTHROPIC_API_KEY=sk-ant-..."),
+    ("OpenAI",    "OPENAI_API_KEY=sk-..."),
+    ("Google",    "GEMINI_API_KEY=..."),
+    ("Ollama",    "(start a local server: ollama serve)"),
+)
+
+
+def _no_provider_message() -> str:
+    """Build the first-run-friendly 'No provider available' error text.
+
+    Includes:
+      * a `duh doctor` suggestion for first-time users,
+      * env-var names per provider,
+      * a link to the getting-started docs.
+    """
+    lines = [
+        "Error: No provider available.\n",
+        "  First time? Try `duh doctor` to diagnose your setup.\n",
+        "\n",
+        "  Set one of the following environment variables:\n",
+    ]
+    for label, hint in _PROVIDER_ENV_HELP:
+        lines.append(f"    {label:<10s} export {hint}\n")
+    lines.append(
+        "\n  Docs: https://nikhilvallishayee.github.io/duh/site/getting-started.html\n"
+    )
+    return "".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Print mode
 # ---------------------------------------------------------------------------
@@ -108,13 +141,7 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     )
 
     if not provider_name:
-        sys.stderr.write(
-            "Error: No provider available.\n"
-            "  Option 1: export ANTHROPIC_API_KEY=sk-ant-...\n"
-            "  Option 2: export OPENAI_API_KEY=sk-...\n"
-            "  Option 3: start Ollama (ollama serve)\n"
-            "  Option 4: duh --provider ollama --model qwen2.5-coder:1.5b\n"
-        )
+        sys.stderr.write(_no_provider_message())
         return exit_codes.PROVIDER_ERROR
 
     # Build provider
@@ -313,10 +340,22 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     store = FileStore(cwd=cwd)
 
     # --- Build executor and approver ---
+    # SEC-MEDIUM-1 audit: ``skip_perms`` short-circuits the interactive
+    # approver. It is gated on an explicit user opt-in (a CLI flag or a
+    # ``permission_mode`` of bypassPermissions/dontAsk, never implicit) and
+    # is logged below so operators can see when automation mode is active.
+    # The same metadata flag is forwarded to BashTool which emits its own
+    # WARNING on each dangerous command actually allowed through.
     executor = NativeExecutor(tools=tools, cwd=cwd)
     skip_perms = args.dangerously_skip_permissions or getattr(args, "permission_mode", None) in ("bypassPermissions", "dontAsk")
     permission_cache = SessionPermissionCache()
     approver: Any = AutoApprover() if skip_perms else InteractiveApprover(permission_cache=permission_cache)
+    if skip_perms:
+        logger.warning(
+            "Permission prompts disabled (--dangerously-skip-permissions or "
+            "automation permission_mode). All tool invocations will be auto-"
+            "approved for this session."
+        )
 
     # --- Wire audit logger (ADR-072 P1) ---
     from duh.security.audit import AuditLogger

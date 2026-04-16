@@ -8,14 +8,24 @@ Profile language reference:
 
 The generated profile follows a default-deny model:
     1. Deny everything by default
-    2. Allow file reads globally (needed for bash, libraries, etc.)
+    2. Allow file reads ONLY for an explicit set of paths (project root + cwd
+       + macOS temp dirs + system Python/shared libs needed for subprocess)
     3. Allow file writes ONLY to specified paths + /tmp + ~/.duh
     4. Allow or deny network based on policy
     5. Allow process execution (fork/exec needed for bash -c)
+
+Historically this profile contained ``(allow file-read*)`` which granted
+unrestricted read of the entire filesystem (SEC-MEDIUM-4).  That has been
+replaced with explicit ``(allow file-read* (subpath ...))`` rules so that
+sandboxed commands cannot exfiltrate arbitrary files from the user's home
+directory.
 """
 
 from __future__ import annotations
 
+import os
+import sys
+import sysconfig
 from pathlib import Path
 
 from duh.adapters.sandbox.policy import SandboxPolicy, deduplicate_paths
@@ -26,8 +36,64 @@ def _home_duh_path() -> str:
     return str(Path.home() / ".duh")
 
 
-def generate_profile(policy: SandboxPolicy) -> str:
+def _default_read_paths() -> list[str]:
+    """Compute the minimum read-path set required for a working shell.
+
+    Includes:
+
+    * /usr, /bin, /sbin, /System -- system binaries and frameworks
+    * /Library -- shared frameworks (e.g. Python.framework)
+    * /opt/homebrew, /usr/local -- Homebrew prefixes
+    * /private/etc, /private/var/db -- name resolution, locale data
+    * /tmp, /private/tmp, /private/var/tmp, /var/folders -- temp dirs
+    * sys.prefix / sys.base_prefix -- the active Python install
+    * sysconfig stdlib and platstdlib -- Python's standard library
+    * /dev/null, /dev/urandom (literal) -- common device reads
+    """
+    paths: list[str] = [
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/System",
+        "/Library",
+        "/opt",
+        "/private/etc",
+        "/private/var/db",
+        "/private/var/folders",
+        "/var/folders",
+        "/tmp",
+        "/private/tmp",
+        "/private/var/tmp",
+    ]
+    # Python install + stdlib (covers virtualenv-Python's resolved interpreter)
+    for attr in ("prefix", "base_prefix", "exec_prefix", "base_exec_prefix"):
+        val = getattr(sys, attr, None)
+        if val:
+            paths.append(val)
+    for key in ("stdlib", "platstdlib", "platlib", "purelib"):
+        try:
+            p = sysconfig.get_path(key)
+        except Exception:  # pragma: no cover - defensive
+            p = None
+        if p:
+            paths.append(p)
+    return paths
+
+
+def generate_profile(
+    policy: SandboxPolicy,
+    *,
+    allowed_read_paths: list[str] | None = None,
+) -> str:
     """Generate a Seatbelt .sb profile from a SandboxPolicy.
+
+    Args:
+        policy: Platform-independent sandbox policy.
+        allowed_read_paths: Optional override for the default read-path set.
+            When provided, replaces the built-in defaults entirely (the caller
+            is responsible for including any system paths needed for
+            subprocess execution).  When ``None`` (default), the union of
+            :func:`_default_read_paths` and ``policy.readable_paths`` is used.
 
     Returns the profile as a string ready to write to a file.
     """
@@ -44,9 +110,31 @@ def generate_profile(policy: SandboxPolicy) -> str:
     lines.append("(deny default)")
     lines.append("")
 
-    # Always allow: reading files (bash, shared libs, etc.)
-    lines.append(";; Global read access (required for shell execution)")
-    lines.append("(allow file-read*)")
+    # Read access (explicit allow-list — no global file-read*).
+    if allowed_read_paths is None:
+        read_paths = _default_read_paths() + list(policy.readable_paths)
+    else:
+        read_paths = list(allowed_read_paths)
+    # Always include the user-cwd if the project hasn't supplied one.
+    cwd = os.getcwd()
+    if cwd not in read_paths:
+        read_paths.append(cwd)
+    unique_read_paths = deduplicate_paths(read_paths)
+
+    lines.append(";; File read access (explicit allow-list, not global)")
+    lines.append("(allow file-read*")
+    for rp in unique_read_paths:
+        safe_rp = rp.replace("\\", "\\\\").replace('"', '\\"')
+        if safe_rp.startswith("/dev/"):
+            lines.append(f'    (literal "{safe_rp}")')
+        else:
+            lines.append(f'    (subpath "{safe_rp}")')
+    lines.append(")")
+    # A handful of /dev nodes always need to be readable for normal POSIX I/O.
+    lines.append('(allow file-read* (literal "/dev/null"))')
+    lines.append('(allow file-read* (literal "/dev/urandom"))')
+    lines.append('(allow file-read* (literal "/dev/random"))')
+    lines.append('(allow file-read-metadata)')
     lines.append("")
 
     # Process execution (required for bash -c)
@@ -94,11 +182,8 @@ def generate_profile(policy: SandboxPolicy) -> str:
 
     lines.append("")
 
-    # Readable paths (additional, beyond global read-all)
-    if policy.readable_paths:
-        lines.append(";; Additional readable paths (explicitly listed)")
-        for rp in policy.readable_paths:
-            lines.append(f';; readable: (subpath "{rp}")')
+    # policy.readable_paths is already folded into the explicit
+    # file-read* allow-list above; no extra rule needed here.
     lines.append("")
 
     # Network

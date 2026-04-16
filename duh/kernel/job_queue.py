@@ -29,6 +29,7 @@ class JobState(str, Enum):
 
 
 MAX_CONCURRENT_JOBS = 5
+MAX_COMPLETED_RETAINED = 50
 
 
 @dataclass
@@ -46,10 +47,20 @@ class _Job:
 
 
 class JobQueue:
-    """Submit, track, and retrieve results of background async jobs."""
+    """Submit, track, and retrieve results of background async jobs.
 
-    def __init__(self, max_concurrent: int = MAX_CONCURRENT_JOBS) -> None:
+    To bound memory usage, completed and failed jobs are evicted in FIFO
+    order once the count of finished jobs exceeds ``max_completed_retained``.
+    Pending and running jobs are never evicted.
+    """
+
+    def __init__(
+        self,
+        max_concurrent: int = MAX_CONCURRENT_JOBS,
+        max_completed_retained: int = MAX_COMPLETED_RETAINED,
+    ) -> None:
         self._max_concurrent = max_concurrent
+        self._max_completed_retained = max_completed_retained
         self._jobs: dict[str, _Job] = {}
         self._semaphore: asyncio.Semaphore | None = None
 
@@ -84,6 +95,25 @@ class JobQueue:
             job.finished_at = time.monotonic()
             job._coro = None  # allow GC
             sem.release()
+            self._evict_finished_overflow()
+
+    def _evict_finished_overflow(self) -> None:
+        """Drop oldest completed/failed jobs once over the retention cap.
+
+        Pending and running jobs are preserved so callers can still see
+        and await them. Eviction is by ``finished_at`` (oldest first).
+        """
+        finished = [
+            j for j in self._jobs.values()
+            if j.state in (JobState.completed, JobState.failed)
+        ]
+        excess = len(finished) - self._max_completed_retained
+        if excess <= 0:
+            return
+        # Sort oldest first by finished_at (None sorts as -inf via key)
+        finished.sort(key=lambda j: j.finished_at or 0.0)
+        for j in finished[:excess]:
+            self._jobs.pop(j.id, None)
 
     def status(self, job_id: str) -> dict[str, Any]:
         """Return status dict for a single job. Raises KeyError if not found."""

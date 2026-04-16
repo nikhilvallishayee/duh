@@ -393,26 +393,53 @@ def _dispatch_generate(args) -> int:
 
 
 def _dispatch_init(args) -> int:
-    from duh.security.wizard import Answers, detect, render_plan, write_plan
+    from duh.security.wizard import (
+        Answers,
+        detect,
+        render_plan,
+        run_interactive,
+        write_plan,
+    )
 
     project_root = Path(args.project_root)
     det = detect(project_root=project_root)
-    if not args.non_interactive:
-        sys.stderr.write("interactive wizard not yet implemented; pass --non-interactive\n")
-        return 2
-    answers = Answers(
-        mode=args.mode,
-        enable_runtime=True,
-        extended_scanners=(),
-        generate_ci=False,
-        ci_template="standard",
-        install_git_hook=False,
-        generate_security_md=False,
-        import_legacy=False,
-        pin_scanner_versions=True,
-    )
+    if args.non_interactive:
+        answers = Answers(
+            mode=args.mode,
+            enable_runtime=True,
+            extended_scanners=(),
+            generate_ci=False,
+            ci_template="standard",
+            install_git_hook=False,
+            generate_security_md=False,
+            import_legacy=False,
+            pin_scanner_versions=True,
+        )
+    else:
+        # Interactive wizard.  ``print``-style output keeps the prompts on
+        # stdout so they show up in normal terminal sessions; tests inject
+        # capturing callables.
+        def _out(msg: str = "", end: str = "\n", flush: bool = False) -> None:
+            sys.stdout.write(f"{msg}{end}")
+            if flush:
+                sys.stdout.flush()
+
+        answers = run_interactive(
+            project_root=project_root,
+            detection=det,
+            input_fn=input,
+            output_fn=_out,
+        )
+        # Honour --mode if the operator passed it; the wizard otherwise
+        # picks "strict" as a sensible default.
+        if args.mode and args.mode != answers.mode:
+            from dataclasses import replace
+            answers = replace(answers, mode=args.mode)
+
     plan = render_plan(detection=det, answers=answers, project_root=project_root)
-    write_plan(plan, dry_run=args.dry_run)
+    result = write_plan(plan, dry_run=args.dry_run)
+    if not args.dry_run and result.written:
+        sys.stdout.write(f"  wrote {len(result.written)} file(s) under {project_root}\n")
     return 0
 
 

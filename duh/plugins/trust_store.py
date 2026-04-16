@@ -68,6 +68,17 @@ class TrustStore:
             self.save()
 
     def save(self) -> None:
-        """Persist the trust store to disk."""
+        """Persist the trust store to disk.
+
+        The file is written with mode 0o600 so that the trust list (which
+        controls which plugin signatures are accepted) is not readable or
+        writable by other users on the system.  Mirrors the pattern used in
+        :mod:`duh.auth.store`.
+        """
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._path.write_text(json.dumps(self._entries, indent=2))
+        try:
+            self._path.chmod(0o600)
+        except OSError:
+            # chmod is best-effort (e.g. on Windows / unusual filesystems).
+            pass

@@ -1066,7 +1066,11 @@ class TestSandboxIntegration:
 
         assert "(version 1)" in profile
         assert "(deny default)" in profile
-        assert "(allow file-read*)" in profile
+        # SEC-MEDIUM-4: read access is now an explicit allow-list (the rule
+        # opens with "(allow file-read*" but is no longer the unscoped
+        # global "(allow file-read*)" form).
+        assert "(allow file-read*" in profile
+        assert "(allow file-read*)" not in profile
         assert '"/tmp"' in profile
         assert '"/workspace"' in profile
         assert "(allow network*)" in profile

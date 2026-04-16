@@ -228,15 +228,21 @@ class TestSandboxComposition:
         assert "(allow network*)" not in profile
 
     def test_seatbelt_readable_paths_listed_as_comments(self) -> None:
-        """readable_paths appear in the profile (as comments today)."""
+        """readable_paths from policy must reach the profile.
+
+        SEC-MEDIUM-4: previously these paths were emitted as inert
+        ';; readable:' comments because file-read* was already global. Now
+        they are merged into the explicit file-read* allow-list as real
+        ``(subpath ...)`` rules so that *only* the listed paths (plus the
+        baseline system paths) are readable inside the sandbox.
+        """
         extra_read = "/opt/special-data"
         policy = SandboxPolicy(
             writable_paths=["/tmp"], readable_paths=[extra_read]
         )
         profile = generate_profile(policy)
         assert extra_read in profile
-        # The implementation emits them as ';; readable:' comment lines.
-        assert f';; readable: (subpath "{extra_read}")' in profile
+        assert f'(subpath "{extra_read}")' in profile
 
     def test_landlock_wrapper_exits_198_when_unavailable(self) -> None:
         """Run the exact landlock wrapper template via a subprocess with a

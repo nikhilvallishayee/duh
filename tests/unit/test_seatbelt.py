@@ -11,7 +11,11 @@ class TestGenerateProfile:
         policy = SandboxPolicy()
         profile = generate_profile(policy)
         assert "(version 1)" in profile
-        assert "(allow file-read*)" in profile
+        # SEC-MEDIUM-4: read access is now an explicit allow-list, not a
+        # global file-read*.  The opening token of the rule is still
+        # "(allow file-read*" (no closing paren on the same line).
+        assert "(allow file-read*" in profile
+        assert "(allow file-read*)" not in profile
 
     def test_default_policy_allows_process(self):
         policy = SandboxPolicy()

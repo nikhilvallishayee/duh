@@ -28,6 +28,7 @@ provider SDK. It never touches the filesystem. It never renders UI.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any, AsyncGenerator
 
@@ -41,6 +42,26 @@ from duh.kernel.messages import (
 
 # Max chars per tool result sent to the model (prevents context explosion)
 MAX_RESULT_SIZE = 80_000
+
+
+def _build_read_only_set(tools: list[Any] | None) -> set[str]:
+    """Return the set of tool names whose ``is_read_only`` is True.
+
+    Defensive — any tool without the attribute is treated as mutating
+    (the safe default).  Used by the loop to decide which tool_use
+    blocks can run concurrently in a single turn.
+    """
+    if not tools:
+        return set()
+    out: set[str] = set()
+    for t in tools:
+        try:
+            if getattr(t, "is_read_only", False):
+                out.add(getattr(t, "name", ""))
+        except Exception:
+            continue
+    out.discard("")
+    return out
 
 
 def _extract_tool_use_blocks(content: Any) -> list[dict[str, Any]]:
@@ -102,6 +123,226 @@ def _truncate_result(text: str) -> str:
     if len(text) <= MAX_RESULT_SIZE:
         return text
     return text[:MAX_RESULT_SIZE] + f"\n... (truncated, {len(text) - MAX_RESULT_SIZE} chars omitted)"
+
+
+class _BlockOutcome:
+    """The result of a single tool_use block, with audit info."""
+
+    __slots__ = ("result",)
+
+    def __init__(self, result: ToolResultBlock) -> None:
+        self.result = result
+
+
+async def _execute_block(block: dict[str, Any], deps: Deps) -> _BlockOutcome:
+    """Execute a single read-only tool_use block.
+
+    Used by the parallel branch in :func:`query`. Hook emission and audit
+    logging still happen here, but no events are yielded to the caller —
+    the caller emits the ``tool_use`` and ``tool_result`` events itself
+    in deterministic submission order.
+    """
+    tool_id = block.get("id", "")
+    tool_name = block.get("name", "")
+    tool_input = block.get("input", {})
+    t0 = time.monotonic()
+
+    # Approval
+    if deps.approve:
+        if deps.hook_registry:
+            await execute_hooks(
+                deps.hook_registry,
+                HookEvent.PERMISSION_REQUEST,
+                {"tool_name": tool_name, "input": tool_input},
+                matcher_value=tool_name,
+            )
+        approval = await deps.approve(tool_name, tool_input)
+        if not approval.get("allowed", True):
+            reason = approval.get("reason", "Permission denied")
+            if deps.hook_registry:
+                await execute_hooks(
+                    deps.hook_registry,
+                    HookEvent.PERMISSION_DENIED,
+                    {"tool_name": tool_name, "input": tool_input, "reason": reason},
+                    matcher_value=tool_name,
+                )
+            result = ToolResultBlock(
+                tool_use_id=tool_id,
+                content=f"Tool use denied: {reason}",
+                is_error=True,
+            )
+            _audit(deps, tool_name, tool_input, "denied", t0)
+            return _BlockOutcome(result)
+
+    # Confirmation gate
+    if deps.confirm_gate:
+        gate_decision = deps.confirm_gate(tool_name=tool_name, tool_input=tool_input)
+        if gate_decision is not None and gate_decision.action == "block":
+            result = ToolResultBlock(
+                tool_use_id=tool_id,
+                content=f"Tool blocked: {gate_decision.reason}",
+                is_error=True,
+            )
+            _audit(deps, tool_name, tool_input, "denied", t0)
+            return _BlockOutcome(result)
+
+    # Execute
+    if deps.run_tool:
+        try:
+            output = await deps.run_tool(tool_name, tool_input)
+            result_text = _truncate_result(
+                output if isinstance(output, str) else str(output)
+            )
+            result = ToolResultBlock(tool_use_id=tool_id, content=result_text)
+        except Exception as e:
+            if deps.hook_registry:
+                await execute_hooks(
+                    deps.hook_registry,
+                    HookEvent.POST_TOOL_USE_FAILURE,
+                    {"tool_name": tool_name, "error": str(e)},
+                    matcher_value=tool_name,
+                )
+            result = ToolResultBlock(
+                tool_use_id=tool_id,
+                content=f"Tool error: {e}",
+                is_error=True,
+            )
+    else:
+        result = ToolResultBlock(
+            tool_use_id=tool_id,
+            content="No tool executor configured",
+            is_error=True,
+        )
+
+    _audit(
+        deps, tool_name, tool_input,
+        "error" if result.is_error else "ok",
+        t0,
+    )
+    return _BlockOutcome(result)
+
+
+async def _execute_block_stream(block: dict[str, Any], deps: Deps):
+    """Streaming variant for mutating (sequential) tool execution.
+
+    Yields ``(event, result)`` pairs. ``event`` is None when there is no
+    event to emit; ``result`` is None until the final tuple, where it
+    carries the :class:`ToolResultBlock`.
+    """
+    tool_id = block.get("id", "")
+    tool_name = block.get("name", "")
+    tool_input = block.get("input", {})
+
+    yield ({"type": "tool_use", "id": tool_id, "name": tool_name, "input": tool_input}, None)
+    t0 = time.monotonic()
+
+    # Approval
+    if deps.approve:
+        if deps.hook_registry:
+            await execute_hooks(
+                deps.hook_registry,
+                HookEvent.PERMISSION_REQUEST,
+                {"tool_name": tool_name, "input": tool_input},
+                matcher_value=tool_name,
+            )
+        approval = await deps.approve(tool_name, tool_input)
+        if not approval.get("allowed", True):
+            reason = approval.get("reason", "Permission denied")
+            if deps.hook_registry:
+                await execute_hooks(
+                    deps.hook_registry,
+                    HookEvent.PERMISSION_DENIED,
+                    {"tool_name": tool_name, "input": tool_input, "reason": reason},
+                    matcher_value=tool_name,
+                )
+            result = ToolResultBlock(
+                tool_use_id=tool_id,
+                content=f"Tool use denied: {reason}",
+                is_error=True,
+            )
+            yield (
+                {"type": "tool_result", "tool_use_id": tool_id,
+                 "output": result.content, "is_error": True},
+                result,
+            )
+            _audit(deps, tool_name, tool_input, "denied", t0)
+            return
+
+    # Confirmation gate
+    if deps.confirm_gate:
+        gate_decision = deps.confirm_gate(tool_name=tool_name, tool_input=tool_input)
+        if gate_decision is not None and gate_decision.action == "block":
+            result = ToolResultBlock(
+                tool_use_id=tool_id,
+                content=f"Tool blocked: {gate_decision.reason}",
+                is_error=True,
+            )
+            yield (
+                {"type": "tool_result", "tool_use_id": tool_id,
+                 "output": result.content, "is_error": True},
+                result,
+            )
+            _audit(deps, tool_name, tool_input, "denied", t0)
+            return
+
+    # Execute
+    if deps.run_tool:
+        try:
+            output = await deps.run_tool(tool_name, tool_input)
+            result_text = _truncate_result(
+                output if isinstance(output, str) else str(output)
+            )
+            result = ToolResultBlock(tool_use_id=tool_id, content=result_text)
+        except Exception as e:
+            if deps.hook_registry:
+                await execute_hooks(
+                    deps.hook_registry,
+                    HookEvent.POST_TOOL_USE_FAILURE,
+                    {"tool_name": tool_name, "error": str(e)},
+                    matcher_value=tool_name,
+                )
+            result = ToolResultBlock(
+                tool_use_id=tool_id,
+                content=f"Tool error: {e}",
+                is_error=True,
+            )
+    else:
+        result = ToolResultBlock(
+            tool_use_id=tool_id,
+            content="No tool executor configured",
+            is_error=True,
+        )
+
+    yield (
+        {"type": "tool_result", "tool_use_id": tool_id,
+         "output": result.content, "is_error": result.is_error},
+        result,
+    )
+    _audit(
+        deps, tool_name, tool_input,
+        "error" if result.is_error else "ok",
+        t0,
+    )
+
+
+def _audit(
+    deps: Deps,
+    tool_name: str,
+    tool_input: Any,
+    status: str,
+    t0: float,
+) -> None:
+    """Emit a structured audit-log entry for a tool invocation."""
+    if not deps.audit_logger:
+        return
+    elapsed = int((time.monotonic() - t0) * 1000)
+    deps.audit_logger.log_tool_call(
+        session_id=deps.session_id,
+        tool_name=tool_name,
+        tool_input=tool_input if isinstance(tool_input, dict) else {},
+        result_status=status,
+        duration_ms=elapsed,
+    )
 
 
 async def query(
@@ -178,136 +419,62 @@ async def query(
             return
 
         # --- Execute tools ---
+        # PERF-10: group consecutive read-only tool_use blocks and run
+        # them concurrently. Mutating tools always run sequentially so
+        # ordering / on-disk effects are preserved.
+        read_only_names = _build_read_only_set(tools)
         tool_results: list[ToolResultBlock] = []
 
-        for block in tool_use_blocks:
-            tool_id = block.get("id", "")
-            tool_name = block.get("name", "")
-            tool_input = block.get("input", {})
+        # Build the per-block "plan": a list of (block, is_read_only) pairs.
+        plan = [
+            (block, block.get("name", "") in read_only_names)
+            for block in tool_use_blocks
+        ]
 
-            yield {"type": "tool_use", "id": tool_id, "name": tool_name, "input": tool_input}
+        i = 0
+        while i < len(plan):
+            block, is_ro = plan[i]
+            if is_ro:
+                # Collect the maximal run of consecutive read-only blocks.
+                group: list[dict[str, Any]] = []
+                while i < len(plan) and plan[i][1]:
+                    group.append(plan[i][0])
+                    i += 1
 
-            _t0 = time.monotonic()  # start timing for audit
+                # Yield tool_use events first so the UI sees activity.
+                for b in group:
+                    yield {
+                        "type": "tool_use",
+                        "id": b.get("id", ""),
+                        "name": b.get("name", ""),
+                        "input": b.get("input", {}),
+                    }
 
-            # Check approval
-            if deps.approve:
-                # Emit PERMISSION_REQUEST hook
-                if deps.hook_registry:
-                    await execute_hooks(
-                        deps.hook_registry,
-                        HookEvent.PERMISSION_REQUEST,
-                        {"tool_name": tool_name, "input": tool_input},
-                        matcher_value=tool_name,
-                    )
+                # Run all read-only executions concurrently.
+                tasks = [
+                    asyncio.create_task(_execute_block(b, deps))
+                    for b in group
+                ]
+                outcomes = await asyncio.gather(*tasks)
 
-                approval = await deps.approve(tool_name, tool_input)
-                if not approval.get("allowed", True):
-                    reason = approval.get("reason", "Permission denied")
-
-                    # Emit PERMISSION_DENIED hook
-                    if deps.hook_registry:
-                        await execute_hooks(
-                            deps.hook_registry,
-                            HookEvent.PERMISSION_DENIED,
-                            {"tool_name": tool_name, "input": tool_input, "reason": reason},
-                            matcher_value=tool_name,
-                        )
-
-                    result = ToolResultBlock(
-                        tool_use_id=tool_id,
-                        content=f"Tool use denied: {reason}",
-                        is_error=True,
-                    )
-                    tool_results.append(result)
-                    yield {"type": "tool_result", "tool_use_id": tool_id,
-                           "output": result.content, "is_error": True}
-
-                    # Audit: denied
-                    if deps.audit_logger:
-                        _elapsed = int((time.monotonic() - _t0) * 1000)
-                        deps.audit_logger.log_tool_call(
-                            session_id=deps.session_id,
-                            tool_name=tool_name,
-                            tool_input=tool_input if isinstance(tool_input, dict) else {},
-                            result_status="denied",
-                            duration_ms=_elapsed,
-                        )
-                    continue
-
-            # Check confirmation gate (7.2) — block tainted dangerous tools
-            if deps.confirm_gate:
-                gate_decision = deps.confirm_gate(
-                    tool_name=tool_name,
-                    tool_input=tool_input,
-                )
-                if gate_decision is not None and gate_decision.action == "block":
-                    result = ToolResultBlock(
-                        tool_use_id=tool_id,
-                        content=f"Tool blocked: {gate_decision.reason}",
-                        is_error=True,
-                    )
-                    tool_results.append(result)
-                    yield {"type": "tool_result", "tool_use_id": tool_id,
-                           "output": result.content, "is_error": True}
-
-                    # Audit: denied (blocked by confirmation gate)
-                    if deps.audit_logger:
-                        _elapsed = int((time.monotonic() - _t0) * 1000)
-                        deps.audit_logger.log_tool_call(
-                            session_id=deps.session_id,
-                            tool_name=tool_name,
-                            tool_input=tool_input if isinstance(tool_input, dict) else {},
-                            result_status="denied",
-                            duration_ms=_elapsed,
-                        )
-                    continue
-
-            # Execute
-            if deps.run_tool:
-                try:
-                    output = await deps.run_tool(tool_name, tool_input)
-                    result_text = _truncate_result(
-                        output if isinstance(output, str) else str(output)
-                    )
-                    result = ToolResultBlock(
-                        tool_use_id=tool_id,
-                        content=result_text,
-                    )
-                except Exception as e:
-                    # Emit POST_TOOL_USE_FAILURE hook
-                    if deps.hook_registry:
-                        await execute_hooks(
-                            deps.hook_registry,
-                            HookEvent.POST_TOOL_USE_FAILURE,
-                            {"tool_name": tool_name, "error": str(e)},
-                            matcher_value=tool_name,
-                        )
-                    result = ToolResultBlock(
-                        tool_use_id=tool_id,
-                        content=f"Tool error: {e}",
-                        is_error=True,
-                    )
+                # Emit results in submission order, preserving correctness.
+                for outcome in outcomes:
+                    tool_results.append(outcome.result)
+                    yield {
+                        "type": "tool_result",
+                        "tool_use_id": outcome.result.tool_use_id,
+                        "output": outcome.result.content,
+                        "is_error": outcome.result.is_error,
+                    }
             else:
-                result = ToolResultBlock(
-                    tool_use_id=tool_id,
-                    content="No tool executor configured",
-                    is_error=True,
-                )
-
-            tool_results.append(result)
-            yield {"type": "tool_result", "tool_use_id": tool_id,
-                   "output": result.content, "is_error": result.is_error}
-
-            # Audit: ok or error
-            if deps.audit_logger:
-                _elapsed = int((time.monotonic() - _t0) * 1000)
-                deps.audit_logger.log_tool_call(
-                    session_id=deps.session_id,
-                    tool_name=tool_name,
-                    tool_input=tool_input if isinstance(tool_input, dict) else {},
-                    result_status="error" if result.is_error else "ok",
-                    duration_ms=_elapsed,
-                )
+                # Mutating tool — execute sequentially via the streaming path
+                # so we preserve interleaved hook events.
+                async for evt, maybe_result in _execute_block_stream(block, deps):
+                    if evt is not None:
+                        yield evt
+                    if maybe_result is not None:
+                        tool_results.append(maybe_result)
+                i += 1
 
         # --- Build next turn messages ---
         if assistant_message:

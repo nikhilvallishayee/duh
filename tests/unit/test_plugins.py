@@ -174,35 +174,47 @@ class TestDiscoverDirectoryPlugins:
 
 
 class TestDiscoverEntryPointPlugins:
-    def test_no_entry_points(self):
+    def _store(self, tmp_path):
+        from duh.plugins.trust_store import TrustStore
+        return TrustStore(store_path=tmp_path / "trust.json")
+
+    def test_no_entry_points(self, tmp_path):
         with patch("duh.plugins.entry_points", return_value=[]):
-            specs = discover_entry_point_plugins()
+            specs = discover_entry_point_plugins(
+                trust_store=self._store(tmp_path), trust_entry_points=True
+            )
         assert specs == []
 
-    def test_valid_entry_point(self):
+    def test_valid_entry_point(self, tmp_path):
         spec = PluginSpec(name="ep-plugin", version="1.0")
         ep = MagicMock()
         ep.name = "ep-plugin"
         ep.load.return_value = spec
         with patch("duh.plugins.entry_points", return_value=[ep]):
-            specs = discover_entry_point_plugins()
+            specs = discover_entry_point_plugins(
+                trust_store=self._store(tmp_path), trust_entry_points=True
+            )
         assert len(specs) == 1
         assert specs[0].name == "ep-plugin"
 
-    def test_skips_non_pluginspec(self):
+    def test_skips_non_pluginspec(self, tmp_path):
         ep = MagicMock()
         ep.name = "bad"
         ep.load.return_value = "not a PluginSpec"
         with patch("duh.plugins.entry_points", return_value=[ep]):
-            specs = discover_entry_point_plugins()
+            specs = discover_entry_point_plugins(
+                trust_store=self._store(tmp_path), trust_entry_points=True
+            )
         assert specs == []
 
-    def test_handles_load_error(self):
+    def test_handles_load_error(self, tmp_path):
         ep = MagicMock()
         ep.name = "broken"
         ep.load.side_effect = ImportError("missing dep")
         with patch("duh.plugins.entry_points", return_value=[ep]):
-            specs = discover_entry_point_plugins()
+            specs = discover_entry_point_plugins(
+                trust_store=self._store(tmp_path), trust_entry_points=True
+            )
         assert specs == []
 
 
@@ -212,6 +224,10 @@ class TestDiscoverEntryPointPlugins:
 
 
 class TestDiscoverPlugins:
+    def _store(self, tmp_path):
+        from duh.plugins.trust_store import TrustStore
+        return TrustStore(store_path=tmp_path / "trust.json")
+
     def test_deduplicates_by_name(self, tmp_path: Path):
         # Entry point plugin
         ep_spec = PluginSpec(name="dupe", version="1.0")
@@ -226,16 +242,24 @@ class TestDiscoverPlugins:
             json.dumps({"name": "dupe", "version": "2.0"})
         )
 
+        store_dir = tmp_path / "store"
+        store_dir.mkdir()
         with patch("duh.plugins.entry_points", return_value=[ep]):
-            specs = discover_plugins(extra_dirs=[tmp_path])
+            specs = discover_plugins(
+                extra_dirs=[tmp_path],
+                trust_store=self._store(store_dir),
+                trust_entry_points=True,
+            )
 
         assert len(specs) == 1
         # Entry point takes precedence (discovered first)
         assert specs[0].version == "1.0"
 
-    def test_no_plugins(self):
+    def test_no_plugins(self, tmp_path):
         with patch("duh.plugins.entry_points", return_value=[]):
-            specs = discover_plugins()
+            specs = discover_plugins(
+                trust_store=self._store(tmp_path), trust_entry_points=True
+            )
         assert specs == []
 
 

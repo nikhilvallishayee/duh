@@ -40,8 +40,11 @@ Two discovery mechanisms:
 
 from __future__ import annotations
 
+import hashlib
+import inspect
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 from pathlib import Path
@@ -51,6 +54,39 @@ from duh.plugins.manifest import load_manifest, compute_manifest_hash
 from duh.plugins.trust_store import TrustStore
 
 logger = logging.getLogger(__name__)
+
+
+def _default_trust_store_path() -> Path:
+    """Default location for the plugin trust store."""
+    return Path.home() / ".duh" / "trust.json"
+
+
+def _entry_point_module_hash(spec: Any, ep: Any) -> str:
+    """Compute a stable SHA-256 fingerprint for an entry-point plugin.
+
+    The fingerprint covers the source of the resolved object's module so that
+    a tampered or upgraded distribution produces a different hash, triggering
+    TOFU re-confirmation.  Falls back to the entry-point's module name + value
+    if the source is unavailable (e.g. C extensions, frozen modules).
+    """
+    payload_parts: list[str] = [
+        f"name={spec.name}",
+        f"version={spec.version}",
+        f"ep_value={getattr(ep, 'value', '')}",
+    ]
+    try:
+        loaded = ep.load()
+        module = inspect.getmodule(loaded)
+        if module is not None:
+            try:
+                src = inspect.getsource(module)
+                payload_parts.append(f"src_sha256={hashlib.sha256(src.encode()).hexdigest()}")
+            except (OSError, TypeError):
+                payload_parts.append(f"module={getattr(module, '__name__', '?')}")
+    except Exception:  # pragma: no cover - defensive
+        pass
+    payload = "\n".join(payload_parts).encode()
+    return hashlib.sha256(payload).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -83,32 +119,115 @@ class PluginSpec:
 # Plugin discovery
 # ---------------------------------------------------------------------------
 
-def discover_entry_point_plugins() -> list[PluginSpec]:
-    """Discover plugins via Python entry_points.
+def discover_entry_point_plugins(
+    *,
+    trust_store: TrustStore | None = None,
+    trust_entry_points: bool | None = None,
+    confirm_tofu: Callable | None = None,
+) -> list[PluginSpec]:
+    """Discover plugins via Python entry_points (with TOFU verification).
 
-    Scans the ``duh.plugins`` entry point group. Each entry point
-    must resolve to a PluginSpec instance.
+    Scans the ``duh.plugins`` entry point group. Each entry point must
+    resolve to a :class:`PluginSpec` instance. By default, every entry-point
+    plugin is run through the same TOFU trust store as directory plugins so
+    a tampered or unexpected distribution cannot silently inject tools/hooks
+    into the harness (SEC-MEDIUM-6).
+
+    Trust resolution:
+
+    * On first encounter, the plugin's module-source hash is recorded and the
+      plugin is loaded only if ``confirm_tofu`` returns True (or
+      ``trust_entry_points`` is explicitly enabled).
+    * If the hash matches the stored entry, the plugin is loaded.
+    * If the hash differs ("signature_mismatch") or has been revoked, the
+      plugin is skipped with a warning.
+
+    Args:
+        trust_store: Trust store to consult. Defaults to ``~/.duh/trust.json``.
+        trust_entry_points: When ``True``, accept first-use entry-point
+            plugins without prompting (equivalent to passing
+            ``confirm_tofu=lambda _: True``). When ``False``, refuse all
+            untrusted entry-point plugins. When ``None`` (default), respect
+            the ``DUH_TRUST_ENTRYPOINT_PLUGINS`` env var (any truthy value
+            allows; otherwise refuse and warn).
+        confirm_tofu: Optional interactive callback invoked on first use.
 
     Returns:
-        List of discovered PluginSpec objects.
+        List of verified PluginSpec objects.
     """
+    if trust_store is None:
+        trust_store = TrustStore(store_path=_default_trust_store_path())
+    if trust_entry_points is None:
+        env_flag = os.environ.get("DUH_TRUST_ENTRYPOINT_PLUGINS", "").strip().lower()
+        trust_entry_points = env_flag in ("1", "true", "yes", "on")
+
     specs: list[PluginSpec] = []
     for ep in entry_points(group="duh.plugins"):
         try:
             obj = ep.load()
-            if isinstance(obj, PluginSpec):
-                specs.append(obj)
-            else:
-                logger.warning(
-                    "Plugin entry point %r did not return a PluginSpec "
-                    "(got %s), skipping.",
-                    ep.name,
-                    type(obj).__name__,
-                )
         except Exception as exc:
             logger.warning(
                 "Failed to load plugin entry point %r: %s", ep.name, exc
             )
+            continue
+
+        if not isinstance(obj, PluginSpec):
+            logger.warning(
+                "Plugin entry point %r did not return a PluginSpec "
+                "(got %s), skipping.",
+                ep.name,
+                type(obj).__name__,
+            )
+            continue
+
+        sig_hash = _entry_point_module_hash(obj, ep)
+        result = trust_store.verify(obj.name, sig_hash)
+
+        if result.status == "trusted":
+            specs.append(obj)
+            continue
+        if result.status == "first_use":
+            accepted = False
+            if confirm_tofu is not None:
+                try:
+                    accepted = bool(confirm_tofu(obj))
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.warning(
+                        "TOFU prompt for entry-point plugin %r raised: %s",
+                        obj.name, exc,
+                    )
+                    accepted = False
+            elif trust_entry_points:
+                accepted = True
+            if accepted:
+                trust_store.add(obj.name, sig_hash)
+                specs.append(obj)
+            else:
+                logger.warning(
+                    "Skipping entry-point plugin %r: untrusted (first use). "
+                    "Re-run with --trust-entrypoint-plugins or set "
+                    "DUH_TRUST_ENTRYPOINT_PLUGINS=1 to allow.",
+                    obj.name,
+                )
+            continue
+        if result.status == "revoked":
+            logger.warning(
+                "Skipping entry-point plugin %r: revoked (%s).",
+                obj.name, result.reason,
+            )
+            continue
+        if result.status == "signature_mismatch":
+            logger.warning(
+                "Skipping entry-point plugin %r: module hash changed since "
+                "first trust (saved=%s, current=%s) — possible tampering or "
+                "upgrade. Remove the entry from the trust store to re-confirm.",
+                obj.name, result.known, result.provided,
+            )
+            continue
+        logger.warning(
+            "Skipping entry-point plugin %r: unknown trust status %r.",
+            obj.name, result.status,
+        )
     return specs
 
 
@@ -212,15 +331,21 @@ def discover_directory_plugins(plugin_dir: str | Path) -> list[PluginSpec]:
 def discover_plugins(
     *,
     extra_dirs: list[str | Path] | None = None,
+    trust_store: TrustStore | None = None,
+    trust_entry_points: bool | None = None,
+    confirm_tofu: Callable | None = None,
 ) -> list[PluginSpec]:
     """Discover all available plugins from all sources.
 
     Sources (in order):
-    1. Python entry_points (pip-installed plugins)
-    2. Extra directories (--plugin-dir flag or DUH_PLUGIN_DIR env)
+    1. Python entry_points (pip-installed plugins) — TOFU-verified.
+    2. Extra directories (--plugin-dir flag or DUH_PLUGIN_DIR env).
 
     Args:
         extra_dirs: Additional directories to scan for plugins.
+        trust_store: Trust store for entry-point TOFU verification.
+        trust_entry_points: See :func:`discover_entry_point_plugins`.
+        confirm_tofu: Optional confirmation callback for first-use plugins.
 
     Returns:
         Combined list of PluginSpec objects, deduplicated by name.
@@ -229,7 +354,11 @@ def discover_plugins(
     result: list[PluginSpec] = []
 
     # Entry points first
-    for spec in discover_entry_point_plugins():
+    for spec in discover_entry_point_plugins(
+        trust_store=trust_store,
+        trust_entry_points=trust_entry_points,
+        confirm_tofu=confirm_tofu,
+    ):
         if spec.name not in seen:
             seen.add(spec.name)
             result.append(spec)
@@ -387,5 +516,5 @@ def load_plugin_from_dir(
     """
     manifest_path = plugin_dir / "manifest.json"
     if trust_store is None:
-        trust_store = TrustStore(store_path=Path.home() / ".duh" / "trust.json")
+        trust_store = TrustStore(store_path=_default_trust_store_path())
     return load_verified_plugin(manifest_path, trust_store, confirm_tofu=confirm_tofu)

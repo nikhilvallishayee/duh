@@ -94,11 +94,16 @@ def test_segment_text_chars_come_from_input(cmd: str) -> None:
     except ValueError:
         return  # fanout cap — not a bug
 
+    # The tokenizer may legitimately insert whitespace when splitting on
+    # operators or normalizing heredocs (e.g. "0<<0:" → segments with " ").
+    # Only check that non-whitespace characters come from the input.
     input_chars = set(cmd)
     for seg in segments:
-        # Remove masking artifacts before checking
+        # Remove masking artifacts and whitespace before checking
         clean_text = seg.text.replace("\x00", "").replace("\x01", "")
         for ch in clean_text:
+            if ch.isspace():
+                continue  # whitespace may be inserted during tokenization
             assert ch in input_chars, (
                 f"Character {ch!r} in segment {seg.text!r} "
                 f"not found in original input {cmd!r}"

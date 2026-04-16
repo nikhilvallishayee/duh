@@ -913,6 +913,11 @@ async def run_repl(args: argparse.Namespace) -> int:
     executor = NativeExecutor(tools=tools, cwd=cwd)
 
     # --- Approval mode selection ---
+    # SEC-MEDIUM-1 audit: ``--dangerously-skip-permissions`` here is the
+    # explicit user opt-in to bypass interactive approval in the REPL.
+    # The bypass is logged so the audit trail records that automation mode
+    # was active for this session; BashTool further logs each dangerous
+    # command actually executed under the bypass.
     permission_cache = SessionPermissionCache()
     approval_mode_str = getattr(args, "approval_mode", None)
     if approval_mode_str:
@@ -920,6 +925,10 @@ async def run_repl(args: argparse.Namespace) -> int:
         approver: Any = TieredApprover(mode=mode, cwd=cwd)
     elif args.dangerously_skip_permissions:
         approver = AutoApprover()
+        logger.warning(
+            "REPL started with --dangerously-skip-permissions: tool "
+            "invocations will be auto-approved without interactive prompts."
+        )
     else:
         approver = InteractiveApprover(permission_cache=permission_cache)
 

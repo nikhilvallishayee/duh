@@ -31,6 +31,14 @@ class Answers:
     generate_security_md: bool
     import_legacy: bool
     pin_scanner_versions: bool
+    # Optional per-scanner enable map.  When provided, only these scanners
+    # are enabled in the rendered config; others are written but disabled.
+    # ``None`` preserves the legacy behaviour (enable a fixed default set).
+    enabled_scanners: tuple[str, ...] | None = None
+    # Optional --fail-on severity threshold (e.g. "high").
+    fail_on: str | None = None
+    # Optional allow-list of filesystem paths the agent may touch.
+    allowed_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,21 +93,34 @@ def detect(*, project_root: Path) -> Detection:
     )
 
 
+_DEFAULT_SCANNER_NAMES = (
+    "ruff-sec", "pip-audit", "detect-secrets", "cyclonedx-sbom",
+    "duh-repo", "duh-mcp-schema", "duh-mcp-pin",
+    "duh-sandbox-lint", "duh-oauth-lint",
+)
+
+
 def _security_json(answers: Answers) -> dict:
+    if answers.enabled_scanners is None:
+        scanners = {name: {"enabled": True} for name in _DEFAULT_SCANNER_NAMES}
+    else:
+        enabled_set = set(answers.enabled_scanners)
+        names = sorted(set(_DEFAULT_SCANNER_NAMES) | enabled_set)
+        scanners = {name: {"enabled": name in enabled_set} for name in names}
     doc: dict = {
         "version": 1,
         "mode": answers.mode,
-        "scanners": {name: {"enabled": True} for name in (
-            "ruff-sec", "pip-audit", "detect-secrets", "cyclonedx-sbom",
-            "duh-repo", "duh-mcp-schema", "duh-mcp-pin",
-            "duh-sandbox-lint", "duh-oauth-lint",
-        )},
+        "scanners": scanners,
         "runtime": {"enabled": answers.enable_runtime},
         "ci": {
             "generate_github_actions": answers.generate_ci,
             "template": answers.ci_template,
         },
     }
+    if answers.fail_on:
+        doc["fail_on"] = answers.fail_on
+    if answers.allowed_paths:
+        doc["allowed_paths"] = list(answers.allowed_paths)
     return doc
 
 
@@ -158,6 +179,127 @@ def write_plan(plan: list[PlannedFile], *, dry_run: bool) -> WizardResult:
         tmp.replace(pf.path)
         written.append(pf.path)
     return WizardResult(written=tuple(written), dry_run=False)
+
+
+# ---------------------------------------------------------------------------
+# Interactive wizard
+# ---------------------------------------------------------------------------
+
+_VALID_SEVERITIES = ("critical", "high", "medium", "low", "info")
+
+
+def _prompt(
+    question: str,
+    *,
+    default: str,
+    input_fn,
+    output_fn,
+) -> str:
+    """Ask *question* with a default suggestion; return the user's answer.
+
+    A blank reply selects *default*.  EOF/KeyboardInterrupt also returns
+    the default so non-interactive harnesses behave deterministically.
+    """
+    suffix = f" [{default}]" if default else ""
+    output_fn(f"  {question}{suffix}: ", end="", flush=True)
+    try:
+        raw = input_fn("")
+    except (EOFError, KeyboardInterrupt):
+        output_fn("")
+        return default
+    raw = raw.strip()
+    return raw or default
+
+
+def _prompt_yn(
+    question: str,
+    *,
+    default: bool,
+    input_fn,
+    output_fn,
+) -> bool:
+    suggestion = "Y/n" if default else "y/N"
+    answer = _prompt(question, default=suggestion, input_fn=input_fn, output_fn=output_fn)
+    if answer == suggestion:
+        return default
+    return answer.strip().lower() in ("y", "yes", "true", "1")
+
+
+def run_interactive(
+    *,
+    project_root: Path,
+    detection: Detection,
+    input_fn=input,
+    output_fn=print,
+) -> Answers:
+    """Run the interactive ``duh security init`` wizard.
+
+    Walks the user through:
+
+    1. Per-scanner enable choices (defaults to ``y`` when the scanner is
+       discovered as installed, else ``N``).
+    2. ``--fail-on`` severity threshold (default ``high``).
+    3. ``allowed_paths`` (comma-separated; empty = no path restriction).
+
+    Returns an :class:`Answers` value the caller can hand to
+    :func:`render_plan`.  No filesystem writes happen here.
+    """
+    output_fn("duh security init")
+    output_fn(f"  project root: {project_root}")
+
+    enabled: list[str] = []
+    # If the registry surfaces no installed scanners, fall back to the
+    # built-in default list so the user can still opt in to the bundled
+    # ones.  Tests and minimal environments may pass an empty tuple to
+    # exercise just the severity / paths prompts.
+    if detection.available_scanners:
+        output_fn("  Available scanners:")
+        for name in detection.available_scanners:
+            on_by_default = True
+            if _prompt_yn(
+                f"    enable {name}?",
+                default=on_by_default,
+                input_fn=input_fn,
+                output_fn=output_fn,
+            ):
+                enabled.append(name)
+
+    fail_on = _prompt(
+        "Fail-on severity threshold (critical|high|medium|low|info)",
+        default="high",
+        input_fn=input_fn,
+        output_fn=output_fn,
+    ).lower()
+    if fail_on not in _VALID_SEVERITIES:
+        output_fn(
+            f"  warning: '{fail_on}' is not a recognised severity; using 'high'."
+        )
+        fail_on = "high"
+
+    raw_paths = _prompt(
+        "Allowed paths (comma-separated; blank = no restriction)",
+        default="",
+        input_fn=input_fn,
+        output_fn=output_fn,
+    )
+    allowed = tuple(
+        p.strip() for p in raw_paths.split(",") if p.strip()
+    ) if raw_paths else ()
+
+    return Answers(
+        mode="strict",
+        enable_runtime=True,
+        extended_scanners=(),
+        generate_ci=False,
+        ci_template="standard",
+        install_git_hook=False,
+        generate_security_md=False,
+        import_legacy=False,
+        pin_scanner_versions=True,
+        enabled_scanners=tuple(enabled),
+        fail_on=fail_on,
+        allowed_paths=allowed,
+    )
 
 
 from dataclasses import dataclass as _dc

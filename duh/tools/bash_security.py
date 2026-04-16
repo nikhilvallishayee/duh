@@ -16,8 +16,11 @@ Usage from BashTool:
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import TypedDict
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -363,8 +366,18 @@ def classify_command(cmd: str, *, shell: str = "bash") -> Classification:
     try:
         from duh.tools.bash_ast import ast_classify
         return ast_classify(cmd, shell=shell)
-    except Exception:
-        pass
+    except Exception as exc:
+        # SEC-MEDIUM-2: don't silently swallow parser failures — log them
+        # at WARNING so operators can spot pathological commands or upstream
+        # parser regressions. We still fall back to the regex-only path so a
+        # broken parser cannot disable security classification entirely.
+        logger.warning(
+            "bash_ast classifier failed (%s: %s); falling back to regex-only "
+            "classification for command: %s",
+            type(exc).__name__,
+            exc,
+            cmd[:200],
+        )
 
     # Fallback: flat regex scan over the entire command string
     return _regex_classify(cmd, shell=shell)

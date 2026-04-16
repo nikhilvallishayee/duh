@@ -18,11 +18,18 @@ Usage::
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
+from typing import Deque
 
 # A drop of more than this fraction between consecutive turns
 # (without a compaction in between) signals an unexpected cache break.
 _BREAK_THRESHOLD = 0.40
+
+# Maximum number of usage entries kept in the rolling history. Older
+# entries are evicted to bound memory.  Totals remain accurate because
+# they are tracked as running sums independent of the bounded history.
+_MAX_HISTORY = 1000
 
 
 @dataclass
@@ -32,10 +39,17 @@ class CacheTracker:
     After each API response, record cache_creation_input_tokens and
     cache_read_input_tokens from the usage metadata.  A high cache_read
     ratio means the prefix is cached.  A sudden drop indicates a break.
+
+    Running totals (``_total_cache_read``, ``_total_cache_creation``) are
+    maintained on each ``record_usage`` call so that the read accessors
+    are O(1) regardless of history length.
     """
 
-    _history: list[dict] = field(default_factory=list)
+    _history: Deque[dict] = field(default_factory=lambda: deque(maxlen=_MAX_HISTORY))
     _compaction_pending: bool = False
+    _total_cache_read: int = 0
+    _total_cache_creation: int = 0
+    _total_turns: int = 0
 
     def record_usage(self, usage: dict) -> None:
         """Record usage from an API response.
@@ -47,11 +61,18 @@ class CacheTracker:
             keys: ``cache_creation_input_tokens``,
             ``cache_read_input_tokens``, ``input_tokens``.
         """
+        cache_creation = usage.get("cache_creation_input_tokens", 0)
+        cache_read = usage.get("cache_read_input_tokens", 0)
+        input_tokens = usage.get("input_tokens", 0)
         self._history.append({
-            "cache_creation": usage.get("cache_creation_input_tokens", 0),
-            "cache_read": usage.get("cache_read_input_tokens", 0),
-            "input": usage.get("input_tokens", 0),
+            "cache_creation": cache_creation,
+            "cache_read": cache_read,
+            "input": input_tokens,
         })
+        # Maintain O(1) running totals (independent of history bound)
+        self._total_cache_read += cache_read
+        self._total_cache_creation += cache_creation
+        self._total_turns += 1
 
     def notify_compaction(self) -> None:
         """Mark that compaction just happened — expect a cache break.
@@ -72,7 +93,9 @@ class CacheTracker:
         if not self._history:
             return 0.0
         latest = self._history[-1]
-        total_input = latest["input"] + latest["cache_read"] + latest["cache_creation"]
+        total_input = (
+            latest["input"] + latest["cache_read"] + latest["cache_creation"]
+        )
         if total_input <= 0:
             return 0.0
         return latest["cache_read"] / total_input
@@ -117,12 +140,20 @@ class CacheTracker:
         return (prev_ratio - curr_ratio) > _BREAK_THRESHOLD
 
     def total_cache_read_tokens(self) -> int:
-        """Return the total cache_read tokens across all recorded turns."""
-        return sum(entry["cache_read"] for entry in self._history)
+        """Return the total cache_read tokens across all recorded turns.
+
+        O(1) — backed by a running sum maintained on each
+        ``record_usage`` call.
+        """
+        return self._total_cache_read
 
     def total_cache_creation_tokens(self) -> int:
-        """Return the total cache_creation tokens across all recorded turns."""
-        return sum(entry["cache_creation"] for entry in self._history)
+        """Return the total cache_creation tokens across all recorded turns.
+
+        O(1) — backed by a running sum maintained on each
+        ``record_usage`` call.
+        """
+        return self._total_cache_creation
 
     def summary(self) -> str:
         """Return human-readable cache stats."""
@@ -132,7 +163,8 @@ class CacheTracker:
         ratio = self.cache_read_ratio()
         total_read = self.total_cache_read_tokens()
         total_create = self.total_cache_creation_tokens()
-        turns = len(self._history)
+        # Use the running counter, not len(_history), since history is bounded.
+        turns = self._total_turns
         status = "BREAK" if self.is_break_detected() else "OK"
 
         return (

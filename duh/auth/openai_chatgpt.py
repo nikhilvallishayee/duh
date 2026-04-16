@@ -102,9 +102,34 @@ def _extract_account_id(access_token: str) -> str:
     return ""
 
 
+@dataclass
+class TokenExchangeResult:
+    """Outcome of an OAuth token exchange.
+
+    ``tokens`` is set on success; otherwise ``error`` carries an
+    operator-friendly description and ``status`` carries the HTTP status
+    code (or ``None`` if the call never reached the server).
+    """
+
+    tokens: dict[str, Any] | None = None
+    status: int | None = None
+    error: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.tokens is not None
+
+
 def _exchange_code_for_tokens(
     code: str, verifier: str, redirect_uri: str = ""
 ) -> dict[str, Any] | None:
+    """Backwards-compatible wrapper -- returns just the tokens dict or ``None``."""
+    return _exchange_code_for_tokens_detailed(code, verifier, redirect_uri).tokens
+
+
+def _exchange_code_for_tokens_detailed(
+    code: str, verifier: str, redirect_uri: str = ""
+) -> TokenExchangeResult:
     data = {
         "grant_type": "authorization_code",
         "client_id": CLIENT_ID,
@@ -119,23 +144,27 @@ def _exchange_code_for_tokens(
                 data=data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
-        if resp.status_code >= 400:
-            return None
+        status = resp.status_code
+        if status >= 400:
+            return TokenExchangeResult(status=status, error=f"HTTP {status}")
         body = resp.json()
-    except Exception:
-        return None
+    except Exception as exc:
+        return TokenExchangeResult(status=None, error=f"network error: {exc}")
 
     access = body.get("access_token", "")
     refresh = body.get("refresh_token", "")
     expires_in = body.get("expires_in", 0)
     if not access or not refresh or not isinstance(expires_in, int):
-        return None
-    return {
-        "access_token": access,
-        "refresh_token": refresh,
-        "expires_at_ms": int(time.time() * 1000) + expires_in * 1000,
-        "account_id": _extract_account_id(access),
-    }
+        return TokenExchangeResult(status=status, error="malformed token response")
+    return TokenExchangeResult(
+        status=status,
+        tokens={
+            "access_token": access,
+            "refresh_token": refresh,
+            "expires_at_ms": int(time.time() * 1000) + expires_in * 1000,
+            "account_id": _extract_account_id(access),
+        },
+    )
 
 
 def _refresh_tokens(refresh_token: str) -> dict[str, Any] | None:
@@ -301,11 +330,24 @@ def connect_openai_chatgpt_subscription(
         except Exception:
             code = pasted
 
+    # Try the legacy entry point first so existing monkeypatches in tests
+    # (which target ``_exchange_code_for_tokens``) keep working.  When it
+    # returns ``None`` we re-issue the request via the detailed variant to
+    # capture the HTTP status / network error for the operator (QX-5).
     tokens = _exchange_code_for_tokens(code, verifier, redirect_uri)
     if not tokens:
-        return False, "OAuth token exchange failed."
+        result = _exchange_code_for_tokens_detailed(code, verifier, redirect_uri)
+        status = f" (HTTP {result.status})" if result.status is not None else ""
+        detail = f": {result.error}" if result.error else ""
+        return False, (
+            f"OAuth token exchange failed{status}{detail}. "
+            "Run `duh doctor` to check auth, or try `/connect openai` again."
+        )
     if not tokens.get("account_id"):
-        return False, "Authenticated but could not extract chatgpt_account_id."
+        return False, (
+            "Authenticated but could not extract chatgpt_account_id. "
+            "Run `duh doctor` to verify your ChatGPT subscription."
+        )
 
     provider = load_provider_auth("openai")
     if not isinstance(provider, dict):

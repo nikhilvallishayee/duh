@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 import uuid as _uuid
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, AsyncGenerator
+from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator
 
 from duh.hooks import HookEvent, execute_hooks
 from duh.kernel.cache_tracker import CacheTracker
@@ -102,6 +102,28 @@ class EngineConfig:
     cwd: str = "."
     trifecta_acknowledged: bool = False
     auto_memory: bool = False
+
+
+@dataclass
+class _TurnState:
+    """Mutable per-turn token + control flow state.
+
+    Shared between the public ``run()`` orchestrator and the helper
+    methods that process query events. Using a dataclass instead of
+    closure variables lets us decompose the work into small methods
+    without losing the ability to mutate counters across them.
+    """
+    input_tokens: int = 0
+    output_tokens: int = 0
+    # Set True when an event from the query loop indicates we should
+    # discard the rest of this iteration and retry with compaction.
+    ptl_detected: bool = False
+    # Set True when an overload/rate-limit error appears and a fallback
+    # model is configured.
+    should_fallback: bool = False
+    # Set True when the per-turn budget check fires a budget_exceeded
+    # event — the orchestrator must stop the run.
+    budget_exceeded: bool = False
 
 
 class Engine:
@@ -399,6 +421,537 @@ class Engine:
             logger.warning("Auto-memory extraction failed", exc_info=True)
             return []
 
+    # ------------------------------------------------------------------
+    # Compaction helpers
+    # ------------------------------------------------------------------
+
+    async def _post_compact_rebuild(self, kind: str, count_before: int,
+                                    tokens_before: int, model: str) -> None:
+        """Run shared post-compaction housekeeping.
+
+        Steps performed:
+          1. Invalidate the token cache (compaction replaced the list).
+          2. Notify the cache tracker (suppress false cache-break).
+          3. ADR-058: rebuild file state when a file_tracker is present.
+          4. ADR-058 Phase 4: restore plan/skill context.
+          5. Record compact analytics.
+          6. Emit POST_COMPACT hook.
+        """
+        # 1. Token cache invalidation.
+        self._invalidate_token_cache()
+        # 2. Cache tracker.
+        self._cache_tracker.notify_compaction()
+
+        # 3. ADR-058: post-compact file state rebuild.
+        file_tracker = getattr(self._deps, "file_tracker", None)
+        if file_tracker is not None:
+            self._messages = await rebuild_post_compact_context(
+                self._messages, file_tracker,
+            )
+            self._invalidate_token_cache()
+
+        # 4. ADR-058 Phase 4: plan + skill context restoration.
+        plan_ctx = restore_plan_context(self)
+        if plan_ctx:
+            self._messages.append(Message(
+                role="system",
+                content=f"[Post-compaction plan restoration]\n{plan_ctx}",
+                metadata={"subtype": "post_compact_plan_restore"},
+            ))
+        skill_ctx = restore_skill_context(self)
+        if skill_ctx:
+            self._messages.append(Message(
+                role="system",
+                content=f"[Post-compaction skill restoration]\n{skill_ctx}",
+                metadata={"subtype": "post_compact_skill_restore"},
+            ))
+
+        # 5. Analytics — _estimate_messages_tokens rebuilds the cache.
+        tokens_after = self._estimate_messages_tokens(model)
+        self._compact_stats.record(
+            kind, tokens_freed=max(0, tokens_before - tokens_after),
+        )
+
+        # 6. POST_COMPACT hook.
+        if self._deps.hook_registry:
+            await execute_hooks(
+                self._deps.hook_registry,
+                HookEvent.POST_COMPACT,
+                {
+                    "message_count_before": count_before,
+                    "message_count_after": len(self._messages),
+                },
+            )
+
+    async def _auto_compact(
+        self,
+        input_estimate: int,
+        effective_model: str,
+        compact_fn: Any,
+    ) -> None:
+        """Trigger and run auto-compaction when context exceeds 80% threshold.
+
+        Mutates ``self._messages`` in place. Returns silently when no
+        compaction is needed. All hook emission, analytics, and cache
+        invalidation happens here.
+        """
+        context_limit = get_context_limit(effective_model)
+        threshold = int(context_limit * 0.80)
+        if input_estimate <= threshold:
+            return
+
+        logger.info(
+            "Auto-compacting: ~%d tokens exceeds 80%% threshold (%d) "
+            "for %s (limit %d)",
+            input_estimate, threshold, effective_model, context_limit,
+        )
+        # PRE_COMPACT hook.
+        if self._deps.hook_registry:
+            await execute_hooks(
+                self._deps.hook_registry,
+                HookEvent.PRE_COMPACT,
+                {"message_count": len(self._messages),
+                 "token_estimate": input_estimate},
+            )
+
+        count_before = len(self._messages)
+        tokens_before = input_estimate
+        self._messages = await compact_fn(
+            self._messages, token_limit=threshold,
+        )
+        await self._post_compact_rebuild(
+            "auto", count_before, tokens_before, effective_model,
+        )
+
+    async def _ptl_retry_compact(
+        self,
+        ptl_retries: int,
+        input_estimate: int,
+        effective_model: str,
+        compact_fn: Any,
+    ) -> None:
+        """Compact aggressively when the model returned a prompt-too-long error.
+
+        Uses the progressive compaction targets defined by ADR-031:
+        70% → 50% → 30% on successive retries.
+        """
+        logger.info(
+            "Prompt too long (retry %d/%d), compacting...",
+            ptl_retries, MAX_PTL_RETRIES,
+        )
+        context_limit = get_context_limit(effective_model)
+        target_ratio = _PTL_COMPACTION_TARGETS[
+            min(ptl_retries - 1, len(_PTL_COMPACTION_TARGETS) - 1)
+        ]
+        target = int(context_limit * target_ratio)
+
+        if self._deps.hook_registry:
+            await execute_hooks(
+                self._deps.hook_registry,
+                HookEvent.PRE_COMPACT,
+                {"message_count": len(self._messages),
+                 "token_estimate": input_estimate},
+            )
+
+        count_before = len(self._messages)
+        tokens_before_ptl = self._estimate_messages_tokens(effective_model)
+        self._messages = await compact_fn(
+            self._messages, token_limit=target,
+        )
+        await self._post_compact_rebuild(
+            "ptl_retry", count_before, tokens_before_ptl, effective_model,
+        )
+
+    # ------------------------------------------------------------------
+    # Shared event processing
+    # ------------------------------------------------------------------
+
+    def _track_assistant_message(
+        self,
+        msg: Message,
+        effective_model: str,
+        state: _TurnState,
+        *,
+        adjust_input: bool,
+    ) -> None:
+        """Record an assistant message in history and update token totals.
+
+        Shared between the primary and fallback paths. When
+        ``adjust_input`` is True (primary path), real input-token usage
+        from the provider replaces the heuristic estimate. The fallback
+        path skips that adjustment to mirror the original behavior.
+        """
+        self._messages.append(msg)
+        self._track_new_message(msg, effective_model)
+        usage = msg.metadata.get("usage", {}) if msg.metadata else {}
+        real_input = usage.get("input_tokens", 0)
+        real_output = usage.get("output_tokens", 0)
+        if real_output > 0:
+            out_tokens = real_output
+            if adjust_input and real_input > 0:
+                # Replace heuristic input estimate with real data.
+                delta = real_input - state.input_tokens
+                self._total_input_tokens += delta
+                state.input_tokens = real_input
+        else:
+            out_tokens = count_tokens_for_model(msg.text, effective_model)
+        self._total_output_tokens += out_tokens
+        state.output_tokens += out_tokens
+        if adjust_input:
+            # ADR-061 Phase 3: only the primary path tracks cache hits.
+            self._cache_tracker.record_usage(usage)
+
+    def _capture_tool_result(self, msg: Message, effective_model: str) -> None:
+        """Append a tool_result user message to history (ADR-057)."""
+        self._messages.append(msg)
+        self._track_new_message(msg, effective_model)
+
+    def _slog_event(self, event: dict[str, Any]) -> None:
+        """Forward tool/error events to the structured logger when present."""
+        if not self._slog:
+            return
+        event_type = event.get("type", "")
+        if event_type == "tool_use":
+            self._slog.tool_call(
+                name=event.get("name", ""),
+                input=event.get("input"),
+            )
+        elif event_type == "tool_result":
+            self._slog.tool_result(
+                name=event.get("name", ""),
+                output=str(event.get("output", "")),
+                is_error=event.get("is_error", False),
+            )
+        elif event_type == "error":
+            self._slog.error(error=event.get("error", ""))
+
+    async def _on_done(
+        self,
+        event: dict[str, Any],
+        effective_model: str,
+        state: _TurnState,
+        *,
+        enable_hooks: bool,
+        enable_auto_memory: bool,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Run end-of-turn bookkeeping and yield any follow-up events.
+
+        Performs (in order): TASK_COMPLETED hook (when enabled),
+        per-turn token snapshot, budget check + yield budget events,
+        session auto-save, and auto-memory extraction.
+
+        Sets ``state.budget_exceeded`` when the budget cap is hit so
+        the caller can return cleanly.
+        """
+        # TASK_COMPLETED hook — primary path only.
+        if enable_hooks and self._deps.hook_registry:
+            await execute_hooks(
+                self._deps.hook_registry,
+                HookEvent.TASK_COMPLETED,
+                {
+                    "session_id": self._session_id,
+                    "turn": self._turn_count,
+                    "stop_reason": event.get("stop_reason", "end_turn"),
+                },
+            )
+        # Per-turn token snapshot.
+        self._turn_token_history.append(
+            (state.input_tokens, state.output_tokens),
+        )
+        # Budget enforcement.
+        budget_events = self._check_budget(effective_model)
+        for be in budget_events:
+            yield be
+        if any(be["type"] == "budget_exceeded" for be in budget_events):
+            state.budget_exceeded = True
+            return
+        # Session auto-save.
+        if self._session_store:
+            try:
+                await self._session_store.save(
+                    self._session_id, self._messages,
+                )
+            except Exception:
+                # Primary path warns; fallback path logs at debug. Mirror
+                # primary semantics here — fallback distinguishes itself
+                # via enable_auto_memory=False, but we keep the warn for
+                # both paths since it's the same risk: lost history.
+                logger.warning(
+                    "Session auto-save failed; "
+                    "conversation history may be lost",
+                    exc_info=True,
+                )
+        # Auto-memory extraction (ADR-069 P1) — primary path only.
+        if enable_auto_memory and self._config.auto_memory:
+            extracted = await self._run_auto_memory(effective_model)
+            if extracted:
+                yield {"type": "auto_memory", "facts": extracted}
+
+    def _classify_error(
+        self,
+        event: dict[str, Any],
+        state: _TurnState,
+        compact_fn: Any,
+        fallback_model: str | None,
+        ptl_retries: int,
+    ) -> bool:
+        """Inspect an error event and update ``state`` for retry routing.
+
+        Returns True when the caller should suppress (not yield) the
+        event because a PTL retry or fallback switch is queued.
+        """
+        if event.get("type", "") != "error":
+            return False
+        text = event.get("error", "")
+        # PTL retry takes priority — disabled if no compact_fn or budget gone.
+        if compact_fn is not None and ptl_retries < MAX_PTL_RETRIES \
+                and _is_ptl_error(text):
+            state.ptl_detected = True
+            return True
+        # Fallback route — only if a fallback model is configured.
+        if fallback_model and _is_fallback_error(text):
+            state.should_fallback = True
+            return True
+        return False
+
+    def _ingest_message_event(
+        self,
+        event: dict[str, Any],
+        effective_model: str,
+        state: _TurnState,
+        enable_hooks: bool,
+    ) -> bool:
+        """Capture assistant + tool_result messages into history.
+
+        Returns True for ``tool_result_message`` events (which the caller
+        must NOT yield to the consumer — they are internal to ADR-057).
+        """
+        event_type = event.get("type", "")
+        if event_type == "assistant":
+            msg = event.get("message")
+            if isinstance(msg, Message):
+                self._track_assistant_message(
+                    msg, effective_model, state,
+                    adjust_input=enable_hooks,
+                )
+            if enable_hooks and self._slog:
+                self._slog.model_response(
+                    model=effective_model, turn=self._turn_count,
+                )
+            return False
+        if event_type == "tool_result_message":
+            msg = event.get("message")
+            if isinstance(msg, Message):
+                self._capture_tool_result(msg, effective_model)
+            return True
+        return False
+
+    async def _process_query_events(
+        self,
+        query_iter: AsyncIterator[dict[str, Any]],
+        *,
+        effective_model: str,
+        state: _TurnState,
+        compact_fn: Any,
+        fallback_model: str | None,
+        ptl_retries: int,
+        enable_hooks: bool,
+        enable_auto_memory: bool,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Iterate ``query_iter`` and yield user-visible events.
+
+        Shared between primary and fallback paths. ``compact_fn=None``
+        disables PTL detection; ``fallback_model=None`` disables
+        fallback detection; ``enable_hooks`` controls TASK_COMPLETED +
+        slog; ``enable_auto_memory`` controls ADR-069 P1 extraction.
+        Mutates ``state`` to signal control flow back to the caller.
+        """
+        async for event in query_iter:
+            # Capture assistant / tool_result messages into history.
+            # tool_result events stay internal — never yielded.
+            if self._ingest_message_event(
+                event, effective_model, state, enable_hooks,
+            ):
+                continue
+
+            if enable_hooks:
+                self._slog_event(event)
+
+            # Error routing — PTL retry or fallback switch.
+            if self._classify_error(
+                event, state, compact_fn, fallback_model, ptl_retries,
+            ):
+                continue
+
+            event_type = event.get("type", "")
+            # Defensive: don't yield done if PTL retry is queued.
+            if event_type == "done" and state.ptl_detected:  # pragma: no cover - defensive; query() returns after error
+                continue
+
+            yield event
+
+            if event_type == "done":
+                async for follow_up in self._on_done(
+                    event, effective_model, state,
+                    enable_hooks=enable_hooks,
+                    enable_auto_memory=enable_auto_memory,
+                ):
+                    yield follow_up
+                if state.budget_exceeded:
+                    return
+
+    # ------------------------------------------------------------------
+    # Orchestrator helpers — primary + fallback paths
+    # ------------------------------------------------------------------
+
+    async def _run_with_ptl_retry(
+        self,
+        max_turns: int | None,
+        effective_model: str,
+        fallback_model: str | None,
+        compact_fn: Any,
+        input_estimate: int,
+        state: _TurnState,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Run the primary query loop with PTL retry + progressive compaction.
+
+        Yields user-visible events. Sets ``state.should_fallback`` when
+        an overload/rate-limit error is observed; the orchestrator then
+        invokes the fallback path.
+        """
+        ptl_retries = 0
+        while True:
+            state.ptl_detected = False
+            query_iter = query(
+                messages=list(self._messages),
+                system_prompt=self._config.system_prompt,
+                deps=self._deps,
+                tools=self._config.tools,
+                max_turns=max_turns or self._config.max_turns,
+                model=effective_model,
+                thinking=self._config.thinking,
+                tool_choice=self._config.tool_choice,
+            )
+            async for event in self._process_query_events(
+                query_iter,
+                effective_model=effective_model,
+                state=state,
+                compact_fn=compact_fn,
+                fallback_model=fallback_model,
+                ptl_retries=ptl_retries,
+                enable_hooks=True,
+                enable_auto_memory=True,
+            ):
+                yield event
+            if state.budget_exceeded:
+                return
+            if state.ptl_detected:
+                ptl_retries += 1
+                await self._ptl_retry_compact(
+                    ptl_retries, input_estimate,
+                    effective_model, compact_fn,
+                )
+                continue  # retry the query
+            break  # query completed normally (or fallback flagged)
+
+    async def _run_fallback(
+        self,
+        max_turns: int | None,
+        fallback_model: str,
+        primary_model: str,
+        state: _TurnState,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Run the fallback model after primary raised an overload error.
+
+        Reuses ``_process_query_events`` so the assistant/tool_result
+        capture, budget enforcement, and session auto-save logic stays
+        identical to the primary path. Hooks + auto-memory are disabled
+        here to mirror the original behavior of the legacy fallback
+        block.
+        """
+        logger.info(
+            "Primary model overloaded, switching to fallback: %s",
+            fallback_model,
+        )
+        # The model used for token tracking stays consistent with the
+        # legacy code: ``fallback_model or effective_model``.
+        track_model = fallback_model or primary_model
+        query_iter = query(
+            messages=self._messages,
+            system_prompt=self._config.system_prompt,
+            deps=self._deps,
+            tools=self._config.tools,
+            max_turns=max_turns or self._config.max_turns,
+            model=fallback_model,
+            thinking=self._config.thinking,
+            tool_choice=self._config.tool_choice,
+        )
+        async for event in self._process_query_events(
+            query_iter,
+            effective_model=track_model,
+            state=state,
+            compact_fn=None,
+            fallback_model=None,
+            ptl_retries=MAX_PTL_RETRIES,  # disable PTL detection
+            enable_hooks=False,
+            enable_auto_memory=False,
+        ):
+            yield event
+
+    # ------------------------------------------------------------------
+    # Public entry point
+    # ------------------------------------------------------------------
+
+    def _begin_turn(self, prompt: str | list[Any], model: str | None) -> int:
+        """Append the user message, bump the turn counter, and update
+        the incremental token cache. Returns the input-token estimate
+        used for budgeting + auto-compaction decisions.
+        """
+        user_msg = Message(
+            role="user",
+            content=prompt if isinstance(prompt, str) else prompt,
+        )
+        self._messages.append(user_msg)
+        self._turn_count += 1
+        effective_model = model or self._config.model
+        sys_text = (
+            self._config.system_prompt
+            if isinstance(self._config.system_prompt, str)
+            else " ".join(self._config.system_prompt)
+        )
+        if self._cache_model != effective_model:
+            self._rebuild_token_cache(effective_model)
+        else:
+            self._track_new_message(user_msg, effective_model)
+        input_estimate = (
+            self._cached_token_total
+            + count_tokens_for_model(sys_text, effective_model)
+        )
+        self._total_input_tokens += input_estimate
+        return input_estimate
+
+    async def _emit_session_lifecycle(self) -> None:
+        """Fire SETUP (once per session) + TASK_CREATED (every turn) hooks
+        and trigger structured logging at session start.
+        """
+        if self._slog and self._turn_count == 1:
+            self._slog.session_start(model=self._config.model)
+        if self._deps.hook_registry and not self._setup_emitted:
+            self._setup_emitted = True
+            await execute_hooks(
+                self._deps.hook_registry,
+                HookEvent.SETUP,
+                {"session_id": self._session_id,
+                 "model": self._config.model},
+            )
+        if self._deps.hook_registry:
+            await execute_hooks(
+                self._deps.hook_registry,
+                HookEvent.TASK_CREATED,
+                {"session_id": self._session_id,
+                 "turn": self._turn_count},
+            )
+
     async def run(
         self,
         prompt: str | list[Any],
@@ -408,443 +961,52 @@ class Engine:
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Submit a user message and stream the response.
 
-        Yields the same events as kernel.query(), plus:
-        - {"type": "session", "session_id": "...", "turn": N}
+        Yields the same events as kernel.query(), plus a synthetic
+        ``{"type": "session", "session_id": "...", "turn": N}`` event.
         """
-        # Add user message
-        user_msg = Message(role="user", content=prompt if isinstance(prompt, str) else prompt)
-        self._messages.append(user_msg)
-        self._turn_count += 1
+        # 1. Begin turn — append user, update token cache.
+        input_estimate = self._begin_turn(prompt, model)
+        state = _TurnState(input_tokens=input_estimate, output_tokens=0)
 
-        # Estimate input tokens (all messages + system prompt sent to model)
-        # Use model-calibrated chars/token ratio for better accuracy.
-        # PERF-1: Use incremental token cache — only compute tokens for the
-        # new user message; prior messages are already cached.
-        effective_model_for_count = model or self._config.model
-        sys_text = (
-            self._config.system_prompt
-            if isinstance(self._config.system_prompt, str)
-            else " ".join(self._config.system_prompt)
-        )
-        # Ensure cache is initialized / matches current model
-        if self._cache_model != effective_model_for_count:
-            self._rebuild_token_cache(effective_model_for_count)
-        else:
-            # Track the newly appended user message incrementally
-            self._track_new_message(user_msg, effective_model_for_count)
-        input_estimate = (
-            self._cached_token_total
-            + count_tokens_for_model(sys_text, effective_model_for_count)
-        )
-        self._total_input_tokens += input_estimate
-        # Track per-turn: start with estimated input; output updated below after response
-        _turn_input_tokens = input_estimate
-        _turn_output_tokens = 0
+        # 2. Session event + lifecycle hooks.
+        yield {"type": "session", "session_id": self._session_id,
+               "turn": self._turn_count}
+        await self._emit_session_lifecycle()
 
-        yield {
-            "type": "session",
-            "session_id": self._session_id,
-            "turn": self._turn_count,
-        }
-
-        if self._slog and self._turn_count == 1:
-            self._slog.session_start(model=self._config.model)
-
-        # Emit SETUP hook once per session (first run only)
-        if self._deps.hook_registry and not self._setup_emitted:
-            self._setup_emitted = True
-            await execute_hooks(
-                self._deps.hook_registry,
-                HookEvent.SETUP,
-                {"session_id": self._session_id, "model": self._config.model},
-            )
-
-        # Emit TASK_CREATED hook (fires on every run call)
-        if self._deps.hook_registry:
-            await execute_hooks(
-                self._deps.hook_registry,
-                HookEvent.TASK_CREATED,
-                {"session_id": self._session_id, "turn": self._turn_count},
-            )
-
-        # --- Auto-compact if approaching context limit ---
-        # Use the injected compact function if provided (backward compat),
-        # otherwise fall back to AdaptiveCompactor (ADR-056).
+        # 3. Auto-compact when nearing the context window limit.
         compact_fn = self._deps.compact
         if compact_fn is None:
             compact_fn = self._get_adaptive_compactor().compact
-
         effective_model = model or self._config.model
-        context_limit = get_context_limit(effective_model)
-        threshold = int(context_limit * 0.80)
-        if input_estimate > threshold:
-            logger.info(
-                "Auto-compacting: ~%d tokens exceeds 80%% threshold (%d) "
-                "for %s (limit %d)",
-                input_estimate, threshold, effective_model, context_limit,
-            )
-            # Emit PRE_COMPACT hook
-            if self._deps.hook_registry:
-                await execute_hooks(
-                    self._deps.hook_registry,
-                    HookEvent.PRE_COMPACT,
-                    {"message_count": len(self._messages), "token_estimate": input_estimate},
-                )
+        await self._auto_compact(input_estimate, effective_model, compact_fn)
 
-            count_before = len(self._messages)
-            tokens_before = input_estimate
-            self._messages = await compact_fn(
-                self._messages, token_limit=threshold,
-            )
-            # PERF-1: Invalidate token cache — compaction replaced the message list.
-            self._invalidate_token_cache()
-            # ADR-061 Phase 3: suppress false cache-break after compaction
-            self._cache_tracker.notify_compaction()
-
-            # ADR-058: Post-compact file state rebuild
-            file_tracker = getattr(self._deps, "file_tracker", None)
-            if file_tracker is not None:
-                self._messages = await rebuild_post_compact_context(
-                    self._messages, file_tracker,
-                )
-                # Invalidate again — rebuild may have replaced the list.
-                self._invalidate_token_cache()
-
-            # ADR-058 Phase 4: Restore plan and skill context
-            plan_ctx = restore_plan_context(self)
-            if plan_ctx:
-                self._messages.append(Message(
-                    role="system",
-                    content=f"[Post-compaction plan restoration]\n{plan_ctx}",
-                    metadata={"subtype": "post_compact_plan_restore"},
-                ))
-            skill_ctx = restore_skill_context(self)
-            if skill_ctx:
-                self._messages.append(Message(
-                    role="system",
-                    content=f"[Post-compaction skill restoration]\n{skill_ctx}",
-                    metadata={"subtype": "post_compact_skill_restore"},
-                ))
-
-            # ADR-058: Record compact analytics — _estimate_messages_tokens
-            # will rebuild the cache from the compacted message list.
-            tokens_after = self._estimate_messages_tokens(effective_model)
-            self._compact_stats.record(
-                "auto", tokens_freed=max(0, tokens_before - tokens_after),
-            )
-
-            # Emit POST_COMPACT hook
-            if self._deps.hook_registry:
-                await execute_hooks(
-                    self._deps.hook_registry,
-                    HookEvent.POST_COMPACT,
-                    {
-                        "message_count_before": count_before,
-                        "message_count_after": len(self._messages),
-                    },
-                )
-
-        # --- Context gate: block at 95% AFTER auto-compact (ADR-059) ---
-        # Placed after compaction so compaction has a chance to free context first.
-        # Only blocks if context is still over 95% after all compaction attempts.
-        gate_limit = get_context_limit(model or self._config.model)
-        gate = ContextGate(gate_limit)
-        # PERF-1: Use cached total instead of full-scan sum.
-        post_compact_estimate = self._estimate_messages_tokens(
-            model or self._config.model,
-        )
+        # 4. Context gate (ADR-059): block at 95% after compaction.
+        gate = ContextGate(get_context_limit(effective_model))
+        post_compact_estimate = self._estimate_messages_tokens(effective_model)
         allowed, reason = gate.check(post_compact_estimate)
         if not allowed:
             yield {"type": "context_blocked", "message": reason}
             return
 
-        # Run the query loop
-        effective_model = model or self._config.model
+        # 5. Primary query loop with PTL retry.
         fallback_model = self._config.fallback_model
-        should_fallback = False
-
         if self._slog:
-            self._slog.model_request(model=effective_model, turn=self._turn_count)
-
-        # --- Query with PTL retry ---
-        # ADR-057: self._messages now has correct user/assistant alternation
-        # (including tool_result user messages) so validate_alternation is
-        # no longer needed on the hot path. A fresh copy is taken each
-        # iteration so PTL-retry after compaction sees the updated list.
-        ptl_retries = 0
-        while True:
-            ptl_detected = False
-
-            async for event in query(
-                messages=list(self._messages),
-                system_prompt=self._config.system_prompt,
-                deps=self._deps,
-                tools=self._config.tools,
-                max_turns=max_turns or self._config.max_turns,
-                model=effective_model,
-                thinking=self._config.thinking,
-                tool_choice=self._config.tool_choice,
-            ):
-                event_type = event.get("type", "")
-
-                # Track assistant messages in history and count output tokens.
-                # Prefer real usage from provider metadata when available;
-                # fall back to model-calibrated heuristic otherwise.
-                if event_type == "assistant":
-                    msg = event.get("message")
-                    if isinstance(msg, Message):
-                        self._messages.append(msg)
-                        # PERF-1: Track new message in incremental token cache.
-                        self._track_new_message(msg, effective_model)
-                        usage = msg.metadata.get("usage", {}) if msg.metadata else {}
-                        real_input = usage.get("input_tokens", 0)
-                        real_output = usage.get("output_tokens", 0)
-                        if real_output > 0:
-                            # Real usage data from provider — use it and correct
-                            # the input estimate if provider also reported input tokens.
-                            out_tokens = real_output
-                            if real_input > 0:
-                                # Replace the heuristic input estimate with real data.
-                                # Adjust cumulative total: remove estimate, add real.
-                                delta = real_input - _turn_input_tokens
-                                self._total_input_tokens += delta
-                                _turn_input_tokens = real_input
-                        else:
-                            # No real usage — use calibrated heuristic
-                            out_tokens = count_tokens_for_model(
-                                msg.text, effective_model
-                            )
-                        self._total_output_tokens += out_tokens
-                        _turn_output_tokens += out_tokens
-                        # ADR-061 Phase 3: track cache hit rates
-                        self._cache_tracker.record_usage(usage)
-                    if self._slog:
-                        self._slog.model_response(model=effective_model, turn=self._turn_count)
-
-                # Capture tool_result user messages into canonical history (ADR-057)
-                if event_type == "tool_result_message":
-                    msg = event.get("message")
-                    if isinstance(msg, Message):
-                        self._messages.append(msg)
-                        # PERF-1: Track tool_result message in incremental token cache.
-                        self._track_new_message(msg, effective_model)
-                    continue  # internal event — don't yield to caller
-
-                # Structured logging for tool & error events
-                if self._slog:
-                    if event_type == "tool_use":
-                        self._slog.tool_call(
-                            name=event.get("name", ""),
-                            input=event.get("input"),
-                        )
-                    elif event_type == "tool_result":
-                        self._slog.tool_result(
-                            name=event.get("name", ""),
-                            output=str(event.get("output", "")),
-                            is_error=event.get("is_error", False),
-                        )
-                    elif event_type == "error":
-                        self._slog.error(error=event.get("error", ""))
-
-                # Detect PTL errors for retry
-                if event_type == "error":
-                    error_text = event.get("error", "")
-                    if (_is_ptl_error(error_text)
-                            and ptl_retries < MAX_PTL_RETRIES
-                            and compact_fn is not None):
-                        ptl_detected = True
-                        continue  # don't yield PTL error, we'll retry
-
-                # Detect fallback-eligible errors
-                if fallback_model and event_type == "error":
-                    error_text = event.get("error", "")
-                    if _is_fallback_error(error_text):
-                        should_fallback = True
-                        # Don't yield this error — we'll retry with fallback
-                        continue
-
-                # Don't yield done if we're about to PTL-retry
-                if event_type == "done" and ptl_detected:  # pragma: no cover - defensive; query() returns after error
-                    continue
-
-                yield event
-
-                # Emit TASK_COMPLETED hook when the query loop finishes
-                if event_type == "done" and self._deps.hook_registry:
-                    await execute_hooks(
-                        self._deps.hook_registry,
-                        HookEvent.TASK_COMPLETED,
-                        {
-                            "session_id": self._session_id,
-                            "turn": self._turn_count,
-                            "stop_reason": event.get("stop_reason", "end_turn"),
-                        },
-                    )
-
-                # Record per-turn token snapshot when the turn completes
-                if event_type == "done":
-                    self._turn_token_history.append((_turn_input_tokens, _turn_output_tokens))
-
-                # --- Budget enforcement after each turn ---
-                if event_type == "done":
-                    budget_events = self._check_budget(effective_model)
-                    for be in budget_events:
-                        yield be
-                    if any(be["type"] == "budget_exceeded" for be in budget_events):
-                        return
-
-                # Auto-save session after each turn completes
-                if event_type == "done" and self._session_store:
-                    try:
-                        await self._session_store.save(
-                            self._session_id, self._messages,
-                        )
-                    except Exception:
-                        logger.warning("Session auto-save failed; conversation history may be lost", exc_info=True)
-
-                # ADR-069 P1: Auto-memory extraction after each turn
-                if event_type == "done" and self._config.auto_memory:
-                    extracted = await self._run_auto_memory(effective_model)
-                    if extracted:
-                        yield {
-                            "type": "auto_memory",
-                            "facts": extracted,
-                        }
-
-            if ptl_detected:
-                ptl_retries += 1
-                logger.info(
-                    "Prompt too long (retry %d/%d), compacting...",
-                    ptl_retries, MAX_PTL_RETRIES,
-                )
-                context_limit = get_context_limit(effective_model)
-                # Progressive compaction targets per ADR-031: 70% → 50% → 30%.
-                target_ratio = _PTL_COMPACTION_TARGETS[min(ptl_retries - 1, len(_PTL_COMPACTION_TARGETS) - 1)]
-                target = int(context_limit * target_ratio)
-
-                # Emit PRE_COMPACT hook
-                if self._deps.hook_registry:
-                    await execute_hooks(
-                        self._deps.hook_registry,
-                        HookEvent.PRE_COMPACT,
-                        {"message_count": len(self._messages), "token_estimate": input_estimate},
-                    )
-
-                count_before = len(self._messages)
-                tokens_before_ptl = self._estimate_messages_tokens(effective_model)
-                self._messages = await compact_fn(
-                    self._messages, token_limit=target,
-                )
-                # PERF-1: Invalidate token cache — compaction replaced the message list.
-                self._invalidate_token_cache()
-                # ADR-061 Phase 3: suppress false cache-break after PTL compaction
-                self._cache_tracker.notify_compaction()
-
-                # ADR-058: Post-compact file state rebuild (PTL path)
-                file_tracker = getattr(self._deps, "file_tracker", None)
-                if file_tracker is not None:
-                    self._messages = await rebuild_post_compact_context(
-                        self._messages, file_tracker,
-                    )
-                    # Invalidate again — rebuild may have replaced the list.
-                    self._invalidate_token_cache()
-
-                # ADR-058 Phase 4: Restore plan and skill context (PTL path)
-                plan_ctx = restore_plan_context(self)
-                if plan_ctx:
-                    self._messages.append(Message(
-                        role="system",
-                        content=f"[Post-compaction plan restoration]\n{plan_ctx}",
-                        metadata={"subtype": "post_compact_plan_restore"},
-                    ))
-                skill_ctx = restore_skill_context(self)
-                if skill_ctx:
-                    self._messages.append(Message(
-                        role="system",
-                        content=f"[Post-compaction skill restoration]\n{skill_ctx}",
-                        metadata={"subtype": "post_compact_skill_restore"},
-                    ))
-
-                # ADR-058: Record compact analytics (PTL path) — will rebuild cache.
-                tokens_after_ptl = self._estimate_messages_tokens(effective_model)
-                self._compact_stats.record(
-                    "ptl_retry", tokens_freed=max(0, tokens_before_ptl - tokens_after_ptl),
-                )
-
-                # Emit POST_COMPACT hook
-                if self._deps.hook_registry:
-                    await execute_hooks(
-                        self._deps.hook_registry,
-                        HookEvent.POST_COMPACT,
-                        {
-                            "message_count_before": count_before,
-                            "message_count_after": len(self._messages),
-                        },
-                    )
-
-                continue  # retry the query
-
-            break  # Query completed normally
-
-        # --- Fallback retry (once only) ---
-        if should_fallback:
-            logger.info(
-                "Primary model overloaded, switching to fallback: %s",
-                fallback_model,
+            self._slog.model_request(
+                model=effective_model, turn=self._turn_count,
             )
-            async for event in query(
-                messages=self._messages,
-                system_prompt=self._config.system_prompt,
-                deps=self._deps,
-                tools=self._config.tools,
-                max_turns=max_turns or self._config.max_turns,
-                model=fallback_model,
-                thinking=self._config.thinking,
-                tool_choice=self._config.tool_choice,
+        async for event in self._run_with_ptl_retry(
+            max_turns, effective_model, fallback_model,
+            compact_fn, input_estimate, state,
+        ):
+            yield event
+        if state.budget_exceeded:
+            return
+
+        # 6. Fallback retry (once only).
+        if state.should_fallback and fallback_model:
+            async for event in self._run_fallback(
+                max_turns, fallback_model, effective_model, state,
             ):
-                event_type = event.get("type", "")
-
-                if event_type == "assistant":
-                    msg = event.get("message")
-                    if isinstance(msg, Message):
-                        self._messages.append(msg)
-                        # PERF-1: Track in incremental cache (fallback model).
-                        self._track_new_message(msg, fallback_model or effective_model)
-                        usage = msg.metadata.get("usage", {}) if msg.metadata else {}
-                        real_output = usage.get("output_tokens", 0)
-                        out_tokens = real_output if real_output > 0 else count_tokens_for_model(
-                            msg.text, fallback_model or effective_model
-                        )
-                        self._total_output_tokens += out_tokens
-                        _turn_output_tokens += out_tokens
-
-                # ADR-057: Capture tool_result user messages in fallback path too
-                if event_type == "tool_result_message":
-                    msg = event.get("message")
-                    if isinstance(msg, Message):
-                        self._messages.append(msg)
-                        # PERF-1: Track in incremental cache (fallback model).
-                        self._track_new_message(msg, fallback_model or effective_model)
-                    continue  # internal event — don't yield to caller
-
                 yield event
-
-                # Record per-turn token snapshot for fallback turn
-                if event_type == "done":
-                    self._turn_token_history.append((_turn_input_tokens, _turn_output_tokens))
-
-                # --- Budget enforcement in fallback loop ---
-                if event_type == "done":
-                    budget_events = self._check_budget(fallback_model)
-                    for be in budget_events:
-                        yield be
-                    if any(be["type"] == "budget_exceeded" for be in budget_events):
-                        return
-
-                if event_type == "done" and self._session_store:
-                    try:
-                        await self._session_store.save(
-                            self._session_id, self._messages,
-                        )
-                    except Exception:
-                        logger.debug("Session auto-save failed", exc_info=True)
+            if state.budget_exceeded:
+                return

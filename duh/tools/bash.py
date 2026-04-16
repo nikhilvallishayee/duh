@@ -17,6 +17,7 @@ later via ``/jobs <id>``.
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from typing import Any
 
@@ -24,6 +25,8 @@ from duh.kernel.tool import MAX_TOOL_OUTPUT, TOOL_TIMEOUTS, ToolContext, ToolRes
 from duh.tools.bash_security import classify_command
 from duh.adapters.sandbox.policy import SandboxCommand, detect_sandbox_type
 from duh.security.trifecta import Capability
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = TOOL_TIMEOUTS.get("Bash", 300)  # from central config
 
@@ -128,9 +131,18 @@ class BashTool:
         is_background = command.startswith("bg:")
         check_cmd = command[3:].strip() if is_background else command
 
+        # SEC-MEDIUM-1: ``skip_permissions`` bypasses the dangerous-command
+        # block-list. It is set in two well-defined places:
+        #   * cli/runner.py — when the user passes
+        #     ``--dangerously-skip-permissions`` or chooses an automation
+        #     ``--permission-mode`` (``bypassPermissions``/``dontAsk``).
+        #   * cli/repl.py   — same flag, REPL entry path.
+        # Both paths surface this opt-in to the user explicitly. Whenever the
+        # bypass actually fires on a *dangerous* command we emit a WARNING so
+        # the audit trail records the elevated risk.
         skip_permissions = context.metadata.get("skip_permissions", False)
+        classification = classify_command(check_cmd, shell=resolved_shell)
         if not skip_permissions:
-            classification = classify_command(check_cmd, shell=resolved_shell)
             if classification["risk"] == "dangerous":
                 return ToolResult(
                     output=f"Command blocked: {classification['reason']}",
@@ -138,8 +150,13 @@ class BashTool:
                     metadata={"blocked": True, "risk": "dangerous",
                               "reason": classification["reason"]},
                 )
-        else:
-            classification = classify_command(check_cmd, shell=resolved_shell)
+        elif classification["risk"] in ("dangerous", "moderate"):
+            logger.warning(
+                "skip_permissions bypass: allowing %s command (%s): %s",
+                classification["risk"],
+                classification["reason"],
+                check_cmd[:200],
+            )
 
         # --- Background job handling (AFTER security check) ---
         if is_background:

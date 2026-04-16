@@ -563,7 +563,12 @@ def test_connect_chatgpt_token_exchange_returns_none(monkeypatch, fake_store):
         output_fn=lambda *a, **k: None,
     )
     assert ok is False
-    assert msg == "OAuth token exchange failed."
+    # New format includes status & remediation hint -- still starts with the
+    # canonical "OAuth token exchange failed" prefix and now surfaces the
+    # HTTP status and a `duh doctor` hint per QX-5.
+    assert msg.startswith("OAuth token exchange failed")
+    assert "HTTP 500" in msg
+    assert "duh doctor" in msg
 
 
 def test_connect_chatgpt_missing_account_id(monkeypatch, fake_store):

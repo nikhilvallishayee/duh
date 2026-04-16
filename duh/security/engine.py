@@ -58,8 +58,17 @@ class ScannerRegistry:
                 self._scanners[instance.name] = instance
 
 
+MAX_PARALLEL_SCANNERS = 4
+
+
 class Runner:
-    """Runs scanners with isolation, timeout, and on_scanner_error handling."""
+    """Runs scanners with isolation, timeout, and on_scanner_error handling.
+
+    Scanners run concurrently bounded by ``max_parallel`` (default 4).
+    Each scanner is fully isolated — an exception or timeout in one
+    never aborts another.  Result order matches the input ``scanners``
+    iterable so callers can rely on positional indexing.
+    """
 
     def __init__(
         self,
@@ -67,10 +76,12 @@ class Runner:
         registry: ScannerRegistry,
         policy: SecurityPolicy,
         per_scanner_timeout_s: float = 60.0,
+        max_parallel: int = MAX_PARALLEL_SCANNERS,
     ) -> None:
         self._registry = registry
         self._policy = policy
         self._timeout = per_scanner_timeout_s
+        self._max_parallel = max_parallel
 
     async def run(
         self,
@@ -79,14 +90,30 @@ class Runner:
         scanners: Iterable[str],
         changed_files: list[Path] | None = None,
     ) -> list[ScannerResult]:
-        results: list[ScannerResult] = []
-        for name in scanners:
+        names = list(scanners)
+        if not names:
+            return []
+
+        semaphore = asyncio.Semaphore(self._max_parallel)
+
+        async def _bounded(name: str) -> ScannerResult:
             scanner = self._registry.get(name)
             cfg = self._policy.scanners.get(name, ScannerConfig())
-            result = await self._run_one(scanner, target, cfg, changed_files)
-            results.append(result)
-            if result.status == "error" and self._policy.on_scanner_error == "fail":
-                raise RuntimeError(f"scanner {name} failed: {result.reason}")
+            async with semaphore:
+                return await self._run_one(scanner, target, cfg, changed_files)
+
+        # gather preserves input order in its return list, even when
+        # individual coroutines complete out of order.
+        results: list[ScannerResult] = await asyncio.gather(
+            *(_bounded(n) for n in names)
+        )
+
+        # Honour fail-fast policy *after* all scanners have finished so
+        # one failure can't cancel the others mid-flight (error isolation).
+        if self._policy.on_scanner_error == "fail":
+            for name, result in zip(names, results):
+                if result.status == "error":
+                    raise RuntimeError(f"scanner {name} failed: {result.reason}")
         return results
 
     async def _run_one(

@@ -55,6 +55,75 @@ class SlashContext:
 _HandlerResult = tuple[bool, str]
 
 
+# ---------------------------------------------------------------------------
+# Cost-delta warning for /model switches
+# ---------------------------------------------------------------------------
+
+# Threshold: warn when the new model's input price is at least this many
+# multiples of the current model's input price.
+_COST_WARN_RATIO = 10.0
+
+
+def _short_name(model: str) -> str:
+    """Strip dates/sizes for a friendly short label (haiku/sonnet/opus/...)."""
+    lower = model.lower()
+    for tag in ("haiku", "sonnet", "opus"):
+        if tag in lower:
+            return tag
+    if "gpt-4o-mini" in lower:
+        return "gpt-4o-mini"
+    if "gpt-4o" in lower:
+        return "gpt-4o"
+    if "ollama" in lower or "llama" in lower or "qwen" in lower:
+        return "local"
+    return model
+
+
+def _format_cost_delta_warning(current: str, target: str) -> str:
+    """Return a one-line warning when switching to a much pricier model.
+
+    Returns ``""`` when the switch is to a cheaper or comparable model, or
+    when either model has unknown pricing (free/local models price 0 are
+    handled explicitly).
+    """
+    from duh.kernel.tokens import _resolve_pricing
+
+    cur_in, cur_out = _resolve_pricing(current)
+    new_in, new_out = _resolve_pricing(target)
+
+    def _fmt(price: float) -> str:
+        # 15.0 -> "15", 0.25 -> "0.25", 0.6 -> "0.60" -- choose the shortest
+        # representation that's still unambiguous.
+        if price == int(price):
+            return f"{int(price)}"
+        if price < 1.0:
+            return f"{price:.2f}"
+        return f"{price:g}"
+
+    # Free model -> paid model: always warn.
+    if cur_in == 0.0 and new_in > 0.0:
+        return (
+            f"  ⚠️  Switching from {_short_name(current)} (free) to "
+            f"{_short_name(target)} (${_fmt(new_in)}/M in, ${_fmt(new_out)}/M out)"
+        )
+
+    # Avoid division by zero / no pricing info; nothing useful to say.
+    if cur_in <= 0.0 or new_in <= 0.0:
+        return ""
+
+    ratio = new_in / cur_in
+    if ratio < _COST_WARN_RATIO:
+        return ""
+
+    return (
+        f"  ⚠️  Switching from {_short_name(current)} "
+        f"(${_fmt(cur_in)}/M in, ${_fmt(cur_out)}/M out) "
+        f"to {_short_name(target)} "
+        f"(${_fmt(new_in)}/M in, ${_fmt(new_out)}/M out) "
+        f"— {ratio:.0f}x cost increase"
+    )
+
+
 class SlashDispatcher:
     """Table-driven dispatcher for REPL slash commands."""
 
@@ -158,6 +227,12 @@ class SlashDispatcher:
             requested = arg.strip()
             if requested.lower() == "codex":
                 requested = "gpt-5.2-codex"
+
+            # Cost warning when jumping to a much pricier model.
+            warning = _format_cost_delta_warning(model, requested)
+            if warning:
+                sys.stdout.write(warning + "\n")
+
             ok, result = self._switch_backend_for_model(requested)
             self.ctx.engine._config.system_prompt = rebuild_system_prompt(
                 self.ctx.engine._config.system_prompt, model, requested,

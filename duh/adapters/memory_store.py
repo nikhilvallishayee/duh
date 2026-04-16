@@ -226,10 +226,17 @@ class FileMemoryStore:
         value: str,
         tags: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Append a fact to facts.jsonl. Returns the stored entry.
+        """Persist a fact to facts.jsonl. Returns the stored entry.
 
-        If a fact with the same key already exists, it is replaced
-        (the old entry is removed).
+        Fast path: if no fact with ``key`` already exists, append a single
+        line to the file (O(1) write, no full-file rewrite).
+
+        Slow path: if a fact with ``key`` exists, do a read-filter-rewrite
+        so the old entry is removed.
+
+        In both paths we also enforce ``FACTS_LINE_CAP`` (oldest-first
+        eviction) by falling back to a full rewrite when the cap would be
+        exceeded.
         """
         self._ensure_facts_dir()
         entry: dict[str, Any] = {
@@ -239,17 +246,76 @@ class FileMemoryStore:
             "tags": tags or [],
         }
 
-        # Remove any existing entry with the same key, then append
+        path = self._facts_path()
+
+        # Fast path — only when we know the key is brand-new AND we're
+        # under the line cap.  Both checks require touching the file,
+        # but key-existence is a streaming scan that stops at the first
+        # match, and line counting is also cheap.
+        if not path.exists():
+            self._append_fact_line(entry)
+            return entry
+
+        if not self._key_exists(key) and self._line_count() < FACTS_LINE_CAP:
+            self._append_fact_line(entry)
+            return entry
+
+        # Slow path: existing key OR cap reached → read-filter-rewrite.
         existing = self._read_all_facts()
         existing = [e for e in existing if e.get("key") != key]
         existing.append(entry)
-
-        # Prune oldest if over cap
         if len(existing) > FACTS_LINE_CAP:
             existing = existing[-FACTS_LINE_CAP:]
-
         self._write_all_facts(existing)
         return entry
+
+    def _append_fact_line(self, entry: dict[str, Any]) -> None:
+        """Append a single JSON line to facts.jsonl atomically.
+
+        Uses ``open(..., 'a')`` which on POSIX is an atomic append for
+        writes smaller than PIPE_BUF.  Adequate for single-process use;
+        for multi-process callers we rely on the kernel's append-mode
+        guarantee plus our own newline-terminated payload.
+        """
+        path = self._facts_path()
+        line = json.dumps(entry, ensure_ascii=False) + "\n"
+        with path.open("a", encoding="utf-8") as f:
+            f.write(line)
+
+    def _key_exists(self, key: str) -> bool:
+        """Streaming check: does *any* line in facts.jsonl have this key?
+
+        Returns at the first match without parsing the rest of the file.
+        """
+        path = self._facts_path()
+        if not path.exists():
+            return False
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        e = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if e.get("key") == key:
+                        return True
+        except Exception as exc:
+            logger.warning("Failed to scan %s: %s", path, exc)
+        return False
+
+    def _line_count(self) -> int:
+        """Return the number of non-empty lines in facts.jsonl."""
+        path = self._facts_path()
+        if not path.exists():
+            return 0
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                return sum(1 for line in f if line.strip())
+        except Exception:
+            return 0
 
     def recall_facts(
         self,

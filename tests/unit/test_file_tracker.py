@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import subprocess
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -162,43 +163,164 @@ class TestSummary:
 # ---------------------------------------------------------------------------
 
 
+def _make_fake_proc(stdout: str = "", returncode: int = 0):
+    """Create a mock async subprocess for testing diff_summary."""
+    proc = AsyncMock()
+    proc.returncode = returncode
+    proc.communicate = AsyncMock(
+        return_value=(stdout.encode("utf-8"), b"")
+    )
+    proc.kill = MagicMock()
+    return proc
+
+
 class TestDiffSummary:
-    def test_no_modifications(self):
+    """Tests for the async diff_summary method."""
+
+    async def test_no_modifications(self):
         ft = FileTracker()
         ft.track("/a.py", "read")
-        assert ft.diff_summary() == "No files modified."
+        assert await ft.diff_summary() == "No files modified."
 
-    def test_empty_tracker(self):
+    async def test_empty_tracker(self):
         ft = FileTracker()
-        assert ft.diff_summary() == "No files modified."
+        assert await ft.diff_summary() == "No files modified."
 
-    def test_write_calls_git_diff(self):
+    async def test_write_calls_batched_git_diff(self):
         ft = FileTracker()
         ft.track("/a.py", "write")
 
-        fake_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=" /a.py | 5 ++---\n", stderr=""
-        )
-        with patch("duh.kernel.file_tracker.subprocess.run", return_value=fake_result) as mock_run:
-            result = ft.diff_summary(cwd="/project")
-            mock_run.assert_called_once()
-            call_args = mock_run.call_args
-            assert call_args[0][0] == ["git", "diff", "--stat", "--", "/a.py"]
-            assert call_args[1]["cwd"] == "/project"
+        proc = _make_fake_proc(" /a.py | 5 ++---\n")
+        with patch("duh.kernel.file_tracker.asyncio.create_subprocess_exec", return_value=proc) as mock_exec:
+            result = await ft.diff_summary(cwd="/project")
+            mock_exec.assert_called_once_with(
+                "git", "diff", "--stat", "--", "/a.py",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd="/project",
+            )
         assert "/a.py" in result
 
-    def test_edit_calls_git_diff(self):
+    async def test_edit_calls_git_diff(self):
         ft = FileTracker()
         ft.track("/b.py", "edit")
 
-        fake_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=" /b.py | 2 +-\n", stderr=""
-        )
-        with patch("duh.kernel.file_tracker.subprocess.run", return_value=fake_result):
-            result = ft.diff_summary()
+        proc = _make_fake_proc(" /b.py | 2 +-\n")
+        with patch("duh.kernel.file_tracker.asyncio.create_subprocess_exec", return_value=proc):
+            result = await ft.diff_summary()
         assert "/b.py" in result
 
-    def test_new_untracked_file(self):
+    async def test_new_untracked_file(self):
+        ft = FileTracker()
+        ft.track("/new.py", "write")
+
+        proc = _make_fake_proc("")
+        with patch("duh.kernel.file_tracker.asyncio.create_subprocess_exec", return_value=proc):
+            result = await ft.diff_summary()
+        assert "new/untracked" in result
+
+    async def test_git_unavailable(self):
+        ft = FileTracker()
+        ft.track("/a.py", "write")
+
+        with patch("duh.kernel.file_tracker.asyncio.create_subprocess_exec", side_effect=FileNotFoundError):
+            result = await ft.diff_summary()
+        assert "git unavailable" in result
+
+    async def test_deduplicates_modified_paths(self):
+        ft = FileTracker()
+        ft.track("/a.py", "write")
+        ft.track("/a.py", "edit")
+        ft.track("/a.py", "write")
+
+        proc = _make_fake_proc(" /a.py | 1 +\n")
+        with patch("duh.kernel.file_tracker.asyncio.create_subprocess_exec", return_value=proc) as mock_exec:
+            await ft.diff_summary()
+        # Single batched call, not three separate calls
+        mock_exec.assert_called_once()
+
+    async def test_read_only_not_included(self):
+        ft = FileTracker()
+        ft.track("/a.py", "read")
+        ft.track("/b.py", "read")
+        assert await ft.diff_summary() == "No files modified."
+
+    async def test_batched_multiple_files(self):
+        """Verify multiple files are passed to a single git diff call."""
+        ft = FileTracker()
+        ft.track("/a.py", "write")
+        ft.track("/b.py", "edit")
+        ft.track("/c.py", "write")
+
+        proc = _make_fake_proc(
+            " /a.py | 3 +++\n /b.py | 1 +\n /c.py | 2 ++\n"
+        )
+        with patch("duh.kernel.file_tracker.asyncio.create_subprocess_exec", return_value=proc) as mock_exec:
+            result = await ft.diff_summary(cwd="/project")
+            mock_exec.assert_called_once_with(
+                "git", "diff", "--stat", "--", "/a.py", "/b.py", "/c.py",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd="/project",
+            )
+        assert "/a.py" in result
+        assert "/b.py" in result
+        assert "/c.py" in result
+
+    async def test_timeout_handling(self):
+        """Verify timeout returns appropriate message."""
+        ft = FileTracker()
+        ft.track("/a.py", "write")
+
+        proc = AsyncMock()
+        proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError)
+        proc.kill = MagicMock()
+
+        with patch("duh.kernel.file_tracker.asyncio.create_subprocess_exec", return_value=proc):
+            with patch("duh.kernel.file_tracker.asyncio.wait_for", side_effect=asyncio.TimeoutError):
+                result = await ft.diff_summary()
+        assert "git timed out" in result
+
+
+class TestDiffSummarySync:
+    """Tests for the legacy sync diff_summary_sync method."""
+
+    def test_no_modifications(self):
+        ft = FileTracker()
+        ft.track("/a.py", "read")
+        assert ft.diff_summary_sync() == "No files modified."
+
+    def test_empty_tracker(self):
+        ft = FileTracker()
+        assert ft.diff_summary_sync() == "No files modified."
+
+    def test_batched_call(self):
+        ft = FileTracker()
+        ft.track("/a.py", "write")
+        ft.track("/b.py", "edit")
+
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout=" /a.py | 5 ++---\n /b.py | 2 +-\n", stderr=""
+        )
+        with patch("duh.kernel.file_tracker.subprocess.run", return_value=fake_result) as mock_run:
+            result = ft.diff_summary_sync(cwd="/project")
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args
+            assert call_args[0][0] == ["git", "diff", "--stat", "--", "/a.py", "/b.py"]
+            assert call_args[1]["cwd"] == "/project"
+        assert "/a.py" in result
+        assert "/b.py" in result
+
+    def test_git_unavailable(self):
+        ft = FileTracker()
+        ft.track("/a.py", "write")
+
+        with patch("duh.kernel.file_tracker.subprocess.run", side_effect=FileNotFoundError):
+            result = ft.diff_summary_sync()
+        assert "git unavailable" in result
+
+    def test_new_untracked(self):
         ft = FileTracker()
         ft.track("/new.py", "write")
 
@@ -206,41 +328,8 @@ class TestDiffSummary:
             args=[], returncode=0, stdout="", stderr=""
         )
         with patch("duh.kernel.file_tracker.subprocess.run", return_value=fake_result):
-            result = ft.diff_summary()
+            result = ft.diff_summary_sync()
         assert "new/untracked" in result
-
-    def test_git_unavailable(self):
-        ft = FileTracker()
-        ft.track("/a.py", "write")
-
-        with patch("duh.kernel.file_tracker.subprocess.run", side_effect=FileNotFoundError):
-            result = ft.diff_summary()
-        assert "git unavailable" in result
-
-    def test_deduplicates_modified_paths(self):
-        ft = FileTracker()
-        ft.track("/a.py", "write")
-        ft.track("/a.py", "edit")
-        ft.track("/a.py", "write")
-
-        call_count = 0
-
-        def fake_run(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            return subprocess.CompletedProcess(
-                args=[], returncode=0, stdout=" /a.py | 1 +\n", stderr=""
-            )
-
-        with patch("duh.kernel.file_tracker.subprocess.run", side_effect=fake_run):
-            ft.diff_summary()
-        assert call_count == 1  # called once, not three times
-
-    def test_read_only_not_included(self):
-        ft = FileTracker()
-        ft.track("/a.py", "read")
-        ft.track("/b.py", "read")
-        assert ft.diff_summary() == "No files modified."
 
 
 # ---------------------------------------------------------------------------

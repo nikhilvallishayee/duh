@@ -860,7 +860,7 @@ def _handle_slash(
         if executor is not None:
             text = executor.file_tracker.summary()
             # Also show git diff --stat when available
-            diff_stat = executor.file_tracker.diff_summary(cwd=executor._cwd)
+            diff_stat = executor.file_tracker.diff_summary_sync(cwd=executor._cwd)
             if diff_stat and diff_stat != "No files modified.":
                 text += f"\n\n  Git diff:\n{diff_stat}"
         else:
@@ -1032,14 +1032,8 @@ def _handle_slash(
 
     if name == "/compact":
         if deps.compact:
-            import asyncio
-            try:
-                asyncio.get_event_loop().run_until_complete(
-                    deps.compact(engine._messages)
-                )
-                sys.stdout.write(f"  Compacted to {len(engine.messages)} messages.\n")
-            except Exception as e:
-                sys.stdout.write(f"  Compact failed: {e}\n")
+            # Return sentinel -- the async run_repl loop will await the coroutine.
+            return True, "\x00compact\x00"
         else:
             sys.stdout.write("  No compactor configured.\n")
         return True, model
@@ -1691,6 +1685,17 @@ async def run_repl(args: argparse.Namespace) -> int:
                         "  Could not parse a plan from the response.\n"
                     )
                     _plan_mode.clear()
+
+            # Check for compact request signal from _handle_slash
+            if model == "\x00compact\x00":
+                model = engine.model or model  # restore actual model
+                try:
+                    await deps.compact(engine._messages)
+                    sys.stdout.write(
+                        f"  Compacted to {len(engine.messages)} messages.\n"
+                    )
+                except Exception as e:
+                    sys.stdout.write(f"  Compact failed: {e}\n")
 
             continue
 

@@ -405,7 +405,7 @@ class TestSlashChangesWithDiff:
     def test_changes_with_diff(self, capsys):
         executor = MagicMock()
         executor.file_tracker.summary.return_value = "2 files modified"
-        executor.file_tracker.diff_summary.return_value = (
+        executor.file_tracker.diff_summary_sync.return_value = (
             " file1.py | 3 +++\n file2.py | 2 --"
         )
         executor._cwd = "/tmp"
@@ -659,15 +659,13 @@ class TestSetupCompletion:
 
 class TestSlashCompactSuccess:
     def test_compact_with_working_compactor(self, capsys):
-        """Even in isolation, verify the /compact with compact function."""
+        """When compact is configured, /compact returns the compact sentinel."""
         engine = _make_engine()
         compact_fn = AsyncMock(return_value=[])
         deps = Deps(call_model=AsyncMock(), run_tool=AsyncMock(), compact=compact_fn)
-        keep, _ = _handle_slash("/compact", engine, "m", deps)
+        keep, model = _handle_slash("/compact", engine, "m", deps)
         assert keep is True
-        out = capsys.readouterr().out
-        # Either success or failure path is fine
-        assert ("Compacted" in out) or ("Compact failed" in out)
+        assert model == "\x00compact\x00"
 
 
 # ============================================================================

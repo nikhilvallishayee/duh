@@ -44,14 +44,16 @@ class TestOutsideProject:
         assert "outside project boundary" in reason
 
     def test_parent_directory_blocked(self, project_dir):
-        policy = PathPolicy(str(project_dir))
+        # Use allowed_paths=[] to avoid /tmp being in allowed list
+        # (on CI, tmp_path is under /tmp so parent would be allowed)
+        policy = PathPolicy(str(project_dir), allowed_paths=[])
         ok, reason = policy.check(str(project_dir.parent / "other_project"))
         assert ok is False
         assert "outside" in reason
 
     def test_traversal_blocked(self, project_dir):
         """Path traversal (../../etc/passwd) is caught after resolve()."""
-        policy = PathPolicy(str(project_dir))
+        policy = PathPolicy(str(project_dir), allowed_paths=[])
         sneaky = str(project_dir / "src" / ".." / ".." / ".." / "etc" / "passwd")
         ok, reason = policy.check(sneaky)
         assert ok is False

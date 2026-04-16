@@ -100,6 +100,7 @@ jobs:
 
       - name: Dependency review
         if: github.event_name == 'pull_request'
+        continue-on-error: true  # advisory — requires dependency graph enabled in repo settings
         uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
           fail-on-severity: high
@@ -121,7 +122,8 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload SARIF to code scanning
-        if: always()
+        if: always() && hashFiles('security.sarif') != ''
+        continue-on-error: true  # advisory — code scanning may not be enabled
         uses: github/codeql-action/upload-sarif@5c8a8a642e79153f5d047b10ec1cba1d1cc65699 # v3.35.1
         with:
           sarif_file: security.sarif

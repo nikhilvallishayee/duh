@@ -730,7 +730,7 @@ class TestSlashChanges:
     def test_changes_with_executor(self, capsys):
         executor = MagicMock()
         executor.file_tracker.summary.return_value = "3 files modified"
-        executor.file_tracker.diff_summary.return_value = "No files modified."
+        executor.file_tracker.diff_summary_sync.return_value = "No files modified."
         engine = _make_engine()
         keep, _ = _handle_slash(
             "/changes", engine, "m", _make_deps(),
@@ -748,20 +748,16 @@ class TestSlashChanges:
 
 class TestSlashCompactWithCompactor:
     def test_compact_with_compactor(self, capsys):
-        """When a compactor is wired, /compact attempts compaction.
+        """When a compactor is wired, /compact returns the compact sentinel.
 
-        The result depends on event-loop state: in isolation it succeeds
-        ("Compacted"), but when another test has closed the loop it falls
-        back to the error branch ("Compact failed").  Both are valid
-        evidence that the branch was exercised.
+        The actual await happens in run_repl; _handle_slash just signals.
         """
         engine = _make_engine()
         compact_fn = AsyncMock()
         deps = Deps(call_model=AsyncMock(), run_tool=AsyncMock(), compact=compact_fn)
-        keep, _ = _handle_slash("/compact", engine, "m", deps)
+        keep, model = _handle_slash("/compact", engine, "m", deps)
         assert keep is True
+        assert model == "\x00compact\x00"
         captured = capsys.readouterr()
-        # Either the compact succeeded or it hit the event-loop error path
-        assert "Compacted" in captured.out or "Compact failed" in captured.out
-        # Crucially, it did NOT say "No compactor configured"
+        # No output from _handle_slash -- the async run_repl handles output
         assert "No compactor" not in captured.out

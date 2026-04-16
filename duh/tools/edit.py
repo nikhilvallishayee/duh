@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from duh.kernel.git_context import _run_git
+from duh.kernel.git_context import _run_git_async
 from duh.kernel.tool import ToolContext, ToolResult
 from duh.security.trifecta import Capability
 
@@ -93,6 +93,10 @@ class EditTool:
         if not path.is_absolute():
             path = Path(context.cwd) / path
 
+        # Resolve symlinks BEFORE any boundary or existence checks (SEC-CRITICAL-1).
+        # Without this, a symlink like project/link -> /etc/shadow bypasses policy.
+        path = path.resolve()
+
         # Filesystem boundary check
         if self._path_policy is not None:
             allowed, reason = self._path_policy.check(str(path))
@@ -141,8 +145,8 @@ class EditTool:
 
         replacements = count if replace_all else 1
 
-        # Check git dirty state for the file's directory
-        git_dirty = bool(_run_git(["status", "--short"], str(path.parent)))
+        # Check git dirty state for the file's directory (async, non-blocking)
+        git_dirty = bool(await _run_git_async(["status", "--short"], str(path.parent)))
 
         # Build unified diff showing what changed
         diff = _make_diff(content, new_content, file_path)

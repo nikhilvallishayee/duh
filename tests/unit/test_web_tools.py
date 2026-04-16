@@ -1,6 +1,7 @@
 """Tests for WebFetchTool and WebSearchTool."""
 
 import os
+import socket
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -9,6 +10,11 @@ import pytest
 from duh.kernel.tool import Tool, ToolContext, ToolResult
 from duh.tools.web_fetch import WebFetchTool, _strip_html
 from duh.tools.web_search import WebSearchTool, _STUB_MESSAGE
+
+
+def _public_addrinfo(ip: str = "93.184.216.34"):
+    """Fake getaddrinfo result pointing to a public IP (bypasses SSRF guard)."""
+    return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", (ip, 0))]
 
 
 def ctx() -> ToolContext:
@@ -105,8 +111,9 @@ class TestWebFetchSuccess:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(return_value=_mock_response("Hello, world!"))
 
-        with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
-            result = await self.tool.call({"url": "https://example.com"}, ctx())
+        with patch("duh.tools.web_fetch.socket.getaddrinfo", return_value=_public_addrinfo()):
+            with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
+                result = await self.tool.call({"url": "https://example.com"}, ctx())
 
         assert result.is_error is False
         assert "Hello, world!" in result.output
@@ -121,8 +128,9 @@ class TestWebFetchSuccess:
             return_value=_mock_response(html, content_type="text/html")
         )
 
-        with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
-            result = await self.tool.call({"url": "https://example.com"}, ctx())
+        with patch("duh.tools.web_fetch.socket.getaddrinfo", return_value=_public_addrinfo()):
+            with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
+                result = await self.tool.call({"url": "https://example.com"}, ctx())
 
         assert result.is_error is False
         assert "<p>" not in result.output
@@ -136,11 +144,12 @@ class TestWebFetchSuccess:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(return_value=_mock_response("Some content here."))
 
-        with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
-            result = await self.tool.call(
-                {"url": "https://example.com", "prompt": "find the price"},
-                ctx(),
-            )
+        with patch("duh.tools.web_fetch.socket.getaddrinfo", return_value=_public_addrinfo()):
+            with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
+                result = await self.tool.call(
+                    {"url": "https://example.com", "prompt": "find the price"},
+                    ctx(),
+                )
 
         assert result.is_error is False
         assert "[Extraction hint: find the price]" in result.output
@@ -151,8 +160,9 @@ class TestWebFetchSuccess:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(return_value=_mock_response("abc"))
 
-        with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
-            result = await self.tool.call({"url": "https://example.com"}, ctx())
+        with patch("duh.tools.web_fetch.socket.getaddrinfo", return_value=_public_addrinfo()):
+            with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
+                result = await self.tool.call({"url": "https://example.com"}, ctx())
 
         assert "url" in result.metadata
         assert "status_code" in result.metadata
@@ -175,8 +185,9 @@ class TestWebFetchTruncation:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(return_value=_mock_response(large_text))
 
-        with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
-            result = await self.tool.call({"url": "https://example.com"}, ctx())
+        with patch("duh.tools.web_fetch.socket.getaddrinfo", return_value=_public_addrinfo()):
+            with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
+                result = await self.tool.call({"url": "https://example.com"}, ctx())
 
         assert result.is_error is False
         assert result.metadata["truncated"] is True
@@ -190,8 +201,9 @@ class TestWebFetchTruncation:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(return_value=_mock_response(small_text))
 
-        with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
-            result = await self.tool.call({"url": "https://example.com"}, ctx())
+        with patch("duh.tools.web_fetch.socket.getaddrinfo", return_value=_public_addrinfo()):
+            with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
+                result = await self.tool.call({"url": "https://example.com"}, ctx())
 
         assert result.metadata["truncated"] is False
         assert "truncated" not in result.output.lower()
@@ -210,8 +222,9 @@ class TestWebFetchErrors:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
 
-        with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
-            result = await self.tool.call({"url": "https://example.com"}, ctx())
+        with patch("duh.tools.web_fetch.socket.getaddrinfo", return_value=_public_addrinfo()):
+            with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
+                result = await self.tool.call({"url": "https://example.com"}, ctx())
 
         assert result.is_error is True
         assert "timed out" in result.output.lower()
@@ -224,10 +237,11 @@ class TestWebFetchErrors:
             side_effect=httpx.ConnectError("DNS resolution failed")
         )
 
-        with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
-            result = await self.tool.call(
-                {"url": "https://nonexistent.invalid"}, ctx()
-            )
+        with patch("duh.tools.web_fetch.socket.getaddrinfo", return_value=_public_addrinfo()):
+            with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
+                result = await self.tool.call(
+                    {"url": "https://nonexistent.invalid"}, ctx()
+                )
 
         assert result.is_error is True
         assert "connection failed" in result.output.lower()
@@ -241,13 +255,14 @@ class TestWebFetchErrors:
         mock_client.get = AsyncMock(return_value=resp_404)
 
         # raise_for_status() will raise on 404
-        with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
-            with patch.object(resp_404, "raise_for_status", side_effect=httpx.HTTPStatusError(
-                "404", request=httpx.Request("GET", "https://example.com/missing"), response=resp_404
-            )):
-                result = await self.tool.call(
-                    {"url": "https://example.com/missing"}, ctx()
-                )
+        with patch("duh.tools.web_fetch.socket.getaddrinfo", return_value=_public_addrinfo()):
+            with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
+                with patch.object(resp_404, "raise_for_status", side_effect=httpx.HTTPStatusError(
+                    "404", request=httpx.Request("GET", "https://example.com/missing"), response=resp_404
+                )):
+                    result = await self.tool.call(
+                        {"url": "https://example.com/missing"}, ctx()
+                    )
 
         assert result.is_error is True
         assert "404" in result.output
@@ -260,13 +275,14 @@ class TestWebFetchErrors:
         resp_500 = _mock_response("Server Error", status_code=500)
         mock_client.get = AsyncMock(return_value=resp_500)
 
-        with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
-            with patch.object(resp_500, "raise_for_status", side_effect=httpx.HTTPStatusError(
-                "500", request=httpx.Request("GET", "https://example.com"), response=resp_500
-            )):
-                result = await self.tool.call(
-                    {"url": "https://example.com"}, ctx()
-                )
+        with patch("duh.tools.web_fetch.socket.getaddrinfo", return_value=_public_addrinfo()):
+            with patch("duh.tools.web_fetch.httpx.AsyncClient", return_value=mock_client):
+                with patch.object(resp_500, "raise_for_status", side_effect=httpx.HTTPStatusError(
+                    "500", request=httpx.Request("GET", "https://example.com"), response=resp_500
+                )):
+                    result = await self.tool.call(
+                        {"url": "https://example.com"}, ctx()
+                    )
 
         assert result.is_error is True
         assert "500" in result.output

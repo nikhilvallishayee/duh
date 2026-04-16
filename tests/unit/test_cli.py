@@ -113,11 +113,12 @@ class TestBuildParser:
 
 class TestVersion:
     def test_version_flag(self, capsys):
+        from duh import __version__
         with pytest.raises(SystemExit) as exc_info:
             main(["--version"])
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "0.6.0" in captured.out
+        assert __version__ in captured.out
 
 
 # ---------------------------------------------------------------------------

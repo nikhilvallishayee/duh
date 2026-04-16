@@ -93,6 +93,10 @@ class EditTool:
         if not path.is_absolute():
             path = Path(context.cwd) / path
 
+        # Resolve symlinks BEFORE any boundary or existence checks (SEC-CRITICAL-1).
+        # Without this, a symlink like project/link -> /etc/shadow bypasses policy.
+        path = path.resolve()
+
         # Filesystem boundary check
         if self._path_policy is not None:
             allowed, reason = self._path_policy.check(str(path))

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from duh.kernel.git_context import _run_git
+from duh.kernel.git_context import _run_git_async
 from duh.kernel.tool import ToolContext, ToolResult
 from duh.security.trifecta import Capability
 
@@ -96,8 +96,8 @@ class WriteTool:
         except Exception as exc:
             return ToolResult(output=f"Error writing file: {exc}", is_error=True)
 
-        # Check git dirty state for the file's directory
-        git_dirty = bool(_run_git(["status", "--short"], str(path.parent)))
+        # Check git dirty state for the file's directory (async, non-blocking)
+        git_dirty = bool(await _run_git_async(["status", "--short"], str(path.parent)))
 
         return ToolResult(
             output=f"Wrote {len(content)} bytes to {file_path}",

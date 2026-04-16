@@ -297,6 +297,11 @@ class MCPExecutor:
         self._servers: dict[str, MCPServerConfig] = servers or {}
         self._connections: dict[str, MCPConnection] = {}
         self._tool_index: dict[str, MCPToolInfo] = {}
+        # PERF-14: Per-server qualified-name index. Lets disconnect()/
+        # _mark_degraded() remove tools for a server in O(tools_for_server)
+        # time, instead of scanning every tool across every server.
+        # Kept in sync with ``_tool_index`` at every insertion/removal.
+        self._server_tools: dict[str, set[str]] = {}
         self._error_counts: dict[str, int] = {}  # server_name -> consecutive errors
         self._degraded: set[str] = set()  # server names that have been circuit-broken
 
@@ -346,6 +351,8 @@ class MCPExecutor:
                 })
                 qualified = f"mcp__{server_name}__{tool.name}"
                 self._tool_index[qualified] = info
+                # PERF-14: mirror insertion into the per-server index.
+                self._server_tools.setdefault(server_name, set()).add(qualified)
                 tools.append(info)
 
             # Validate Unicode safety of all tool descriptions at handshake time
@@ -392,6 +399,10 @@ class MCPExecutor:
 
         except Exception as exc:
             # Clean up on failure
+            # PERF-14: roll back any partial tool entries we added to
+            # ``_tool_index`` / ``_server_tools`` before the failure.
+            for k in self._server_tools.pop(server_name, ()):
+                self._tool_index.pop(k, None)
             if session is not None:
                 try:
                     await session.__aexit__(None, None, None)
@@ -471,10 +482,11 @@ class MCPExecutor:
         conn = self._connections.pop(server_name, None)
         if conn is None:
             return
-        # Remove tools from index
-        to_remove = [k for k, v in self._tool_index.items() if v.server_name == server_name]
-        for k in to_remove:
-            del self._tool_index[k]
+        # PERF-14: Remove tools via the per-server index — O(tools_for_server)
+        # rather than scanning the full ``_tool_index`` (which can hold tools
+        # from every connected server).
+        for k in self._server_tools.pop(server_name, ()):
+            self._tool_index.pop(k, None)
 
         if conn.session is not None:
             try:
@@ -521,12 +533,11 @@ class MCPExecutor:
         Logs a user-visible warning per ADR-032.
         """
         self._degraded.add(server_name)
-        # Remove all tools belonging to this server from the active index
-        to_remove = [
-            k for k, v in self._tool_index.items() if v.server_name == server_name
-        ]
-        for k in to_remove:
-            del self._tool_index[k]
+        # PERF-14: Remove all tools belonging to this server via the
+        # per-server index — O(tools_for_server) rather than scanning
+        # every entry in ``_tool_index``.
+        for k in self._server_tools.pop(server_name, ()):
+            self._tool_index.pop(k, None)
         logger.warning(
             "MCP server '%s' is unreachable after %d reconnection attempts. "
             "Excluding its tools until manually restarted.",
@@ -608,6 +619,9 @@ class MCPExecutor:
                 ) from exc
 
         # Extract content from MCP result
+        # SEC-INFO-3: wrap the joined text in UntrustedStr so downstream
+        # code sees the MCP_OUTPUT taint and cannot silently use it in a
+        # trusted context.
         if hasattr(result, "content") and result.content:
             parts = []
             for block in result.content:
@@ -617,9 +631,10 @@ class MCPExecutor:
                     parts.append(str(block.data))
                 else:
                     parts.append(str(block))
-            return "\n".join(parts) if parts else ""
+            joined = "\n".join(parts) if parts else ""
+            return _wrap_mcp_output(joined)
 
-        return ""
+        return _wrap_mcp_output("")
 
     # -- Config helpers -----------------------------------------------------
 

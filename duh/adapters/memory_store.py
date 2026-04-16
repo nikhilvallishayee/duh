@@ -21,6 +21,7 @@ Each fact entry: {"key": str, "value": str, "timestamp": str, "tags": [str]}
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import logging
@@ -237,8 +238,10 @@ class FileMemoryStore:
         In both paths we also enforce ``FACTS_LINE_CAP`` (oldest-first
         eviction) by falling back to a full rewrite when the cap would be
         exceeded.
+
+        Disk-full (ENOSPC/EDQUOT) errors are logged and swallowed so the
+        caller keeps the fact in memory rather than crashing the session.
         """
-        self._ensure_facts_dir()
         entry: dict[str, Any] = {
             "key": key,
             "value": value,
@@ -246,28 +249,38 @@ class FileMemoryStore:
             "tags": tags or [],
         }
 
-        path = self._facts_path()
+        try:
+            self._ensure_facts_dir()
+            path = self._facts_path()
 
-        # Fast path — only when we know the key is brand-new AND we're
-        # under the line cap.  Both checks require touching the file,
-        # but key-existence is a streaming scan that stops at the first
-        # match, and line counting is also cheap.
-        if not path.exists():
-            self._append_fact_line(entry)
+            # Fast path — only when we know the key is brand-new AND we're
+            # under the line cap.  Both checks require touching the file,
+            # but key-existence is a streaming scan that stops at the first
+            # match, and line counting is also cheap.
+            if not path.exists():
+                self._append_fact_line(entry)
+                return entry
+
+            if not self._key_exists(key) and self._line_count() < FACTS_LINE_CAP:
+                self._append_fact_line(entry)
+                return entry
+
+            # Slow path: existing key OR cap reached → read-filter-rewrite.
+            existing = self._read_all_facts()
+            existing = [e for e in existing if e.get("key") != key]
+            existing.append(entry)
+            if len(existing) > FACTS_LINE_CAP:
+                existing = existing[-FACTS_LINE_CAP:]
+            self._write_all_facts(existing)
             return entry
-
-        if not self._key_exists(key) and self._line_count() < FACTS_LINE_CAP:
-            self._append_fact_line(entry)
-            return entry
-
-        # Slow path: existing key OR cap reached → read-filter-rewrite.
-        existing = self._read_all_facts()
-        existing = [e for e in existing if e.get("key") != key]
-        existing.append(entry)
-        if len(existing) > FACTS_LINE_CAP:
-            existing = existing[-FACTS_LINE_CAP:]
-        self._write_all_facts(existing)
-        return entry
+        except OSError as exc:
+            if exc.errno in (errno.ENOSPC, errno.EDQUOT):
+                logger.warning(
+                    "store_fact(%s): disk full (%s); fact not persisted.",
+                    key, exc.strerror or exc,
+                )
+                return entry
+            raise
 
     def _append_fact_line(self, entry: dict[str, Any]) -> None:
         """Append a single JSON line to facts.jsonl atomically.
@@ -327,20 +340,39 @@ class FileMemoryStore:
         Returns up to *limit* results, newest first.
         Also records access tracking (last_accessed, access_count) for
         memory decay scoring (ADR-069 P2).
+
+        PERF-8: Avoids building a concatenated lowercase haystack string per
+        fact. Instead, we casefold each field on the fly and short-circuit
+        on the first field that contains the query. ``str.casefold()`` is
+        used (superset of ``.lower()``) for correct Unicode matching.
         """
         all_facts = self._read_all_facts()
-        query_lower = query.lower()
+        query_cf = query.casefold()
         matched: list[dict[str, Any]] = []
         matched_keys: set[str] = set()
         for fact in reversed(all_facts):  # newest first
-            haystack = " ".join([
-                fact.get("key", ""),
-                fact.get("value", ""),
-                " ".join(fact.get("tags", [])),
-            ]).lower()
-            if query_lower in haystack:
+            # Short-circuit: check key, then value, then tags individually.
+            # No temporary concatenated string is built.
+            key_val = fact.get("key", "")
+            if key_val and query_cf in key_val.casefold():
                 matched.append(fact)
-                matched_keys.add(fact.get("key", ""))
+                matched_keys.add(key_val)
+                if len(matched) >= limit:
+                    break
+                continue
+
+            value_val = fact.get("value", "")
+            if value_val and query_cf in value_val.casefold():
+                matched.append(fact)
+                matched_keys.add(key_val)
+                if len(matched) >= limit:
+                    break
+                continue
+
+            tags = fact.get("tags", [])
+            if tags and any(query_cf in t.casefold() for t in tags):
+                matched.append(fact)
+                matched_keys.add(key_val)
                 if len(matched) >= limit:
                     break
 

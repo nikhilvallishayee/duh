@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator
 
 import httpx
@@ -18,11 +19,218 @@ from duh.kernel.messages import Message
 from duh.kernel.untrusted import TaintSource, UntrustedStr
 
 
+@dataclass
+class _StreamState:
+    """Mutable state threaded through SSE event dispatch.
+
+    ``text_chunks`` preserves streaming order (for the final
+    ``"".join(text_chunks)`` fallback) while ``text_chunks_seen`` gives
+    O(1) dedup against ``.done``/``.added`` events that echo already-
+    streamed text (PERF-13).  ``final_response`` is populated from
+    ``response.completed`` or the fetched-by-id fallback.
+    ``streamed_calls`` / ``streamed_item_to_call`` accumulate function-call
+    arguments that arrive fragmented across events.  ``events`` is the
+    queue of events the outer generator should yield next; ``done``
+    signals a terminal error path.
+    """
+
+    text_chunks: list[str] = field(default_factory=list)
+    text_chunks_seen: set[str] = field(default_factory=set)
+    response_id: str = ""
+    final_response: dict[str, Any] | None = None
+    streamed_calls: dict[str, dict[str, Any]] = field(default_factory=dict)
+    streamed_item_to_call: dict[str, str] = field(default_factory=dict)
+    events: list[dict[str, Any]] = field(default_factory=list)
+    done: bool = False
+    model: str = ""
+
+
 def _wrap_model_output(text: str) -> UntrustedStr:
     """Tag OpenAI ChatGPT provider output as MODEL_OUTPUT."""
     if isinstance(text, UntrustedStr):
         return text
     return UntrustedStr(text, TaintSource.MODEL_OUTPUT)
+
+
+def _error_assistant_event(text: str) -> dict[str, Any]:
+    """Build a canonical ``type=assistant`` event with ``is_error=True``.
+
+    Used for OAuth failures, HTTP errors, server-reported errors, exceptions,
+    and the "stream ended without content" terminal path.
+    """
+    return {
+        "type": "assistant",
+        "message": Message(
+            role="assistant",
+            content=[{"type": "text", "text": text}],
+            metadata={"is_error": True},
+        ),
+    }
+
+
+def _parse_sse_line(line: str) -> dict[str, Any] | None:
+    """Parse one ``data: ...`` SSE line into a JSON event, or ``None``.
+
+    Returns ``None`` for keep-alive lines, ``[DONE]`` sentinels, and lines
+    that fail to decode as JSON — the caller should simply skip them.
+    """
+    if not line.startswith("data: "):
+        return None
+    raw = line[6:].strip()
+    if not raw or raw == "[DONE]":
+        return None
+    try:
+        event = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return event if isinstance(event, dict) else None
+
+
+def _build_request_body(
+    *,
+    messages: list[Any],
+    system_prompt: str | list[str],
+    resolved_model: str,
+    tools: list[Any] | None,
+    max_tokens: int | None,
+    tool_choice: str | dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Build the Codex ``/responses`` POST body from stream() arguments."""
+    instructions = _build_system_text(system_prompt).strip()
+    if not instructions:
+        from duh.constitution import build_system_prompt
+        instructions = build_system_prompt()
+
+    body: dict[str, Any] = {
+        "model": resolved_model,
+        "instructions": instructions,
+        "input": _to_responses_input(messages, ""),
+        "stream": True,
+        "store": False,
+        "include": ["reasoning.encrypted_content"],
+    }
+    if tools:
+        body["tools"] = _to_responses_tools(tools)
+    if max_tokens:
+        body["max_output_tokens"] = max_tokens
+    if tool_choice and tools:
+        if tool_choice == "any":
+            body["tool_choice"] = "required"
+        elif tool_choice in ("none", "auto"):
+            body["tool_choice"] = tool_choice
+        elif isinstance(tool_choice, str):
+            body["tool_choice"] = {"type": "function", "name": tool_choice}
+    return body
+
+
+def _validate_oauth(oauth: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Return an ``is_error`` assistant event when *oauth* is missing bits.
+
+    Returns ``None`` when the token is usable (access + account_id present).
+    The caller can then ``yield`` the event and return without caring which
+    specific field was missing.
+    """
+    if not oauth:
+        return _error_assistant_event(
+            "OpenAI ChatGPT auth required. Use /connect openai."
+        )
+    if not oauth.get("access_token") or not oauth.get("account_id"):
+        return _error_assistant_event(
+            "OpenAI ChatGPT auth is invalid. Re-run /connect openai."
+        )
+    return None
+
+
+def _build_request_headers(access: str, account_id: Any) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {access}",
+        "chatgpt-account-id": str(account_id),
+        "OpenAI-Beta": "responses=experimental",
+        "originator": "codex_cli_rs",
+        "accept": "text/event-stream",
+        "content-type": "application/json",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Per-event-type SSE handlers (extracted from _dispatch_sse_event for CC).
+# Each handler takes the raw ``event`` dict + the shared ``_StreamState``
+# and mutates the state in place (appending to ``events``, accumulating
+# ``text_chunks``, or setting ``final_response`` / ``done``).
+# ---------------------------------------------------------------------------
+
+
+def _handle_text_delta(event: dict[str, Any], state: _StreamState) -> None:
+    delta = event.get("delta", "")
+    if not delta:
+        return
+    delta_s = str(delta)
+    state.text_chunks.append(delta_s)
+    state.text_chunks_seen.add(delta_s)
+    state.events.append({"type": "text_delta", "text": delta_s})
+
+
+def _handle_text_done(event: dict[str, Any], state: _StreamState) -> None:
+    text = event.get("text", "")
+    if not text:
+        return
+    text_s = str(text)
+    if text_s in state.text_chunks_seen:
+        return
+    state.text_chunks.append(text_s)
+    state.text_chunks_seen.add(text_s)
+    state.events.append({"type": "text_delta", "text": text_s})
+
+
+def _handle_response_completed(event: dict[str, Any], state: _StreamState) -> None:
+    resp_obj = event.get("response")
+    if isinstance(resp_obj, dict):
+        state.final_response = resp_obj
+
+
+def _handle_error_event(event: dict[str, Any], state: _StreamState) -> None:
+    """Queue an ``is_error`` assistant event and mark the stream done."""
+    e = event.get("error", {})
+    message = (
+        e.get("message", "Unknown error")
+        if isinstance(e, dict)
+        else str(e)
+    )
+    state.events.append(_error_assistant_event(message))
+    state.done = True
+
+
+def _handle_generic_delta(event: dict[str, Any], state: _StreamState) -> None:
+    event_type = str(event.get("type", ""))
+    if "function_call_arguments" in event_type:
+        return
+    for t in _extract_texts_from_event(event):
+        state.text_chunks.append(t)
+        state.text_chunks_seen.add(t)
+        state.events.append({"type": "text_delta", "text": t})
+
+
+def _handle_generic_done_or_added(event: dict[str, Any], state: _StreamState) -> None:
+    event_type = str(event.get("type", ""))
+    if "function_call_arguments" in event_type:
+        return
+    for t in _extract_texts_from_event(event):
+        if t not in state.text_chunks_seen:
+            state.text_chunks.append(t)
+            state.text_chunks_seen.add(t)
+            state.events.append({"type": "text_delta", "text": t})
+
+
+# Exact-match dispatch table for the fast path.  Suffix-based types
+# (".delta"/".done"/".added") are handled separately after lookup.
+_EXACT_SSE_HANDLERS: dict[str, Any] = {
+    "response.output_text.delta": _handle_text_delta,
+    "response.output_text.done": _handle_text_done,
+    "response.completed": _handle_response_completed,
+    "response.done": _handle_response_completed,
+    "response.error": _handle_error_event,
+    "error": _handle_error_event,
+}
 
 
 class OpenAIChatGPTProvider:
@@ -54,236 +262,193 @@ class OpenAIChatGPTProvider:
         tool_choice: str | dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> AsyncGenerator[dict[str, Any], None]:
+        """Stream a Codex ``/responses`` turn.
+
+        Thin coordinator: validates auth, builds the request, delegates the
+        SSE pump to :meth:`_pump_sse_events`, and calls
+        :meth:`_build_final_response` for the terminal assistant event.
+        Individual SSE event dispatch lives in :meth:`_dispatch_sse_event`.
+        """
         debug_sse = os.environ.get("DUH_OPENAI_CHATGPT_DEBUG", "") == "1"
         oauth = get_valid_openai_chatgpt_oauth()
-        if not oauth:
-            yield {
-                "type": "assistant",
-                "message": Message(
-                    role="assistant",
-                    content=[{"type": "text", "text": "OpenAI ChatGPT auth required. Use /connect openai."}],
-                    metadata={"is_error": True},
-                ),
-            }
+        auth_error = _validate_oauth(oauth)
+        if auth_error is not None:
+            yield auth_error
             return
 
         resolved_model = (model or self._default_model).strip() or "gpt-5.2-codex"
         access = oauth.get("access_token", "")
         account_id = oauth.get("account_id", "")
-        if not access or not account_id:
-            yield {
-                "type": "assistant",
-                "message": Message(
-                    role="assistant",
-                    content=[{"type": "text", "text": "OpenAI ChatGPT auth is invalid. Re-run /connect openai."}],
-                    metadata={"is_error": True},
-                ),
-            }
+        request_body = _build_request_body(
+            messages=messages,
+            system_prompt=system_prompt,
+            resolved_model=resolved_model,
+            tools=tools,
+            max_tokens=max_tokens,
+            tool_choice=tool_choice,
+        )
+        headers = _build_request_headers(access, account_id)
+        state = _StreamState(model=resolved_model)
+
+        try:
+            async for ev in self._pump_sse_events(
+                request_body=request_body,
+                headers=headers,
+                state=state,
+                debug_sse=debug_sse,
+            ):
+                yield ev
+        except Exception as exc:
+            yield _error_assistant_event(str(exc))
             return
 
-        instructions = _build_system_text(system_prompt).strip()
-        if not instructions:
-            from duh.constitution import build_system_prompt
-            instructions = build_system_prompt()
+        if state.done:
+            return
+        yield await self._build_final_response(state, headers, debug_sse=debug_sse)
 
-        request_body: dict[str, Any] = {
-            "model": resolved_model,
-            "instructions": instructions,
-            "input": _to_responses_input(messages, ""),
-            "stream": True,
-            "store": False,
-            "include": ["reasoning.encrypted_content"],
-        }
-        if tools:
-            request_body["tools"] = _to_responses_tools(tools)
-        if max_tokens:
-            request_body["max_output_tokens"] = max_tokens
-        if tool_choice and tools:
-            if tool_choice == "any":
-                request_body["tool_choice"] = "required"
-            elif tool_choice in ("none", "auto"):
-                request_body["tool_choice"] = tool_choice
-            elif isinstance(tool_choice, str):
-                request_body["tool_choice"] = {"type": "function", "name": tool_choice}
+    async def _pump_sse_events(
+        self,
+        *,
+        request_body: dict[str, Any],
+        headers: dict[str, str],
+        state: _StreamState,
+        debug_sse: bool,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Open the SSE stream and yield per-event output until EOS.
 
-        headers = {
-            "Authorization": f"Bearer {access}",
-            "chatgpt-account-id": str(account_id),
-            "OpenAI-Beta": "responses=experimental",
-            "originator": "codex_cli_rs",
-            "accept": "text/event-stream",
-            "content-type": "application/json",
-        }
+        Yields the same events a caller of :meth:`stream` would see during
+        the streaming phase (text deltas, and error-assistant events on
+        HTTP/server failures).  Sets ``state.done`` on terminal paths so
+        the outer :meth:`stream` knows whether to run
+        :meth:`_build_final_response`.
+        """
+        async with httpx.AsyncClient(timeout=600.0) as client:
+            async with client.stream(
+                "POST",
+                "https://chatgpt.com/backend-api/codex/responses",
+                headers=headers,
+                json=request_body,
+            ) as resp:
+                if resp.status_code >= 400:
+                    raw_body = await resp.aread()
+                    err = raw_body.decode("utf-8", errors="replace")[:500]
+                    state.done = True
+                    yield _error_assistant_event(
+                        f"OpenAI ChatGPT error ({resp.status_code}): {err}"
+                    )
+                    return
 
-        final_response: dict[str, Any] | None = None
-        text_chunks: list[str] = []
-        response_id = ""
-        streamed_calls: dict[str, dict[str, Any]] = {}
-        streamed_item_to_call: dict[str, str] = {}
-        try:
-            async with httpx.AsyncClient(timeout=600.0) as client:
-                async with client.stream(
-                    "POST",
-                    "https://chatgpt.com/backend-api/codex/responses",
-                    headers=headers,
-                    json=request_body,
-                ) as resp:
-                    if resp.status_code >= 400:
-                        text = await resp.aread()
-                        err = text.decode("utf-8", errors="replace")[:500]
-                        yield {
-                            "type": "assistant",
-                            "message": Message(
-                                role="assistant",
-                                content=[{"type": "text", "text": f"OpenAI ChatGPT error ({resp.status_code}): {err}"}],
-                                metadata={"is_error": True},
-                            ),
-                        }
+                async for line in resp.aiter_lines():
+                    event = _parse_sse_line(line)
+                    if event is None:
+                        continue
+                    self._dispatch_sse_event(event, state, debug_sse=debug_sse)
+                    for out in state.events:
+                        yield out
+                    state.events.clear()
+                    if state.done:
                         return
 
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        raw = line[6:].strip()
-                        if not raw or raw == "[DONE]":
-                            continue
-                        try:
-                            event = json.loads(raw)
-                        except json.JSONDecodeError:
-                            continue
-                        event_type = event.get("type", "")
-                        if debug_sse:
-                            sys.stderr.write(f"[openai-chatgpt] event={event_type}\n")
-                        rid = _extract_response_id(event)
-                        if rid:
-                            response_id = rid
-                        _accumulate_streamed_function_calls(
-                            event,
-                            streamed_calls,
-                            streamed_item_to_call,
-                        )
+    def _dispatch_sse_event(
+        self,
+        event: dict[str, Any],
+        state: _StreamState,
+        *,
+        debug_sse: bool = False,
+    ) -> None:
+        """Route a single SSE ``event`` to the correct state update.
 
-                        if event_type == "response.output_text.delta":
-                            delta = event.get("delta", "")
-                            if delta:
-                                text_chunks.append(str(delta))
-                                yield {"type": "text_delta", "text": str(delta)}
-                        elif event_type == "response.output_text.done":
-                            text = event.get("text", "")
-                            if text:
-                                text_s = str(text)
-                                if text_s not in text_chunks:
-                                    text_chunks.append(text_s)
-                                    yield {"type": "text_delta", "text": text_s}
-                        elif event_type in ("response.completed", "response.done"):
-                            resp_obj = event.get("response")
-                            if isinstance(resp_obj, dict):
-                                final_response = resp_obj
-                        elif event_type.endswith(".delta"):
-                            if "function_call_arguments" in event_type:
-                                continue
-                            for t in _extract_texts_from_event(event):
-                                text_chunks.append(t)
-                                yield {"type": "text_delta", "text": t}
-                        elif event_type.endswith(".done") or event_type.endswith(".added"):
-                            if "function_call_arguments" in event_type:
-                                continue
-                            for t in _extract_texts_from_event(event):
-                                if t not in text_chunks:
-                                    text_chunks.append(t)
-                                    yield {"type": "text_delta", "text": t}
-                        elif event_type == "response.error":
-                            e = event.get("error", {})
-                            message = (
-                                e.get("message", "Unknown error")
-                                if isinstance(e, dict)
-                                else str(e)
-                            )
-                            yield {
-                                "type": "assistant",
-                                "message": Message(
-                                    role="assistant",
-                                    content=[{"type": "text", "text": message}],
-                                    metadata={"is_error": True},
-                                ),
-                            }
-                            return
-                        elif event_type == "error":
-                            e = event.get("error", {})
-                            message = (
-                                e.get("message", "Unknown error")
-                                if isinstance(e, dict)
-                                else str(e)
-                            )
-                            yield {
-                                "type": "assistant",
-                                "message": Message(
-                                    role="assistant",
-                                    content=[{"type": "text", "text": message}],
-                                    metadata={"is_error": True},
-                                ),
-                            }
-                            return
-                        elif debug_sse:
-                            sys.stderr.write(
-                                f"[openai-chatgpt] unhandled={event_type} keys={list(event.keys())}\n"
-                            )
-        except Exception as exc:
-            yield {
-                "type": "assistant",
-                "message": Message(
-                    role="assistant",
-                    content=[{"type": "text", "text": str(exc)}],
-                    metadata={"is_error": True},
-                ),
-            }
+        All caller-visible events are appended to ``state.events``; setting
+        ``state.done`` signals a terminal error path.  Per-event-type
+        handlers live in ``_SSE_HANDLERS`` below; this method just looks
+        up the right one by exact type and suffix.
+        """
+        event_type = event.get("type", "")
+        if debug_sse:
+            sys.stderr.write(f"[openai-chatgpt] event={event_type}\n")
+
+        rid = _extract_response_id(event)
+        if rid:
+            state.response_id = rid
+        _accumulate_streamed_function_calls(
+            event, state.streamed_calls, state.streamed_item_to_call,
+        )
+
+        handler = _EXACT_SSE_HANDLERS.get(event_type)
+        if handler is not None:
+            handler(event, state)
             return
+        if event_type.endswith(".delta"):
+            _handle_generic_delta(event, state)
+            return
+        if event_type.endswith(".done") or event_type.endswith(".added"):
+            _handle_generic_done_or_added(event, state)
+            return
+        if debug_sse:
+            sys.stderr.write(
+                f"[openai-chatgpt] unhandled={event_type} keys={list(event.keys())}\n"
+            )
 
-        if _response_missing_content(final_response) and response_id:
-            fetched = await _fetch_response_by_id(response_id, headers)
+    async def _build_final_response(
+        self,
+        state: _StreamState,
+        headers: dict[str, str],
+        *,
+        debug_sse: bool = False,
+    ) -> dict[str, Any]:
+        """Assemble the terminal ``assistant`` event from *state*.
+
+        Runs the three recovery paths that follow a successful SSE stream:
+        (1) fetch-by-id when the completion event carried no content,
+        (2) synthesize a minimal response from streamed text chunks, and
+        (3) merge fragmented function-call arguments back into the response.
+        Returns an error event when no meaningful content blocks result.
+        """
+        final_response = state.final_response
+        if _response_missing_content(final_response) and state.response_id:
+            fetched = await _fetch_response_by_id(state.response_id, headers)
             if isinstance(fetched, dict):
                 final_response = fetched
 
-        if final_response is None and text_chunks:
+        if final_response is None and state.text_chunks:
             final_response = {
                 "status": "completed",
                 "output": [
                     {
                         "type": "message",
-                        "content": [{"type": "output_text", "text": "".join(text_chunks)}],
+                        "content": [
+                            {"type": "output_text", "text": "".join(state.text_chunks)},
+                        ],
                     }
                 ],
             }
 
-        if streamed_calls:
-            final_response = _merge_streamed_calls_into_response(final_response, streamed_calls)
+        if state.streamed_calls:
+            final_response = _merge_streamed_calls_into_response(
+                final_response, state.streamed_calls,
+            )
 
         content_blocks = _response_to_content_blocks(final_response)
         if not _has_meaningful_content_blocks(content_blocks):
             if debug_sse:
                 sys.stderr.write(
-                    f"[openai-chatgpt] empty content. response_id={response_id!r} "
-                    f"chunks={len(text_chunks)} has_final={final_response is not None}\n"
+                    f"[openai-chatgpt] empty content. response_id={state.response_id!r} "
+                    f"chunks={len(state.text_chunks)} has_final={final_response is not None}\n"
                 )
-            yield {
-                "type": "assistant",
-                "message": Message(
-                    role="assistant",
-                    content=[{"type": "text", "text": "OpenAI ChatGPT stream ended without assistant content."}],
-                    metadata={"is_error": True},
-                ),
-            }
-            return
+            return _error_assistant_event(
+                "OpenAI ChatGPT stream ended without assistant content."
+            )
+
         assistant_msg = Message(
             role="assistant",
             content=content_blocks,
             metadata={
                 "stop_reason": (final_response or {}).get("status", "end_turn"),
                 "usage": {},
-                "model": resolved_model,
+                "model": state.model,
             },
         )
-        yield {"type": "assistant", "message": assistant_msg}
+        return {"type": "assistant", "message": assistant_msg}
 
 
 def _build_system_text(system_prompt: str | list[str]) -> str:

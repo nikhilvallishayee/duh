@@ -1227,6 +1227,9 @@ class TestMCPExecutorGaps:
         executor._connections["s"] = conn
         info = MCPToolInfo(name="tool", server_name="s")
         executor._tool_index["mcp__s__tool"] = info
+        # PERF-14: also mirror the tool in the per-server index so
+        # _mark_degraded() can remove it in O(k).
+        executor._server_tools.setdefault("s", set()).add("mcp__s__tool")
         # Pre-seed error count so the next failure trips the breaker
         executor._error_counts["s"] = MAX_ERRORS_BEFORE_RECONNECT - 1
 

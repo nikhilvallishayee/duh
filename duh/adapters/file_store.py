@@ -11,6 +11,7 @@ temp-file-then-rename for thread safety.
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import os
@@ -21,11 +22,47 @@ from pathlib import Path
 from typing import Any
 
 from duh.kernel.messages import Message
+from duh.kernel.untrusted import TaintSource, UntrustedStr
 
 logger = logging.getLogger(__name__)
 
 # Maximum session file size (64 MB). Industry standard cap.
 MAX_SESSION_BYTES = 64 * 1024 * 1024
+
+# Sentinel key used to mark a tainted string value in the on-disk JSON.
+# A plain str survives json.dumps with no tag; we box tainted values in a
+# dict so the taint source can round-trip. Load reverses the box.
+_TAINT_MARKER = "__duh_taint__"
+
+
+def _encode_taint(obj: Any) -> Any:
+    """Recursively walk *obj* and box UntrustedStr values as tagged dicts.
+
+    Preserves taint metadata across json.dumps/json.loads. Non-tainted
+    values pass through unchanged.
+    """
+    if isinstance(obj, UntrustedStr):
+        return {_TAINT_MARKER: obj.source.value, "value": str(obj)}
+    if isinstance(obj, dict):
+        return {k: _encode_taint(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_encode_taint(v) for v in obj]
+    return obj
+
+
+def _decode_taint(obj: Any) -> Any:
+    """Inverse of ``_encode_taint``: rebuild UntrustedStr from tagged dicts."""
+    if isinstance(obj, dict):
+        if _TAINT_MARKER in obj and "value" in obj and len(obj) == 2:
+            try:
+                src = TaintSource(obj[_TAINT_MARKER])
+            except ValueError:
+                return obj["value"]
+            return UntrustedStr(obj["value"], src)
+        return {k: _decode_taint(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_decode_taint(v) for v in obj]
+    return obj
 
 
 def _default_base_dir() -> Path:
@@ -102,9 +139,10 @@ class FileStore:
         lines: list[str] = []
         for msg in new_messages:
             if isinstance(msg, Message):
-                lines.append(json.dumps(asdict(msg), ensure_ascii=False))
+                payload = _encode_taint(asdict(msg))
             else:
-                lines.append(json.dumps(msg, ensure_ascii=False))
+                payload = _encode_taint(msg)
+            lines.append(json.dumps(payload, ensure_ascii=False))
 
         # Check projected size against the session cap before writing.
         existing_size = path.stat().st_size if path.exists() else 0
@@ -118,9 +156,19 @@ class FileStore:
             )
 
         # Atomic write: copy existing content + new lines → temp → rename.
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(self._base_dir), suffix=".tmp",
-        )
+        try:
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(self._base_dir), suffix=".tmp",
+            )
+        except OSError as exc:
+            if exc.errno in (errno.ENOSPC, errno.EDQUOT):
+                logger.warning(
+                    "Session save skipped for %s: disk full (%s). "
+                    "Session remains in memory; re-save after freeing space.",
+                    session_id, exc.strerror or exc,
+                )
+                return
+            raise
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as tmp:
                 # Copy existing content
@@ -131,6 +179,20 @@ class FileStore:
                 for line in lines:
                     tmp.write(line + "\n")
             os.replace(tmp_path, str(path))
+        except OSError as exc:
+            # Clean up temp file then decide: swallow disk-full, re-raise others.
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            if exc.errno in (errno.ENOSPC, errno.EDQUOT):
+                logger.warning(
+                    "Session save failed for %s: disk full (%s). "
+                    "Session remains in memory; re-save after freeing space.",
+                    session_id, exc.strerror or exc,
+                )
+                return
+            raise
         except BaseException:
             # Clean up temp file on any error
             try:
@@ -158,7 +220,7 @@ class FileStore:
             for line in f:
                 stripped = line.strip()
                 if stripped:
-                    messages.append(json.loads(stripped))
+                    messages.append(_decode_taint(json.loads(stripped)))
 
         # ADR-057: Migrate broken sessions with consecutive same-role messages
         if _needs_alternation_fix(messages):

@@ -72,7 +72,7 @@ def test_scan_baseline_only_reports_new(tmp_path: Path, monkeypatch: pytest.Monk
         ]
 
     calls = {"n": 0}
-    async def fake_run_scan(root, scanner_filter):
+    async def fake_run_scan(root, scanner_filter, **kwargs):
         calls["n"] += 1
         return await (fake_scan_head if calls["n"] == 1 else fake_scan_base)(root, scanner_filter)
 

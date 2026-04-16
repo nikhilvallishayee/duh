@@ -305,3 +305,22 @@ class UntrustedStr(str):
 
     def __getitem__(self, key) -> "UntrustedStr":  # type: ignore[override]
         return UntrustedStr(super().__getitem__(key), self._source)
+
+    # ------------------------------------------------------------------
+    # f-string / format() propagation (SEC-LOW-3 + INFO-2)
+    # ------------------------------------------------------------------
+    #
+    # ``f"{tainted}"`` (and ``format(tainted, spec)``) calls
+    # ``tainted.__format__(spec)``. The default ``str.__format__`` returns a
+    # plain ``str``, which silently drops taint. We override to return an
+    # ``UntrustedStr`` carrying the same source so single-variable f-strings
+    # preserve taint end-to-end.
+    #
+    # Note: multi-part f-strings like ``f"pre {tainted} post"`` produce a
+    # plain ``str`` because CPython's BUILD_STRING concatenates constant
+    # literals with the format result — that path cannot be intercepted
+    # from Python. For those cases, use ``UntrustedStr`` concatenation or
+    # ``.format()`` directly, both of which DO preserve taint.
+
+    def __format__(self, format_spec: str) -> "UntrustedStr":  # type: ignore[override]
+        return UntrustedStr(super().__format__(format_spec), self._source)

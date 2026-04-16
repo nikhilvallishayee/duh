@@ -236,7 +236,29 @@ def format_text(findings: list[Finding], *, color: bool | None = None) -> str:
     return "\n".join(lines) + "\n"
 
 
-async def _run_scan(project_root: Path, scanner_filter: list[str] | None) -> list[Finding]:
+def _make_stderr_progress_callback(total_hint: int = 0):
+    """Return a progress callback that paints a single live stderr line.
+
+    Only used when stderr is a TTY and ``--quiet`` is not set.  The
+    callback uses ``\\r`` to rewrite one line and emits a trailing newline
+    once the final scanner finishes.
+    """
+    def _cb(name: str, current: int, total: int) -> None:
+        _ = total_hint  # unused; signature stability for future extension
+        sys.stderr.write(f"\rScanning [{current}/{total}] {name:<24s}")
+        sys.stderr.flush()
+        if current >= total:
+            sys.stderr.write("\n")
+            sys.stderr.flush()
+    return _cb
+
+
+async def _run_scan(
+    project_root: Path,
+    scanner_filter: list[str] | None,
+    *,
+    progress_cb=None,
+) -> list[Finding]:
     policy = load_policy(project_root=project_root)
     registry = ScannerRegistry()
     registry.load_entry_points()
@@ -244,7 +266,9 @@ async def _run_scan(project_root: Path, scanner_filter: list[str] | None) -> lis
         name for name in registry.names() if name in policy.scanners or not policy.scanners
     ]
     runner = Runner(registry=registry, policy=policy)
-    results = await runner.run(project_root, scanners=candidate_names)
+    results = await runner.run(
+        project_root, scanners=candidate_names, progress=progress_cb,
+    )
     findings: list[Finding] = []
     for r in results:
         findings.extend(r.findings)
@@ -315,11 +339,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         return int(exc.code or 2)
 
     if args.cmd == "scan":
-        head_findings = asyncio.run(_run_scan(args.project_root, args.scanner))
+        # QX: show a live progress indicator when stderr is a TTY and the
+        # operator didn't ask for --quiet.  CI runs (non-TTY) stay silent.
+        progress_cb = None
+        if (
+            not args.quiet
+            and hasattr(sys.stderr, "isatty")
+            and sys.stderr.isatty()
+        ):
+            progress_cb = _make_stderr_progress_callback()
+
+        head_findings = asyncio.run(
+            _run_scan(args.project_root, args.scanner, progress_cb=progress_cb)
+        )
         findings = head_findings
         if args.baseline:
             base_root = _checkout_baseline(args.baseline, args.project_root)
-            base_findings = asyncio.run(_run_scan(base_root, args.scanner))
+            base_findings = asyncio.run(
+                _run_scan(base_root, args.scanner, progress_cb=progress_cb)
+            )
             findings = _delta(head_findings, base_findings)
 
         # --sarif-out implies sarif format for backward compatibility.

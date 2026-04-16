@@ -10,12 +10,33 @@ from duh.kernel.tool import ToolContext, ToolResult
 from duh.kernel.untrusted import TaintSource, UntrustedStr
 from duh.security.trifecta import Capability
 
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_DEFAULT_MAX_RESULTS = 500
+_BINARY_CHECK_SIZE = 8192  # first 8 KB
+
 
 def _wrap_file_content(text: str) -> UntrustedStr:
     """Tag file-system content as FILE_CONTENT."""
     if isinstance(text, UntrustedStr):
         return text
     return UntrustedStr(text, TaintSource.FILE_CONTENT)
+
+
+def _is_binary(path: Path) -> bool:
+    """Return True if *path* looks like a binary file.
+
+    Reads the first 8 KB and checks for null bytes — a simple heuristic
+    that catches ELF, Mach-O, class files, images, etc.
+    """
+    try:
+        with open(path, "rb") as fh:
+            chunk = fh.read(_BINARY_CHECK_SIZE)
+        return b"\x00" in chunk
+    except Exception:
+        return False
 
 
 class GrepTool:
@@ -44,6 +65,11 @@ class GrepTool:
                 "description": "If true, search case-insensitively. Default: false.",
                 "default": False,
             },
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum number of matching lines to return. Default: 500.",
+                "default": _DEFAULT_MAX_RESULTS,
+            },
         },
         "required": ["pattern"],
     }
@@ -61,6 +87,7 @@ class GrepTool:
         search_path = input.get("path", "") or context.cwd or "."
         file_glob = input.get("glob", "")
         case_insensitive = input.get("case_insensitive", False)
+        max_results: int = input.get("max_results", _DEFAULT_MAX_RESULTS)
 
         if not pattern_str:
             return ToolResult(output="pattern is required", is_error=True)
@@ -88,21 +115,47 @@ class GrepTool:
             )
 
         results: list[str] = []
+        total_matches = 0
+        truncated = False
+
         for fpath in files:
+            # Skip binary files
+            if _is_binary(fpath):
+                continue
+
             try:
-                text = fpath.read_text(encoding="utf-8", errors="replace")
+                fh = open(fpath, encoding="utf-8", errors="replace")  # noqa: SIM115
             except Exception:
                 continue
-            for lineno, line in enumerate(text.splitlines(), start=1):
-                if regex.search(line):
-                    results.append(f"{fpath}:{lineno}:{line}")
 
-        if not results:
+            try:
+                for lineno, line in enumerate(fh, start=1):
+                    line = line.rstrip("\n\r")
+                    if regex.search(line):
+                        total_matches += 1
+                        if len(results) < max_results:
+                            results.append(f"{fpath}:{lineno}:{line}")
+                        else:
+                            truncated = True
+                            break
+            finally:
+                fh.close()
+
+            if truncated:
+                # Count remaining matches in current file for the note,
+                # but don't store them — just break out of the file loop.
+                break
+
+        if not results and total_matches == 0:
             return ToolResult(output="No matches found.")
 
+        output = "\n".join(results)
+        if truncated:
+            output += f"\n\n... results truncated (showing {max_results} of {max_results}+ matches)"
+
         return ToolResult(
-            output="\n".join(results),
-            metadata={"match_count": len(results)},
+            output=output,
+            metadata={"match_count": len(results), "truncated": truncated},
         )
 
     async def check_permissions(

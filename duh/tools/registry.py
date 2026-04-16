@@ -39,6 +39,7 @@ def get_all_tools(
     *,
     skills: list[Any] | None = None,
     deferred_tools: list[Any] | None = None,
+    path_policy: Any | None = None,
 ) -> list[Any]:
     """Return instances of all available core tools.
 
@@ -48,34 +49,36 @@ def get_all_tools(
     Args:
         skills: Optional list of SkillDef objects to register with SkillTool.
         deferred_tools: Optional list of DeferredTool objects for ToolSearchTool.
+        path_policy: Optional PathPolicy for filesystem boundary enforcement
+            (ADR-072).  Passed to Read, Write, Edit, and MultiEdit tools.
     """
     tools: list[Any] = []
 
     # Read
     try:
         from duh.tools.read import ReadTool
-        tools.append(ReadTool())
+        tools.append(ReadTool(path_policy=path_policy))
     except ImportError:
         pass
 
     # Write
     try:
         from duh.tools.write import WriteTool
-        tools.append(WriteTool())
+        tools.append(WriteTool(path_policy=path_policy))
     except ImportError:
         pass
 
     # Edit
     try:
         from duh.tools.edit import EditTool
-        tools.append(EditTool())
+        tools.append(EditTool(path_policy=path_policy))
     except ImportError:
         pass
 
     # MultiEdit
     try:
         from duh.tools.multi_edit import MultiEditTool
-        tools.append(MultiEditTool())
+        tools.append(MultiEditTool(path_policy=path_policy))
     except ImportError:
         pass
 

@@ -10,14 +10,17 @@ SwarmExecutor, which spawns CLI subprocesses with:
   - `--model <model>` for model selection
 
 Usage:
-    /Users/nomind/Code/duh/.venv/bin/python3 tests/e2e_claudeflow_smoke.py
+    python tests/e2e_claudeflow_smoke.py
 """
 
 import json
+import os
 import subprocess
 import sys
+from pathlib import Path
 
-DUH_SHIM = "/Users/nomind/Code/duh/bin/duh-sdk-shim"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DUH_SHIM = os.environ.get("DUH_SHIM", str(_PROJECT_ROOT / "bin" / "duh-sdk-shim"))
 
 
 def run_duh(*args, timeout=15):

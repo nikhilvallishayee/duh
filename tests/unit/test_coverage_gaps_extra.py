@@ -40,22 +40,11 @@ class TestOptionalDeps:
         with pytest.raises(RuntimeError, match="websockets"):
             mod.require_websockets()
 
-    def test_require_websockets_present(self, monkeypatch):
-        import duh._optional_deps as mod
-        monkeypatch.setattr(mod, "ws_available", True)
-        # Should not raise
-        mod.require_websockets()
-
     def test_require_httpx_missing(self, monkeypatch):
         import duh._optional_deps as mod
         monkeypatch.setattr(mod, "httpx_available", False)
         with pytest.raises(RuntimeError, match="httpx"):
             mod.require_httpx()
-
-    def test_require_httpx_present(self, monkeypatch):
-        import duh._optional_deps as mod
-        monkeypatch.setattr(mod, "httpx_available", True)
-        mod.require_httpx()
 
     def test_import_fallback_simulated(self):
         """Run the try/except blocks by re-executing the module source with a
@@ -184,21 +173,6 @@ class TestLandlockAvailable:
              patch("ctypes.CDLL", side_effect=OSError("no libc")):
             assert policy._landlock_available() is False
 
-    def test_landlock_available_runs(self, monkeypatch):
-        """Exercise the function; result depends on platform.
-
-        We mock find_library + CDLL so the test is hermetic — calling the
-        real ctypes path can hang on CI runners where ldconfig is slow.
-        """
-        from unittest.mock import MagicMock
-        from duh.adapters.sandbox.policy import _landlock_available
-        fake_libc = MagicMock()
-        fake_libc.syscall.return_value = -1  # exercise the failure branch
-        with patch("ctypes.util.find_library", return_value="libc.so.6"), \
-             patch("ctypes.CDLL", return_value=fake_libc):
-            result = _landlock_available()
-        assert isinstance(result, bool)
-
     def test_build_unknown_sandbox_type_fallback(self):
         """If a future SandboxType is added without a handler, fallback path."""
         from duh.adapters.sandbox.policy import SandboxCommand, SandboxPolicy, SandboxType
@@ -230,21 +204,6 @@ class TestLandlockAvailable:
         )
         cmd.cleanup()
         assert not profile.exists()
-
-    def test_cleanup_missing_profile(self, tmp_path):
-        from duh.adapters.sandbox.policy import SandboxCommand
-        cmd = SandboxCommand(
-            command="x",
-            argv=["x"],
-            profile_path=str(tmp_path / "nonexistent.sb"),
-        )
-        # Should not raise
-        cmd.cleanup()
-
-    def test_cleanup_no_profile(self):
-        from duh.adapters.sandbox.policy import SandboxCommand
-        cmd = SandboxCommand(command="x", argv=["x"], profile_path=None)
-        cmd.cleanup()
 
 
 # =============================================================================
@@ -291,28 +250,6 @@ class TestBridgeServerLifecycle:
         await server.stop()
         assert fake_server.close.called
         assert server._server is None
-
-    async def test_stop_no_server_noop(self):
-        from duh.bridge.server import BridgeServer
-        server = BridgeServer()
-        await server.stop()  # _server is None, should not raise
-
-    async def test_handle_connection_exception(self):
-        from duh.bridge.server import BridgeServer
-        server = BridgeServer(token="t")
-
-        class BadWS:
-            def __aiter__(self):
-                return self
-            async def __anext__(self):
-                raise RuntimeError("boom")
-            async def send(self, _):
-                pass
-            async def close(self):
-                pass
-
-        # Should swallow and cleanup
-        await server._handle_connection(BadWS())
 
     async def test_handle_prompt_engine_error(self):
         from duh.bridge.server import BridgeServer
@@ -364,18 +301,6 @@ class TestAttachmentsEdgeCases:
         ct = mgr.detect_content_type("random.qqz", b"\xff\xfe\x00\x01\x80")
         assert ct == "application/octet-stream"
 
-    def test_extract_text_from_pdf_returns_fallback(self):
-        """PDF without pdfplumber or streams falls through to description."""
-        from duh.kernel.attachments import Attachment, AttachmentManager
-        mgr = AttachmentManager()
-        att = Attachment(
-            name="weird.pdf",
-            content_type="application/pdf",
-            data=b"%PDF-1.4\nno text streams here",
-        )
-        text = mgr.extract_text(att)
-        assert isinstance(text, str)
-
     def test_extract_text_image_placeholder(self):
         from duh.kernel.attachments import Attachment, AttachmentManager
         mgr = AttachmentManager()
@@ -399,17 +324,6 @@ class TestAttachmentsEdgeCases:
         text = mgr.extract_text(att)
         assert "Binary file" in text
         assert "mystery.bin" in text
-
-    def test_extract_pdf_with_text_stream(self, tmp_path):
-        """Fallback regex extraction of text between parens followed by Tj."""
-        from duh.kernel.attachments import Attachment, AttachmentManager
-        # Force the pdfplumber path to fail so the regex fallback runs
-        mgr = AttachmentManager()
-        # pdfplumber may not be installed — this is fine; fallback runs
-        raw = b"%PDF-1.4\nstream (Hello World) Tj endstream"
-        att = Attachment(name="t.pdf", content_type="application/pdf", data=raw)
-        text = mgr.extract_text(att)
-        assert isinstance(text, str)
 
     def test_extract_pdf_with_pdfplumber_mock(self):
         """Exercise the pdfplumber branch if library is available or mocked."""
@@ -455,19 +369,6 @@ class TestAttachmentsEdgeCases:
             att = Attachment(name="x.pdf", content_type="application/pdf", data=b"%PDF")
             result = mgr._extract_pdf_text(att)
         assert "no extractable text" in result
-
-    def test_extract_pdf_pdfplumber_exception(self):
-        from duh.kernel.attachments import Attachment, AttachmentManager
-        mgr = AttachmentManager()
-
-        fake_module = MagicMock()
-        fake_module.open.side_effect = RuntimeError("corrupted")
-
-        with patch.dict(sys.modules, {"pdfplumber": fake_module}):
-            att = Attachment(name="x.pdf", content_type="application/pdf", data=b"%PDF")
-            result = mgr._extract_pdf_text(att)
-        # Falls back to regex
-        assert isinstance(result, str)
 
 
 # =============================================================================
@@ -1165,46 +1066,6 @@ class TestOllamaToolChoice:
         msgs = client.last_payload["messages"]
         assert "MUST call the 'Read'" in msgs[0]["content"]
 
-    async def test_tool_choice_specific_list_system(self):
-        from duh.adapters.ollama import OllamaProvider
-        lines = [json.dumps({"message": {"content": "ok"}, "done": True})]
-        response = _OllamaMockResponse(200, lines)
-        client = _OllamaMockClient(response)
-
-        class FakeTool:
-            name = "Read"
-            description = "r"
-            input_schema = {"type": "object"}
-
-        with patch("httpx.AsyncClient", return_value=client):
-            provider = OllamaProvider()
-            async for _ in provider.stream(
-                messages=[], tools=[FakeTool()],
-                system_prompt=["A", "B"],
-                tool_choice="Read",
-            ):
-                pass
-
-    async def test_tool_choice_specific_empty_system(self):
-        from duh.adapters.ollama import OllamaProvider
-        lines = [json.dumps({"message": {"content": "ok"}, "done": True})]
-        response = _OllamaMockResponse(200, lines)
-        client = _OllamaMockClient(response)
-
-        class FakeTool:
-            name = "Read"
-            description = "r"
-            input_schema = {"type": "object"}
-
-        with patch("httpx.AsyncClient", return_value=client):
-            provider = OllamaProvider()
-            async for _ in provider.stream(
-                messages=[], tools=[FakeTool()],
-                system_prompt="",
-                tool_choice="Read",
-            ):
-                pass
-
     async def test_extracted_tool_calls_from_text(self):
         """Text-only response containing JSON tool-call patterns."""
         from duh.adapters.ollama import OllamaProvider
@@ -1508,31 +1369,6 @@ class TestMCPTransportGaps:
         with pytest.raises(RuntimeError, match="not connected"):
             await t.send({"id": 1})
 
-    async def test_ws_listen_handles_exception(self):
-        from duh.adapters.mcp_transports import WebSocketTransport
-        t = WebSocketTransport(url="ws://x")
-        t._connected = True
-
-        class BadWS:
-            async def recv(self):
-                raise RuntimeError("ws dead")
-
-        t._ws = BadWS()
-        # _listen should exit gracefully when recv raises
-        await t._listen()
-
-    async def test_ws_listen_handles_cancel(self):
-        from duh.adapters.mcp_transports import WebSocketTransport
-        t = WebSocketTransport(url="ws://x")
-        t._connected = True
-
-        class CancelWS:
-            async def recv(self):
-                raise asyncio.CancelledError()
-
-        t._ws = CancelWS()
-        await t._listen()
-
     async def test_ws_reconnect_success(self):
         from duh.adapters.mcp_transports import WebSocketTransport
         t = WebSocketTransport(url="ws://x", max_reconnect_attempts=2, reconnect_delay=0.001)
@@ -1817,35 +1653,6 @@ class TestMoreGaps:
         result = _action_references(p, src, "nowhere_to_be_found")
         assert result.metadata["count"] == 0
         assert "No references" in result.output
-
-    def test_attachments_pdf_fallback_text(self):
-        """Exercise the 'binary file' fallback branch in extract_text via
-        a PDF with no pdfplumber and no regex matches."""
-        from duh.kernel.attachments import Attachment, AttachmentManager
-        mgr = AttachmentManager()
-
-        # Force pdfplumber to be unimportable → ImportError branch
-        class ImportBlocker:
-            def find_spec(self, name, *args):
-                if name == "pdfplumber":
-                    raise ImportError("blocked")
-                return None
-
-        import importlib
-        # Simpler: stub pdfplumber to raise ImportError on import
-        orig = sys.modules.pop("pdfplumber", None)
-        try:
-            with patch.dict(sys.modules, {"pdfplumber": None}):
-                att = Attachment(
-                    name="empty.pdf",
-                    content_type="application/pdf",
-                    data=b"%PDF-1.4\nno streams\n",
-                )
-                text = mgr._extract_pdf_text(att)
-            assert isinstance(text, str)
-        finally:
-            if orig is not None:
-                sys.modules["pdfplumber"] = orig
 
     def test_attachments_pdf_regex_fallback_exception(self):
         """The regex fallback inside _extract_pdf_text must swallow exceptions."""

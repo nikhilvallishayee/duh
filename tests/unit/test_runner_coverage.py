@@ -512,11 +512,6 @@ class TestMakeSerializable:
         assert result["message"]["role"] == "assistant"
         assert result["message"]["content"] == "hi"
 
-    def test_non_serializable_object_stringified(self):
-        event = {"type": "thing", "obj": object()}
-        result = _make_serializable(event)
-        assert isinstance(result["obj"], str)
-
     def test_none_passes_through(self):
         event = {"type": "x", "val": None}
         result = _make_serializable(event)

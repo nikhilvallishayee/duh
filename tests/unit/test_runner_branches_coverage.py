@@ -152,7 +152,7 @@ class TestToolFiltering:
     async def test_allowed_filters_tools(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 
-        def fake_tools(skills=None, deferred_tools=None):
+        def fake_tools(skills=None, deferred_tools=None, path_policy=None):
             return [
                 SimpleNamespace(name="Read"),
                 SimpleNamespace(name="Write"),
@@ -179,7 +179,7 @@ class TestToolFiltering:
     async def test_disallowed_filters_tools(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 
-        def fake_tools(skills=None, deferred_tools=None):
+        def fake_tools(skills=None, deferred_tools=None, path_policy=None):
             return [
                 SimpleNamespace(name="Read"),
                 SimpleNamespace(name="Write"),

@@ -226,7 +226,14 @@ async def run_stream_json_mode(args: argparse.Namespace) -> int:
     call_model = backend.call_model
 
     cwd = os.getcwd()
-    tools = list(get_all_tools())
+
+    # --- Build PathPolicy for filesystem boundary enforcement (ADR-072) ---
+    from duh.config import _find_git_root
+    from duh.security.path_policy import PathPolicy
+    _project_root = _find_git_root(cwd) or cwd
+    path_policy = PathPolicy(str(_project_root))
+
+    tools = list(get_all_tools(path_policy=path_policy))
 
     # --- Build system prompt ---
     system_prompt = args.system_prompt or SYSTEM_PROMPT

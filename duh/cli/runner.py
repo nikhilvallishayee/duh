@@ -137,6 +137,12 @@ async def run_print_mode(args: argparse.Namespace) -> int:
 
     cwd = os.getcwd()
 
+    # --- Build PathPolicy for filesystem boundary enforcement (ADR-072) ---
+    from duh.config import _find_git_root
+    from duh.security.path_policy import PathPolicy
+    _project_root = _find_git_root(cwd) or cwd
+    path_policy = PathPolicy(str(_project_root))
+
     # --- Load skills (ADR-017) ---
     from duh.kernel.skill import load_all_skills
     loaded_skills = load_all_skills(cwd)
@@ -160,7 +166,7 @@ async def run_print_mode(args: argparse.Namespace) -> int:
                 source="plugin",
             ))
 
-    tools = list(get_all_tools(skills=loaded_skills, deferred_tools=deferred_tools))
+    tools = list(get_all_tools(skills=loaded_skills, deferred_tools=deferred_tools, path_policy=path_policy))
 
     # --- Filter tools by --allowedTools / --disallowedTools ---
     allowed = getattr(args, "allowedTools", None)

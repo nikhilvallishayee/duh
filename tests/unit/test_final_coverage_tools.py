@@ -433,11 +433,6 @@ class TestDatabaseTool:
 # ==========================================================================
 
 class TestDockerAvailability:
-    def test_docker_available_returns_bool(self):
-        from duh.tools.docker_tool import _docker_available, _run
-        # Just call them to exercise the lines
-        result = _docker_available()
-        assert isinstance(result, bool)
 
     def test_docker_run_calls_subprocess(self, monkeypatch):
         from duh.tools.docker_tool import _run

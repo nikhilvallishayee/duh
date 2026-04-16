@@ -5,7 +5,7 @@ Tests that the UC API server can start with D.U.H. as the CLI backend
 (via DUH_CLI_PATH env var) and handle basic requests.
 
 Usage:
-    /Users/nomind/Code/duh/.venv/bin/python3 tests/e2e_uc_api_smoke.py
+    UC_API_DIR=/path/to/universal-companion-api python tests/e2e_uc_api_smoke.py
 """
 
 import asyncio
@@ -15,10 +15,12 @@ import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
 
-DUH_SHIM = "/Users/nomind/Code/duh/bin/duh-sdk-shim"
-UC_API_DIR = "/Users/nomind/Code/UniversalCompanion/universal-companion-api"
-UC_VENV_PYTHON = f"{UC_API_DIR}/.venv/bin/python3"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DUH_SHIM = os.environ.get("DUH_SHIM", str(_PROJECT_ROOT / "bin" / "duh-sdk-shim"))
+UC_API_DIR = os.environ.get("UC_API_DIR", str(_PROJECT_ROOT.parent / "UniversalCompanion" / "universal-companion-api"))
+UC_VENV_PYTHON = os.environ.get("UC_VENV_PYTHON", f"{UC_API_DIR}/.venv/bin/python3")
 PORT = 8099  # Use non-standard port to avoid conflicts
 
 

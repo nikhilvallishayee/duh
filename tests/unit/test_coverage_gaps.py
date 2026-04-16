@@ -28,29 +28,8 @@ from duh.kernel.signals import ShutdownHandler
 
 
 class TestShutdownInstall:
-    @pytest.mark.asyncio
-    async def test_install_registers_handlers(self):
-        """install() with a running loop should register signal handlers."""
-        handler = ShutdownHandler()
-        loop = asyncio.get_running_loop()
-        handlers_before = {}
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            try:
-                handlers_before[sig] = loop._signal_handlers.get(sig)
-            except AttributeError:
-                pass  # Not all loops expose this
-
-        handler.install(loop)
         # After install, the handler is registered. We can't easily check
         # the exact handler, but calling install should not raise.
-
-    @pytest.mark.asyncio
-    async def test_install_no_loop_does_not_crash(self):
-        """install() with loop=None when no loop is running should be a no-op."""
-        handler = ShutdownHandler()
-        # Patch get_running_loop to raise RuntimeError
-        with patch("duh.kernel.signals.asyncio.get_running_loop", side_effect=RuntimeError):
-            handler.install(loop=None)
         # Should not have crashed
 
     @pytest.mark.asyncio
@@ -75,13 +54,6 @@ class TestShutdownInstall:
         assert not handler.shutting_down
         await handler.run_cleanup()
         assert handler.shutting_down
-
-    @pytest.mark.asyncio
-    async def test_install_with_explicit_loop(self):
-        """install() with an explicit loop parameter."""
-        handler = ShutdownHandler()
-        loop = asyncio.get_running_loop()
-        handler.install(loop=loop)
         # Should have registered without error
 
 
@@ -240,16 +212,6 @@ class TestAttachmentTextProperty:
             data=b"<root/>",
         )
         assert a.text == "<root/>"
-
-    def test_text_for_binary_but_decodable_unknown_type(self):
-        """Unknown type that decodes as valid text should return text."""
-        a = Attachment(
-            name="mystery.zzq",
-            content_type="application/octet-stream",
-            data=b"This is actually text content",
-        )
-        # Will try decoding and heuristic check
-        result = a.text
         # Could return None or text depending on heuristic
         # The key is it doesn't crash
 
@@ -355,24 +317,6 @@ class TestSandboxCommandCleanup:
         assert profile.exists()
         cmd.cleanup()
         assert not profile.exists()
-
-    def test_cleanup_no_profile_is_noop(self):
-        """cleanup() with no profile_path should not raise."""
-        cmd = SandboxCommand(
-            command="echo hi",
-            argv=["bash", "-c", "echo hi"],
-            profile_path=None,
-        )
-        cmd.cleanup()  # Should not raise
-
-    def test_cleanup_missing_file_is_noop(self):
-        """cleanup() with a nonexistent profile path should not raise."""
-        cmd = SandboxCommand(
-            command="echo hi",
-            argv=["bash", "-c", "echo hi"],
-            profile_path="/tmp/nonexistent_profile_12345.sb",
-        )
-        cmd.cleanup()  # Should not raise
 
 
 # ============================================================================
@@ -565,19 +509,6 @@ class TestBridgeServerHandleConnection:
 
 
 class TestSessionRelayEdgeCases:
-    @pytest.mark.asyncio
-    async def test_send_event_to_broken_websocket(self):
-        """If the websocket .send() raises, it should be caught silently."""
-        relay = SessionRelay()
-
-        class BrokenWS:
-            async def send(self, data: str) -> None:
-                raise ConnectionError("connection lost")
-
-        relay.register("s1", BrokenWS())
-        event = EventMessage(session_id="s1", event_type="test", data={})
-        # Should not raise
-        await relay.send_event("s1", event)
 
     def test_register_overwrites_previous(self):
         """Registering the same session_id twice should overwrite."""

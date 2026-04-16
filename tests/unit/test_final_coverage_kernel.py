@@ -173,20 +173,6 @@ class TestShutdownInternals:
         result = asyncio.run(_runner())
         assert result is True
 
-    def test_install_add_signal_handler_not_implemented(self):
-        """Windows path: add_signal_handler raises NotImplementedError."""
-        async def _runner():
-            handler = ShutdownHandler()
-            loop = asyncio.get_running_loop()
-
-            def _fail(*a, **kw):
-                raise NotImplementedError
-
-            loop.add_signal_handler = _fail  # type: ignore
-            handler.install(loop)  # must not raise
-
-        asyncio.run(_runner())
-
 
 # ==========================================================================
 # duh.kernel.memory

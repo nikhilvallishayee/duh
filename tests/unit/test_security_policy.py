@@ -1,4 +1,3 @@
-# /Users/nomind/Code/duh/tests/unit/test_security_policy.py
 """Tests for resolve() and PolicyDecision."""
 
 from __future__ import annotations

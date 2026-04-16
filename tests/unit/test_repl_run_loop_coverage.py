@@ -56,7 +56,7 @@ def _patch_repl_infra(monkeypatch, events=None):
     from duh.kernel import templates as templates_mod
 
     monkeypatch.setattr(repl_mod, "AnthropicProvider", _FakeProvider)
-    monkeypatch.setattr(repl_mod, "get_all_tools", lambda: [])
+    monkeypatch.setattr(repl_mod, "get_all_tools", lambda **kw: [])
     monkeypatch.setattr(repl_mod, "_load_history", lambda: None)
     monkeypatch.setattr(repl_mod, "_setup_completion", lambda: None)
     monkeypatch.setattr(repl_mod, "_save_history", lambda: None)

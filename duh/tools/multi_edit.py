@@ -20,6 +20,14 @@ class MultiEditTool:
     """
 
     name = "MultiEdit"
+
+    def __init__(
+        self,
+        *,
+        path_policy: "PathPolicy | None" = None,
+    ) -> None:
+        from duh.security.path_policy import PathPolicy  # noqa: F811
+        self._path_policy: PathPolicy | None = path_policy
     capabilities = Capability.FS_WRITE
     description = (
         "Apply multiple edits to one or more files in a single call. "
@@ -79,6 +87,15 @@ class MultiEditTool:
             if not fp:
                 continue  # will be caught by the per-edit validation below
             p = Path(fp)
+            if not p.is_absolute():
+                p = Path(context.cwd) / p
+            p = p.resolve()
+            # Filesystem boundary check
+            if self._path_policy is not None:
+                allowed, reason = self._path_policy.check(str(p))
+                if not allowed:
+                    perm_issues.append(f"edit {i}: {reason}")
+                    continue
             if p.is_file() and not os.access(p, os.R_OK | os.W_OK):
                 perm_issues.append(
                     f"edit {i}: permission denied: cannot edit {fp} (need read+write)"
@@ -110,6 +127,15 @@ class MultiEditTool:
             path = Path(file_path)
             if not path.is_absolute():
                 path = Path(context.cwd) / path
+            path = path.resolve()
+
+            # Filesystem boundary check
+            if self._path_policy is not None:
+                allowed, reason = self._path_policy.check(str(path))
+                if not allowed:
+                    failures.append(f"edit {i}: {reason}")
+                    continue
+
             if not path.is_file():
                 failures.append(f"edit {i}: file not found: {file_path}")
                 continue
@@ -172,4 +198,16 @@ class MultiEditTool:
     async def check_permissions(
         self, input: dict[str, Any], context: ToolContext
     ) -> dict[str, Any]:
+        if self._path_policy is not None:
+            edits = input.get("edits") or []
+            for edit in edits:
+                file_path = edit.get("file_path", "")
+                if file_path:
+                    path = Path(file_path)
+                    if not path.is_absolute():
+                        path = Path(context.cwd) / path
+                    path = path.resolve()
+                    allowed, reason = self._path_policy.check(str(path))
+                    if not allowed:
+                        return {"allowed": False, "reason": reason}
         return {"allowed": True}

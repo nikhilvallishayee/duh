@@ -11,3 +11,4 @@ build/
 .coverage
 .coverage.*
 .hypothesis/
+uv.lock

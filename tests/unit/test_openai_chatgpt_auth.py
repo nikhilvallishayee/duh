@@ -13,7 +13,6 @@ import pytest
 
 from duh.auth import openai_chatgpt as mod
 from duh.auth.openai_chatgpt import (
-    _OAuthHandler,
     _OAuthWaitState,
     _b64url_no_pad,
     _build_authorize_url,
@@ -21,6 +20,7 @@ from duh.auth.openai_chatgpt import (
     _exchange_code_for_tokens,
     _extract_account_id,
     _load_oauth,
+    _make_oauth_handler,
     _pkce_pair,
     _refresh_tokens,
     connect_openai_api_key,
@@ -306,7 +306,7 @@ def test_refresh_missing_expires_in(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# _OAuthHandler.do_GET / log_message
+# _make_oauth_handler / do_GET / log_message
 # ---------------------------------------------------------------------------
 
 
@@ -318,37 +318,43 @@ class _FakeWFile:
         self.chunks.append(data)
 
 
-class _FakeHandler(_OAuthHandler):
-    """Bypass BaseHTTPRequestHandler.__init__ (no socket)."""
+def _make_fake_handler(wait_state: _OAuthWaitState):
+    """Build a fake handler class (no socket) bound to *wait_state*."""
+    handler_cls = _make_oauth_handler(wait_state)
 
-    def __init__(self, path: str) -> None:
-        self.path = path
-        self.wfile = _FakeWFile()
-        self._status: int | None = None
-        self._headers: list[tuple[str, str]] = []
-        self._ended = False
+    class _FakeHandler(handler_cls):
+        """Bypass BaseHTTPRequestHandler.__init__ (no socket)."""
 
-    def send_response(self, code: int, message: str | None = None) -> None:  # type: ignore[override]
-        self._status = code
+        def __init__(self, path: str) -> None:
+            self.path = path
+            self.wfile = _FakeWFile()
+            self._status: int | None = None
+            self._headers: list[tuple[str, str]] = []
+            self._ended = False
 
-    def send_header(self, keyword: str, value: str) -> None:  # type: ignore[override]
-        self._headers.append((keyword, value))
+        def send_response(self, code: int, message: str | None = None) -> None:  # type: ignore[override]
+            self._status = code
 
-    def end_headers(self) -> None:  # type: ignore[override]
-        self._ended = True
+        def send_header(self, keyword: str, value: str) -> None:  # type: ignore[override]
+            self._headers.append((keyword, value))
+
+        def end_headers(self) -> None:  # type: ignore[override]
+            self._ended = True
+
+    return _FakeHandler
 
 
 def _set_wait_state(expected: str = "the-state"):
     import threading
 
     ws = _OAuthWaitState(expected_state=expected, ready=threading.Event())
-    _OAuthHandler.wait_state = ws
     return ws
 
 
 def test_do_get_wrong_path():
-    _set_wait_state()
-    h = _FakeHandler("/other")
+    ws = _set_wait_state()
+    FakeHandler = _make_fake_handler(ws)
+    h = FakeHandler("/other")
     h.do_GET()
     assert h._status == 404
     assert b"Not found" in b"".join(h.wfile.chunks)
@@ -356,7 +362,8 @@ def test_do_get_wrong_path():
 
 def test_do_get_missing_code():
     ws = _set_wait_state("st")
-    h = _FakeHandler("/auth/callback?state=st")  # no code
+    FakeHandler = _make_fake_handler(ws)
+    h = FakeHandler("/auth/callback?state=st")  # no code
     h.do_GET()
     assert h._status == 400
     assert b"Invalid OAuth callback" in b"".join(h.wfile.chunks)
@@ -365,7 +372,8 @@ def test_do_get_missing_code():
 
 def test_do_get_wrong_state():
     ws = _set_wait_state("expected")
-    h = _FakeHandler("/auth/callback?state=other&code=abc")
+    FakeHandler = _make_fake_handler(ws)
+    h = FakeHandler("/auth/callback?state=other&code=abc")
     h.do_GET()
     assert h._status == 400
     assert not ws.ready.is_set()
@@ -373,7 +381,8 @@ def test_do_get_wrong_state():
 
 def test_do_get_valid_callback():
     ws = _set_wait_state("st")
-    h = _FakeHandler("/auth/callback?state=st&code=mycode")
+    FakeHandler = _make_fake_handler(ws)
+    h = FakeHandler("/auth/callback?state=st&code=mycode")
     h.do_GET()
     assert h._status == 200
     assert ws.code == "mycode"
@@ -386,16 +395,17 @@ def test_do_get_valid_callback():
 def test_do_get_valid_callback_no_ready_event():
     """wait_state.ready is None -> should still send 200 without error."""
     ws = _OAuthWaitState(expected_state="st", ready=None)
-    _OAuthHandler.wait_state = ws
-    h = _FakeHandler("/auth/callback?state=st&code=mycode")
+    FakeHandler = _make_fake_handler(ws)
+    h = FakeHandler("/auth/callback?state=st&code=mycode")
     h.do_GET()
     assert h._status == 200
     assert ws.code == "mycode"
 
 
 def test_log_message_is_noop():
-    _set_wait_state()
-    h = _FakeHandler("/auth/callback")
+    ws = _set_wait_state()
+    FakeHandler = _make_fake_handler(ws)
+    h = FakeHandler("/auth/callback")
     # Should not raise.
     assert h.log_message("fmt %s", "arg") is None
 
@@ -406,12 +416,13 @@ def test_log_message_is_noop():
 
 
 def test_build_authorize_url_contains_all_params():
-    url = _build_authorize_url("my-state", "my-challenge")
+    redirect = "http://localhost:9999/auth/callback"
+    url = _build_authorize_url("my-state", "my-challenge", redirect)
     assert url.startswith(mod.AUTHORIZE_URL + "?")
     q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
     assert q["response_type"] == ["code"]
     assert q["client_id"] == [mod.CLIENT_ID]
-    assert q["redirect_uri"] == [mod.REDIRECT_URI]
+    assert q["redirect_uri"] == [redirect]
     assert q["scope"] == [mod.SCOPE]
     assert q["code_challenge"] == ["my-challenge"]
     assert q["code_challenge_method"] == ["S256"]
@@ -433,6 +444,8 @@ class _StubServer:
 
     def __init__(self, address: tuple[str, int], handler_cls: Any):
         self.address = address
+        # Simulate OS-assigned ephemeral port when port 0 is requested.
+        self.server_address = (address[0], address[1] if address[1] else 54321)
         self.handler_cls = handler_cls
         self.shutdown_called = False
         self.server_closed = False
@@ -467,15 +480,26 @@ def test_connect_chatgpt_happy_path(monkeypatch, fake_store):
     _install_stub_server(monkeypatch)
     _install_fake_client(monkeypatch, response=_FakeResponse(200, _good_token_body()))
 
-    # Simulate that the browser immediately fires the callback: as soon as the
-    # server "starts", set wait_state.code via a fake Thread.
+    # Capture the wait_state that _make_oauth_handler receives so that the
+    # fake thread can set the code on it (SEC-HIGH-1: wait_state is no longer
+    # a class attribute).
+    captured_ws: list[_OAuthWaitState] = []
+    _orig_make = mod._make_oauth_handler
+
+    def _capturing_make(ws: _OAuthWaitState):
+        captured_ws.append(ws)
+        return _orig_make(ws)
+
+    monkeypatch.setattr(mod, "_make_oauth_handler", _capturing_make)
+
+    # Simulate that the browser immediately fires the callback.
     class InstantThread:
         def __init__(self, target: Any, daemon: bool = False):
             self._target = target
             self.daemon = daemon
 
         def start(self) -> None:
-            ws = _OAuthHandler.wait_state
+            ws = captured_ws[-1]
             ws.code = "code-from-browser"
             if ws.ready:
                 ws.ready.set()
@@ -599,12 +623,21 @@ def test_connect_chatgpt_provider_not_dict(monkeypatch, fake_store):
     _install_stub_server(monkeypatch)
     _install_fake_client(monkeypatch, response=_FakeResponse(200, _good_token_body()))
 
+    captured_ws: list[_OAuthWaitState] = []
+    _orig_make = mod._make_oauth_handler
+
+    def _capturing_make(ws: _OAuthWaitState):
+        captured_ws.append(ws)
+        return _orig_make(ws)
+
+    monkeypatch.setattr(mod, "_make_oauth_handler", _capturing_make)
+
     class InstantThread:
         def __init__(self, target: Any, daemon: bool = False):
             self._target = target
 
         def start(self) -> None:
-            ws = _OAuthHandler.wait_state
+            ws = captured_ws[-1]
             ws.code = "code-x"
             if ws.ready:
                 ws.ready.set()

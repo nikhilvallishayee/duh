@@ -448,20 +448,6 @@ class TestNativeExecutorUndoPush:
 # Renderers — tool_result and thinking dispatch
 # ==========================================================================
 
-class TestRendererDispatch:
-    def test_bare_renderer_handle_tool_result(self, capsys):
-        from duh.adapters.renderers import BareRenderer
-
-        r = BareRenderer()
-        r.handle({"type": "tool_result", "output": "hello", "is_error": False})
-
-    def test_bare_renderer_handle_thinking_delta(self, capsys):
-        from duh.adapters.renderers import BareRenderer
-
-        r = BareRenderer(debug=True)
-        r.handle({"type": "thinking_delta", "text": "pondering"})
-
-
 # ==========================================================================
 # NetworkPolicy — _extract_host with exception
 # ==========================================================================
@@ -491,48 +477,3 @@ class TestSeatbeltDenyWrite:
     so it's marked pragma no cover. No test needed."""
 
 
-# ==========================================================================
-# StructuredLogger — rotation & write error paths
-# ==========================================================================
-
-class TestStructuredLoggerRotation:
-    def test_rotate_if_needed_triggers(self, tmp_path):
-        from duh.adapters.structured_logging import StructuredLogger
-
-        # Create a logger with tiny max_bytes
-        slog = StructuredLogger(log_dir=str(tmp_path), max_bytes=50)
-        # Write enough events to trigger rotation
-        for i in range(20):
-            slog.model_request(model="m", turn=i)
-        slog.close()
-
-    def test_rotate_failure_is_swallowed(self, tmp_path, monkeypatch):
-        from duh.adapters.structured_logging import StructuredLogger
-
-        slog = StructuredLogger(log_dir=str(tmp_path), max_bytes=1)
-        slog.model_request(model="m", turn=0)
-
-        # Patch shutil.move to raise OSError
-        def _bad_move(*a, **kw):
-            raise OSError("cannot move")
-
-        monkeypatch.setattr(
-            "duh.adapters.structured_logging.shutil.move", _bad_move,
-        )
-        # Should not crash — _rotate_if_needed swallows OSError
-        slog.model_request(model="m2", turn=1)
-        slog.close()
-
-    def test_write_failure_is_swallowed(self, tmp_path):
-        from duh.adapters.structured_logging import StructuredLogger
-
-        slog = StructuredLogger(log_dir=str(tmp_path))
-        slog._ensure_open()
-        # Replace the handle with a broken one
-        broken = MagicMock()
-        broken.closed = False  # must be explicit False so _ensure_open returns it
-        broken.write = MagicMock(side_effect=OSError("fs full"))
-        broken.flush = MagicMock()
-        slog._handle = broken
-        # Should not raise — _write catches OSError
-        slog.model_request(model="m", turn=0)

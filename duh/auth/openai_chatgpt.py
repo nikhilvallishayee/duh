@@ -21,9 +21,9 @@ from duh.auth.store import load_provider_auth, save_provider_auth
 CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
 TOKEN_URL = "https://auth.openai.com/oauth/token"
-# Must match OAuth client configuration exactly.
-# Codex/OpenCode flows use localhost here (not 127.0.0.1 in the URI).
-REDIRECT_URI = "http://localhost:1455/auth/callback"
+# Redirect URI template -- the port is filled in at runtime with an
+# OS-assigned ephemeral port (SEC-MEDIUM-3).
+_REDIRECT_URI_TEMPLATE = "http://localhost:{port}/auth/callback"
 SCOPE = "openid profile email offline_access"
 JWT_AUTH_CLAIM = "https://api.openai.com/auth"
 
@@ -48,18 +48,51 @@ def _pkce_pair() -> tuple[str, str]:
 
 
 def _decode_jwt_noverify(token: str) -> dict[str, Any] | None:
+    """Decode a JWT **without** signature verification.
+
+    .. warning::
+        This function does NOT verify the JWT signature.  OpenAI's auth
+        endpoint does not publish a public JWKS URI, so cryptographic
+        verification is not feasible here.  The token is only used to
+        extract ``chatgpt_account_id`` after a successful OAuth token
+        exchange over TLS -- the token itself was delivered directly by
+        OpenAI's token endpoint, not supplied by an untrusted party.
+
+        Structural validation (3 dot-separated base64url segments, valid
+        JSON payload) is enforced to reject obviously malformed input.
+    """
+    if not isinstance(token, str) or not token:
+        return None
     try:
         parts = token.split(".")
         if len(parts) != 3:
             return None
-        payload = parts[1]
-        payload += "=" * (-len(payload) % 4)
-        return json.loads(base64.urlsafe_b64decode(payload).decode("utf-8"))
+        # Structural validation: every segment must be valid base64url.
+        for part in parts:
+            if not part:
+                return None
+            padded = part + "=" * (-len(part) % 4)
+            base64.urlsafe_b64decode(padded)
+        # Decode payload (middle segment).
+        payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
+        payload_bytes = base64.urlsafe_b64decode(payload_b64)
+        result = json.loads(payload_bytes.decode("utf-8"))
+        if not isinstance(result, dict):
+            return None
+        return result
     except Exception:
         return None
 
 
 def _extract_account_id(access_token: str) -> str:
+    """Extract ``chatgpt_account_id`` from an access-token JWT.
+
+    .. warning::
+        The JWT is decoded **without** signature verification -- see
+        :func:`_decode_jwt_noverify` for rationale.  The value extracted
+        here should only be treated as a *hint* (e.g. for caching) and
+        must not be used for authorization decisions.
+    """
     payload = _decode_jwt_noverify(access_token) or {}
     claim = payload.get(JWT_AUTH_CLAIM, {})
     if isinstance(claim, dict):
@@ -69,13 +102,15 @@ def _extract_account_id(access_token: str) -> str:
     return ""
 
 
-def _exchange_code_for_tokens(code: str, verifier: str) -> dict[str, Any] | None:
+def _exchange_code_for_tokens(
+    code: str, verifier: str, redirect_uri: str = ""
+) -> dict[str, Any] | None:
     data = {
         "grant_type": "authorization_code",
         "client_id": CLIENT_ID,
         "code": code,
         "code_verifier": verifier,
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_uri or _REDIRECT_URI_TEMPLATE.format(port=0),
     }
     try:
         with httpx.Client(timeout=30.0) as client:
@@ -142,49 +177,61 @@ class _OAuthWaitState:
     ready: threading.Event | None = None
 
 
-class _OAuthHandler(BaseHTTPRequestHandler):
-    wait_state: _OAuthWaitState
+def _make_oauth_handler(wait_state: _OAuthWaitState) -> type:
+    """Create a request-handler class bound to a specific *wait_state*.
 
-    def do_GET(self) -> None:  # noqa: N802
-        parsed = urllib.parse.urlparse(self.path)
-        if parsed.path != "/auth/callback":
-            self.send_response(404)
+    This avoids storing ``wait_state`` as a **class attribute** on the
+    handler, which would be shared across concurrent OAuth flows
+    (SEC-HIGH-1).  Each call produces a fresh subclass whose instances
+    all close over the same ``wait_state`` instance.
+    """
+
+    class _BoundHandler(BaseHTTPRequestHandler):
+
+        def do_GET(self) -> None:  # noqa: N802
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path != "/auth/callback":
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(b"Not found")
+                return
+
+            params = urllib.parse.parse_qs(parsed.query)
+            state = params.get("state", [""])[0]
+            code = params.get("code", [""])[0]
+
+            if state != wait_state.expected_state or not code:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(b"Invalid OAuth callback")
+                return
+
+            wait_state.code = code
+            if wait_state.ready:
+                wait_state.ready.set()
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(b"Not found")
+            self.wfile.write(
+                b"<html><body><h3>Authentication complete.</h3>"
+                b"<p>You can return to D.U.H.</p></body></html>"
+            )
+
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
             return
 
-        params = urllib.parse.parse_qs(parsed.query)
-        state = params.get("state", [""])[0]
-        code = params.get("code", [""])[0]
-
-        if state != self.wait_state.expected_state or not code:
-            self.send_response(400)
-            self.end_headers()
-            self.wfile.write(b"Invalid OAuth callback")
-            return
-
-        self.wait_state.code = code
-        if self.wait_state.ready:
-            self.wait_state.ready.set()
-
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(
-            b"<html><body><h3>Authentication complete.</h3>"
-            b"<p>You can return to D.U.H.</p></body></html>"
-        )
-
-    def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
-        return
+    return _BoundHandler
 
 
-def _build_authorize_url(state: str, challenge: str) -> str:
+def _build_authorize_url(
+    state: str, challenge: str, redirect_uri: str = ""
+) -> str:
     query = urllib.parse.urlencode(
         {
             "response_type": "code",
             "client_id": CLIENT_ID,
-            "redirect_uri": REDIRECT_URI,
+            "redirect_uri": redirect_uri or _REDIRECT_URI_TEMPLATE.format(port=0),
             "scope": SCOPE,
             "code_challenge": challenge,
             "code_challenge_method": "S256",
@@ -206,13 +253,19 @@ def connect_openai_chatgpt_subscription(
     verifier, challenge = _pkce_pair()
     state = secrets.token_hex(16)
     wait_state = _OAuthWaitState(expected_state=state, ready=threading.Event())
-    _OAuthHandler.wait_state = wait_state
+    # SEC-HIGH-1: Each flow gets its own handler class bound to *this*
+    # wait_state -- no shared class attribute.
+    handler_cls = _make_oauth_handler(wait_state)
 
     server: HTTPServer | None = None
     thread: threading.Thread | None = None
     server_ready = False
+    redirect_uri = ""
     try:
-        server = HTTPServer(("127.0.0.1", 1455), _OAuthHandler)
+        # SEC-MEDIUM-3: Use port 0 so the OS assigns an ephemeral port.
+        server = HTTPServer(("127.0.0.1", 0), handler_cls)
+        assigned_port = server.server_address[1]
+        redirect_uri = _REDIRECT_URI_TEMPLATE.format(port=assigned_port)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         server_ready = True
@@ -220,7 +273,7 @@ def connect_openai_chatgpt_subscription(
         server = None
         thread = None
 
-    url = _build_authorize_url(state, challenge)
+    url = _build_authorize_url(state, challenge, redirect_uri)
     output_fn("  Opening browser for ChatGPT Plus/Pro login...")
     output_fn(f"  If it doesn't open, use this URL:\n  {url}")
     try:
@@ -248,7 +301,7 @@ def connect_openai_chatgpt_subscription(
         except Exception:
             code = pasted
 
-    tokens = _exchange_code_for_tokens(code, verifier)
+    tokens = _exchange_code_for_tokens(code, verifier, redirect_uri)
     if not tokens:
         return False, "OAuth token exchange failed."
     if not tokens.get("account_id"):

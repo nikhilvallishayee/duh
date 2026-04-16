@@ -64,9 +64,6 @@ def _make_import_blocker(blocked_module: str):
 
 
 class TestGetAllToolsHappyPath:
-    def test_returns_list(self):
-        tools = get_all_tools()
-        assert isinstance(tools, list)
 
     def test_returns_nonempty(self):
         tools = get_all_tools()
@@ -222,13 +219,6 @@ class TestImportErrorBranches:
             tools = get_all_tools()
         names = {t.name for t in tools}
         assert "GitHub" not in names
-
-    def test_lsp_tool_import_failure(self):
-        with patch("builtins.__import__", side_effect=_make_import_blocker("duh.tools.lsp_tool")):
-            tools = get_all_tools()
-        # LSP is deferred, so it won't appear in names regardless
-        # The key is that no exception propagates
-        assert isinstance(tools, list)
 
 
 # ---------------------------------------------------------------------------

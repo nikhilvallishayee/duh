@@ -80,7 +80,7 @@ def _patch_repl_infra(monkeypatch):
     from duh.kernel import templates as templates_mod
 
     monkeypatch.setattr(repl_mod, "AnthropicProvider", _FakeProvider)
-    monkeypatch.setattr(repl_mod, "get_all_tools", lambda: [])
+    monkeypatch.setattr(repl_mod, "get_all_tools", lambda **kw: [])
     monkeypatch.setattr(repl_mod, "_load_history", lambda: None)
     monkeypatch.setattr(repl_mod, "_setup_completion", lambda: None)
     monkeypatch.setattr(repl_mod, "_save_history", lambda: None)
@@ -273,7 +273,7 @@ class TestReplMcpServers:
         from duh.kernel import templates as templates_mod
 
         monkeypatch.setattr(repl_mod, "AnthropicProvider", _FakeProvider)
-        monkeypatch.setattr(repl_mod, "get_all_tools", lambda: [])
+        monkeypatch.setattr(repl_mod, "get_all_tools", lambda **kw: [])
         monkeypatch.setattr(repl_mod, "_load_history", lambda: None)
         monkeypatch.setattr(repl_mod, "_setup_completion", lambda: None)
         monkeypatch.setattr(repl_mod, "_save_history", lambda: None)
@@ -315,7 +315,7 @@ class TestReplMcpServers:
         from duh.kernel import templates as templates_mod
 
         monkeypatch.setattr(repl_mod, "AnthropicProvider", _FakeProvider)
-        monkeypatch.setattr(repl_mod, "get_all_tools", lambda: [])
+        monkeypatch.setattr(repl_mod, "get_all_tools", lambda **kw: [])
         monkeypatch.setattr(repl_mod, "_load_history", lambda: None)
         monkeypatch.setattr(repl_mod, "_setup_completion", lambda: None)
         monkeypatch.setattr(repl_mod, "_save_history", lambda: None)
@@ -357,7 +357,7 @@ class TestReplTemplateLoading:
         from duh.kernel import templates as templates_mod
 
         monkeypatch.setattr(repl_mod, "AnthropicProvider", _FakeProvider)
-        monkeypatch.setattr(repl_mod, "get_all_tools", lambda: [])
+        monkeypatch.setattr(repl_mod, "get_all_tools", lambda **kw: [])
         monkeypatch.setattr(repl_mod, "_load_history", lambda: None)
         monkeypatch.setattr(repl_mod, "_setup_completion", lambda: None)
         monkeypatch.setattr(repl_mod, "_save_history", lambda: None)
@@ -399,11 +399,11 @@ class TestTaskManagerLookup:
             name="Task",
             task_manager=MagicMock(),
         )
-        monkeypatch.setattr(repl_mod, "get_all_tools", lambda: [fake_task_tool])
+        monkeypatch.setattr(repl_mod, "get_all_tools", lambda **kw: [fake_task_tool])
 
         _patch_repl_infra(monkeypatch)
         # Re-apply get_all_tools patch (overridden by _patch_repl_infra)
-        monkeypatch.setattr(repl_mod, "get_all_tools", lambda: [fake_task_tool])
+        monkeypatch.setattr(repl_mod, "get_all_tools", lambda **kw: [fake_task_tool])
 
         inputs = iter(["/exit"])
         monkeypatch.setattr("builtins.input", lambda _p="": next(inputs))
@@ -433,7 +433,7 @@ class TestActiveTemplateApplied:
         )
 
         monkeypatch.setattr(repl_mod, "AnthropicProvider", _FakeProvider)
-        monkeypatch.setattr(repl_mod, "get_all_tools", lambda: [])
+        monkeypatch.setattr(repl_mod, "get_all_tools", lambda **kw: [])
         monkeypatch.setattr(repl_mod, "_load_history", lambda: None)
         monkeypatch.setattr(repl_mod, "_setup_completion", lambda: None)
         monkeypatch.setattr(repl_mod, "_save_history", lambda: None)
@@ -599,7 +599,7 @@ class TestReplMcpExceptionPath:
         from duh.kernel import templates as templates_mod
 
         monkeypatch.setattr(repl_mod, "AnthropicProvider", _FakeProvider)
-        monkeypatch.setattr(repl_mod, "get_all_tools", lambda: [])
+        monkeypatch.setattr(repl_mod, "get_all_tools", lambda **kw: [])
         monkeypatch.setattr(repl_mod, "_load_history", lambda: None)
         monkeypatch.setattr(repl_mod, "_setup_completion", lambda: None)
         monkeypatch.setattr(repl_mod, "_save_history", lambda: None)

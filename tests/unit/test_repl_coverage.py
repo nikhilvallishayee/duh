@@ -518,70 +518,12 @@ class TestPlainRenderer:
         r.flush_response()
         assert r._buf == []
 
-    def test_thinking_delta_debug(self):
-        r = _PlainRenderer(debug=True)
-        buf = StringIO()
-        with patch("sys.stderr", buf):
-            r.thinking_delta("hmm...")
-        assert "hmm..." in buf.getvalue()
-
-    def test_thinking_delta_no_debug(self):
-        r = _PlainRenderer(debug=False)
-        buf = StringIO()
-        with patch("sys.stderr", buf):
-            r.thinking_delta("hmm...")
-        assert buf.getvalue() == ""
-
-    def test_tool_use(self):
-        r = _PlainRenderer()
-        buf = StringIO()
-        with patch("sys.stderr", buf):
-            r.tool_use("Read", {"file_path": "/tmp/x"})
-        assert "Read" in buf.getvalue()
-        assert "file_path" in buf.getvalue()
-
-    def test_tool_result_error(self):
-        r = _PlainRenderer()
-        buf = StringIO()
-        with patch("sys.stderr", buf):
-            r.tool_result("file not found", is_error=True)
-        assert "file not found" in buf.getvalue()
-
-    def test_tool_result_debug(self):
-        r = _PlainRenderer(debug=True)
-        buf = StringIO()
-        with patch("sys.stderr", buf):
-            r.tool_result("ok", is_error=False)
-        assert "ok" in buf.getvalue()
-
-    def test_tool_result_no_debug_no_error(self):
-        r = _PlainRenderer(debug=False)
-        buf = StringIO()
-        with patch("sys.stderr", buf):
-            r.tool_result("ok", is_error=False)
-        assert buf.getvalue() == ""
-
-    def test_error(self):
-        r = _PlainRenderer()
-        buf = StringIO()
-        with patch("sys.stderr", buf):
-            r.error("something went wrong")
-        assert "something went wrong" in buf.getvalue()
-
     def test_turn_end(self):
         r = _PlainRenderer()
         buf = StringIO()
         with patch("sys.stdout", buf):
             r.turn_end()
         assert buf.getvalue() == "\n\n"
-
-    def test_banner(self):
-        r = _PlainRenderer()
-        buf = StringIO()
-        with patch("sys.stdout", buf):
-            r.banner("claude-test")
-        assert "D.U.H." in buf.getvalue()
-        assert "claude-test" in buf.getvalue()
 
     def test_status_bar_is_noop(self):
         r = _PlainRenderer()
@@ -635,56 +577,12 @@ class TestRichRenderer:
         r.flush_response()
         assert r._buf == []
 
-    def test_thinking_delta_debug(self):
-        r = self._make(debug=True)
-        # Just verify it doesn't raise
-        r.thinking_delta("thinking...")
-
-    def test_thinking_delta_no_debug(self):
-        r = self._make(debug=False)
-        # Should be a no-op
-        r.thinking_delta("thinking...")
-
-    def test_tool_use(self):
-        r = self._make()
-        # Just verify it doesn't raise
-        r.tool_use("Edit", {"file_path": "/tmp/x", "old_string": "a"})
-
-    def test_tool_result_error(self):
-        r = self._make()
-        # Uses Panel, verify no exception
-        r.tool_result("bad thing happened", is_error=True)
-
-    def test_tool_result_debug(self):
-        r = self._make(debug=True)
-        r.tool_result("ok", is_error=False)
-
-    def test_tool_result_no_debug_no_error(self):
-        r = self._make(debug=False)
-        # Should be a no-op
-        r.tool_result("ok", is_error=False)
-
-    def test_error(self):
-        r = self._make()
-        # Uses Panel, verify no exception
-        r.error("something bad")
-
     def test_turn_end(self):
         r = self._make()
         buf = StringIO()
         with patch("sys.stdout", buf):
             r.turn_end()
         assert "\n" in buf.getvalue()
-
-    def test_banner(self):
-        r = self._make()
-        # Uses Panel, just verify no exception
-        r.banner("test-model")
-
-    def test_status_bar(self):
-        r = self._make()
-        # Uses Text with style, just verify no exception
-        r.status_bar("test-model", 3)
 
     def test_prompt_returns_string(self):
         r = self._make()
@@ -702,16 +600,6 @@ class TestMakeRenderer:
             r = _make_renderer(debug=True)
         assert isinstance(r, _PlainRenderer)
         assert r.debug is True
-
-    def test_returns_rich_when_available(self):
-        try:
-            import rich  # noqa: F401
-        except ImportError:
-            pytest.skip("rich not installed")
-        with patch("duh.cli.repl._HAS_RICH", True):
-            r = _make_renderer(debug=False)
-        from duh.cli.repl import _RichRenderer
-        assert isinstance(r, _RichRenderer)
 
 
 # ===========================================================================

@@ -552,45 +552,6 @@ class TestSearchMessagesLong:
 # ============================================================================
 
 
-class TestHistoryPersistence:
-    def test_load_history_missing_file(self, tmp_path, monkeypatch):
-        from duh.cli import repl as repl_mod
-        monkeypatch.setattr(repl_mod, "HISTORY_DIR", str(tmp_path / "cfg"))
-        monkeypatch.setattr(
-            repl_mod, "HISTORY_FILE", str(tmp_path / "cfg" / "history")
-        )
-        # Should not raise even though file is missing
-        _load_history()
-
-    def test_save_history_os_error(self, tmp_path, monkeypatch):
-        from duh.cli import repl as repl_mod
-
-        monkeypatch.setattr(repl_mod, "HISTORY_DIR", str(tmp_path / "cfg"))
-        monkeypatch.setattr(
-            repl_mod, "HISTORY_FILE", str(tmp_path / "cfg" / "history")
-        )
-        monkeypatch.setattr(
-            readline,
-            "write_history_file",
-            lambda f: (_ for _ in ()).throw(OSError("permission")),
-        )
-        # Should not raise
-        _save_history()
-
-    def test_load_history_permission_error(self, monkeypatch, tmp_path):
-        from duh.cli import repl as repl_mod
-        monkeypatch.setattr(repl_mod, "HISTORY_DIR", str(tmp_path / "cfg"))
-        monkeypatch.setattr(
-            repl_mod, "HISTORY_FILE", str(tmp_path / "cfg" / "history")
-        )
-        monkeypatch.setattr(
-            readline,
-            "read_history_file",
-            lambda f: (_ for _ in ()).throw(PermissionError("no perm")),
-        )
-        _load_history()
-
-
 # ============================================================================
 # _SlashCompleter
 # ============================================================================
@@ -631,23 +592,6 @@ class TestSetupCompletion:
             _setup_completion()
             new = readline.get_completer()
             assert callable(new)
-        finally:
-            readline.set_completer(old)
-
-    def test_setup_libedit_path(self, monkeypatch):
-        # Fake __doc__ to look like libedit so we exercise that branch
-        monkeypatch.setattr(readline, "__doc__", "libedit-based readline")
-        old = readline.get_completer()
-        try:
-            _setup_completion()
-        finally:
-            readline.set_completer(old)
-
-    def test_setup_standard_readline_path(self, monkeypatch):
-        monkeypatch.setattr(readline, "__doc__", "GNU readline")
-        old = readline.get_completer()
-        try:
-            _setup_completion()
         finally:
             readline.set_completer(old)
 

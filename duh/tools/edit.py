@@ -162,4 +162,14 @@ class EditTool:
     async def check_permissions(
         self, input: dict[str, Any], context: ToolContext
     ) -> dict[str, Any]:
+        if self._path_policy is not None:
+            file_path = input.get("file_path", "")
+            if file_path:
+                path = Path(file_path)
+                if not path.is_absolute():
+                    path = Path(context.cwd) / path
+                path = path.resolve()
+                allowed, reason = self._path_policy.check(str(path))
+                if not allowed:
+                    return {"allowed": False, "reason": reason}
         return {"allowed": True}

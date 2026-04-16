@@ -6,15 +6,17 @@ send a simple prompt via the stream-json NDJSON protocol, and receive
 a parsed response.
 
 Usage:
-    CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK=1 /Users/nomind/Code/duh/.venv/bin/python3 tests/e2e_sdk_smoke.py
+    CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK=1 python tests/e2e_sdk_smoke.py
 """
 
 import asyncio
 import os
 import sys
 import traceback
+from pathlib import Path
 
-DUH_SHIM = "/Users/nomind/Code/duh/bin/duh-sdk-shim"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DUH_SHIM = os.environ.get("DUH_SHIM", str(_PROJECT_ROOT / "bin" / "duh-sdk-shim"))
 
 from claude_agent_sdk import (
     AssistantMessage,

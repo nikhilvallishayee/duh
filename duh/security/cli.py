@@ -1,7 +1,6 @@
 """duh security subcommand entry point.
 
 Dispatches `init`, `scan`, `diff`, `exception`, `db`, `doctor`, `hook`.
-Phase 1 implements `scan` as a stub that emits a SARIF document.
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ from typing import Sequence
 
 from duh.security.config import load_policy
 from duh.security.engine import FindingStore, Runner, ScannerRegistry
-from duh.security.finding import Finding
+from duh.security.finding import Finding, Severity
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -24,10 +23,23 @@ def _build_parser() -> argparse.ArgumentParser:
 
     scan = subs.add_parser("scan", help="Run enabled scanners once")
     scan.add_argument("--project-root", default=".", type=Path)
-    scan.add_argument("--sarif-out", default=None, help="path or '-' for stdout")
+    scan.add_argument(
+        "--format",
+        choices=["text", "sarif"],
+        default="text",
+        help="Output format: 'text' (human-readable table, default) or 'sarif' (raw JSON).",
+    )
+    scan.add_argument("--sarif-out", default=None, help="path or '-' for stdout (implies --format sarif)")
     scan.add_argument("--scanner", action="append", default=None)
     scan.add_argument("--baseline", default=None)
-    scan.add_argument("--fail-on", default=None)
+    scan.add_argument(
+        "--fail-on",
+        default=None,
+        help=(
+            "Comma-separated severity levels that cause a non-zero exit code. "
+            "Valid values: critical, high, medium, low, info."
+        ),
+    )
     scan.add_argument("--quiet", action="store_true")
 
     init = subs.add_parser("init", help="Interactive wizard")
@@ -110,6 +122,118 @@ def _to_sarif(findings: list[Finding]) -> dict:
             }
         ],
     }
+
+
+# -- text output helpers -----------------------------------------------------
+
+_SEVERITY_ORDER = [
+    Severity.CRITICAL,
+    Severity.HIGH,
+    Severity.MEDIUM,
+    Severity.LOW,
+    Severity.INFO,
+]
+
+_ANSI_COLORS: dict[Severity, str] = {
+    Severity.CRITICAL: "\033[1;31m",  # bold red
+    Severity.HIGH: "\033[33m",        # yellow
+    Severity.MEDIUM: "\033[36m",      # cyan
+    Severity.LOW: "\033[34m",         # blue
+    Severity.INFO: "\033[37m",        # white/grey
+}
+_ANSI_RESET = "\033[0m"
+
+
+def _sort_findings(findings: list[Finding]) -> list[Finding]:
+    """Sort findings by severity descending (CRITICAL first)."""
+    return sorted(findings, key=lambda f: f.severity.rank, reverse=True)
+
+
+def _severity_label(sev: Severity, *, color: bool) -> str:
+    label = sev.value.upper()
+    if color:
+        return f"{_ANSI_COLORS[sev]}{label}{_ANSI_RESET}"
+    return label
+
+
+def _build_summary(findings: list[Finding]) -> str:
+    counts: dict[Severity, int] = {}
+    for f in findings:
+        counts[f.severity] = counts.get(f.severity, 0) + 1
+    parts: list[str] = []
+    for sev in _SEVERITY_ORDER:
+        c = counts.get(sev, 0)
+        if c:
+            parts.append(f"{c} {sev.value}")
+    total = len(findings)
+    detail = ", ".join(parts) if parts else "none"
+    return f"{total} findings ({detail})"
+
+
+def format_text(findings: list[Finding], *, color: bool | None = None) -> str:
+    """Render findings as a severity-sorted table with an optional ANSI palette.
+
+    Parameters
+    ----------
+    findings:
+        The list of :class:`Finding` objects to render.
+    color:
+        ``True`` to force ANSI colours, ``False`` to suppress them,
+        ``None`` (default) to auto-detect based on whether stdout is a TTY.
+
+    Returns
+    -------
+    str
+        The formatted text block ready for ``sys.stdout.write()``.
+    """
+    if color is None:
+        color = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+
+    sorted_findings = _sort_findings(findings)
+
+    if not sorted_findings:
+        return _build_summary(sorted_findings) + "\n"
+
+    # Compute column widths (using raw labels for width, not ANSI-encoded ones).
+    sev_width = max(len(f.severity.value) for f in sorted_findings)
+    sev_width = max(sev_width, len("Severity"))
+    scanner_width = max(len(f.scanner) for f in sorted_findings)
+    scanner_width = max(scanner_width, len("Scanner"))
+    finding_width = max(len(f.message) for f in sorted_findings)
+    finding_width = max(finding_width, len("Finding"))
+    loc_width = max(len(f"{f.location.file}:{f.location.line_start}") for f in sorted_findings)
+    loc_width = max(loc_width, len("File:Line"))
+
+    header = (
+        f"{'Severity':<{sev_width}}  "
+        f"{'Scanner':<{scanner_width}}  "
+        f"{'Finding':<{finding_width}}  "
+        f"{'File:Line':<{loc_width}}"
+    )
+    sep = (
+        f"{'-' * sev_width}  "
+        f"{'-' * scanner_width}  "
+        f"{'-' * finding_width}  "
+        f"{'-' * loc_width}"
+    )
+
+    lines: list[str] = [header, sep]
+    for f in sorted_findings:
+        sev_display = _severity_label(f.severity, color=color)
+        # Pad after the label using raw length so alignment works with ANSI codes.
+        raw_len = len(f.severity.value.upper())
+        padding = " " * (sev_width - raw_len)
+        loc_str = f"{f.location.file}:{f.location.line_start}"
+        lines.append(
+            f"{sev_display}{padding}  "
+            f"{f.scanner:<{scanner_width}}  "
+            f"{f.message:<{finding_width}}  "
+            f"{loc_str:<{loc_width}}"
+        )
+
+    lines.append("")
+    lines.append(_build_summary(sorted_findings))
+    return "\n".join(lines) + "\n"
 
 
 async def _run_scan(project_root: Path, scanner_filter: list[str] | None) -> list[Finding]:
@@ -197,12 +321,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             base_root = _checkout_baseline(args.baseline, args.project_root)
             base_findings = asyncio.run(_run_scan(base_root, args.scanner))
             findings = _delta(head_findings, base_findings)
-        sarif = _to_sarif(findings)
-        payload = json.dumps(sarif, indent=2)
-        if args.sarif_out == "-" or args.sarif_out is None:
-            sys.stdout.write(payload + "\n")
+
+        # --sarif-out implies sarif format for backward compatibility.
+        fmt = args.format
+        if args.sarif_out is not None:
+            fmt = "sarif"
+
+        if fmt == "sarif":
+            sarif = _to_sarif(findings)
+            payload = json.dumps(sarif, indent=2)
+            if args.sarif_out == "-" or args.sarif_out is None:
+                sys.stdout.write(payload + "\n")
+            else:
+                Path(args.sarif_out).write_text(payload, encoding="utf-8")
         else:
-            Path(args.sarif_out).write_text(payload, encoding="utf-8")
+            # text (default)
+            if not args.quiet:
+                sys.stdout.write(format_text(findings))
+
         if args.fail_on:
             threshold = {s.strip() for s in args.fail_on.split(",")}
             if any(f.severity.value in threshold for f in findings):

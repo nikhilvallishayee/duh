@@ -247,7 +247,7 @@ class TestRunReplRegression:
             return None
 
         monkeypatch.setattr(repl_mod, "AnthropicProvider", _FakeProvider)
-        monkeypatch.setattr(repl_mod, "get_all_tools", lambda: [])
+        monkeypatch.setattr(repl_mod, "get_all_tools", lambda **kw: [])
         monkeypatch.setattr(repl_mod, "_load_history", lambda: None)
         monkeypatch.setattr(repl_mod, "_setup_completion", lambda: None)
         monkeypatch.setattr(repl_mod, "_save_history", lambda: None)
@@ -302,7 +302,7 @@ class TestRunReplRegression:
             return None
 
         monkeypatch.setattr(repl_mod, "AnthropicProvider", _FakeProvider)
-        monkeypatch.setattr(repl_mod, "get_all_tools", lambda: [])
+        monkeypatch.setattr(repl_mod, "get_all_tools", lambda **kw: [])
         monkeypatch.setattr(repl_mod, "_load_history", lambda: None)
         monkeypatch.setattr(repl_mod, "_setup_completion", lambda: None)
         monkeypatch.setattr(repl_mod, "_save_history", lambda: None)

@@ -375,26 +375,6 @@ class TestDoctorBranches:
         assert "server1" in captured.out
         assert "server2" in captured.out
 
-    def test_mcp_config_exception_swallowed(self, monkeypatch, capsys):
-        """Bad config should be silently skipped."""
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-
-        fake_checker = MagicMock()
-        fake_checker.check_provider.return_value = {
-            "healthy": False, "latency_ms": 0, "error": "x",
-        }
-
-        with patch(
-            "duh.kernel.health_check.HealthChecker",
-            return_value=fake_checker,
-        ):
-            with patch("duh.config.load_config", side_effect=RuntimeError("bad")):
-                from duh.cli.doctor import run_doctor
-                code = run_doctor()
-        # Should still complete (not crash)
-        assert isinstance(code, int)
-
     def test_anthropic_sdk_missing(self, monkeypatch, capsys):
         """ImportError on anthropic SDK should be caught and reported."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)

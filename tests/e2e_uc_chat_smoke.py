@@ -1,14 +1,14 @@
 """
 E2E Chat Smoke Test: UC API agent runner with D.U.H. backend.
 
-Tests the full flow: AgentRunner → Claude Agent SDK → D.U.H. → Ollama → response.
+Tests the full flow: AgentRunner -> Claude Agent SDK -> D.U.H. -> Ollama -> response.
 Bypasses HTTP auth layer, tests the service layer directly.
 
 Usage:
-    DUH_CLI_PATH=/Users/nomind/Code/duh/bin/duh-sdk-shim \
+    DUH_CLI_PATH=bin/duh-sdk-shim \
     CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK=1 \
-    /Users/nomind/Code/UniversalCompanion/universal-companion-api/.venv/bin/python3 \
-    /Users/nomind/Code/duh/tests/e2e_uc_chat_smoke.py
+    UC_API_DIR=/path/to/universal-companion-api \
+    python tests/e2e_uc_chat_smoke.py
 """
 
 import asyncio
@@ -16,13 +16,17 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
-# Set D.U.H. backend before imports
-os.environ["DUH_CLI_PATH"] = "/Users/nomind/Code/duh/bin/duh-sdk-shim"
-os.environ["CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK"] = "1"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# Add UC API to path
-UC_API_DIR = "/Users/nomind/Code/UniversalCompanion/universal-companion-api"
+# Set D.U.H. backend before imports (env override or derive from project root)
+if "DUH_CLI_PATH" not in os.environ:
+    os.environ["DUH_CLI_PATH"] = str(_PROJECT_ROOT / "bin" / "duh-sdk-shim")
+os.environ.setdefault("CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK", "1")
+
+# Add UC API to path (must be provided via env var in CI)
+UC_API_DIR = os.environ.get("UC_API_DIR", str(_PROJECT_ROOT.parent / "UniversalCompanion" / "universal-companion-api"))
 sys.path.insert(0, UC_API_DIR)
 
 
@@ -33,7 +37,7 @@ async def test_sdk_query_direct():
     print("--- Test: Direct SDK query via D.U.H. ---")
 
     options = ClaudeAgentOptions(
-        cli_path="/Users/nomind/Code/duh/bin/duh-sdk-shim",
+        cli_path=os.environ["DUH_CLI_PATH"],
         max_turns=1,
         permission_mode="bypassPermissions",
         system_prompt="You are a helpful assistant. Be concise.",
@@ -72,7 +76,7 @@ async def test_sdk_with_system_prompt():
     print("--- Test: SDK with custom system prompt ---")
 
     options = ClaudeAgentOptions(
-        cli_path="/Users/nomind/Code/duh/bin/duh-sdk-shim",
+        cli_path=os.environ["DUH_CLI_PATH"],
         max_turns=1,
         permission_mode="bypassPermissions",
         system_prompt=(

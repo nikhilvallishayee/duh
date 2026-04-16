@@ -1,4 +1,3 @@
-# /Users/nomind/Code/duh/tests/unit/test_security_hooks.py
 """Tests for hooks.install() and the four callback bindings."""
 
 from __future__ import annotations

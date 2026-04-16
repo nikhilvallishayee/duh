@@ -125,365 +125,71 @@ async def run_print_mode(args: argparse.Namespace) -> int:
         logging.basicConfig(level=logging.DEBUG, stream=sys.stderr,
                             format="[%(levelname)s] %(name)s: %(message)s")
 
-    # Resolve provider: explicit flag > model name hint > env detection > Ollama fallback
-    def _check_ollama() -> bool:
-        try:
-            import httpx
-            r = httpx.get("http://localhost:11434/api/tags", timeout=2)
-            return r.status_code == 200
-        except Exception:
-            return False
-
-    provider_name = resolve_provider_name(
-        explicit_provider=args.provider,
-        model=args.model,
-        check_ollama=_check_ollama,
+    # --- Build the shared session (provider, tools, MCP, prompt, engine, resume) ---
+    # Duplication with the REPL runner was extracted into SessionBuilder
+    # (issue #18 / CQ-4).  The print-mode-specific options live here; the
+    # builder does the heavy lifting.
+    from duh.cli.session_builder import (
+        ProviderResolutionError,
+        SessionBuilder,
+        SessionBuilderOptions,
+        _BuilderPatchTargets,
     )
 
-    if not provider_name:
-        sys.stderr.write(_no_provider_message())
-        return exit_codes.PROVIDER_ERROR
-
-    # Build provider
-    backend = build_model_backend(
-        provider_name,
-        args.model,
-        provider_factories={
-            # Keep runner-level patch target stable for legacy unit tests.
-            "anthropic": lambda m: AnthropicProvider(api_key=get_anthropic_api_key(), model=m),
-        },
+    options = SessionBuilderOptions(
+        include_skills_in_tools=True,
+        include_deferred_tools=True,
+        include_memory_prompt=True,
+        include_env_block=True,
+        include_templates_hint=True,
+        include_model_context_block=False,
+        honour_tool_filters=True,
+        approver_mode="print_mode",
+        wire_hook_registry_in_deps=False,
+        wire_audit_logger_in_deps=True,
+        honour_tool_choice=True,
+        honour_thinking=True,
+        allow_session_id_override=True,
+        log_skip_perms_warning=True,
+        default_system_prompt=SYSTEM_PROMPT,
+        brief_instruction=BRIEF_INSTRUCTION,
     )
-    if not backend.ok:
-        sys.stderr.write(f"Error: {backend.error}\n")
-        return exit_codes.PROVIDER_ERROR
-    model = backend.model
-    call_model = backend.call_model
-
-    if debug:
-        sys.stderr.write(f"[DEBUG] provider={provider_name} model={model}\n")
-
-    cwd = os.getcwd()
-
-    # --- Build PathPolicy for filesystem boundary enforcement (ADR-072) ---
-    from duh.config import _find_git_root
-    from duh.security.path_policy import PathPolicy
-    _project_root = _find_git_root(cwd) or cwd
-    path_policy = PathPolicy(str(_project_root))
-
-    # --- Load skills (ADR-017) ---
-    from duh.kernel.skill import load_all_skills
-    loaded_skills = load_all_skills(cwd)
-
-    # --- Wire plugins (discover and merge tools) ---
-    from duh.plugins import discover_plugins, PluginRegistry
-    plugin_specs = discover_plugins()
-    plugin_registry = PluginRegistry()
-    for spec in plugin_specs:
-        plugin_registry.load(spec)
-
-    # --- Build deferred tools from plugin tools (ADR-018) ---
-    from duh.tools.tool_search import DeferredTool
-    deferred_tools: list[DeferredTool] = []
-    for pt in plugin_registry.plugin_tools:
-        if hasattr(pt, "input_schema") and hasattr(pt, "name"):
-            deferred_tools.append(DeferredTool(
-                name=pt.name,
-                description=getattr(pt, "description", ""),
-                input_schema=getattr(pt, "input_schema", {}),
-                source="plugin",
-            ))
-
-    tools = list(get_all_tools(skills=loaded_skills, deferred_tools=deferred_tools, path_policy=path_policy))
-
-    # --- Filter tools by --allowedTools / --disallowedTools ---
-    allowed = getattr(args, "allowedTools", None)
-    disallowed = getattr(args, "disallowedTools", None)
-    if allowed:
-        allowed_set = {t.strip() for t in allowed.split(",")}
-        tools = [t for t in tools if getattr(t, "name", "") in allowed_set]
-    if disallowed:
-        disallowed_set = {t.strip() for t in disallowed.split(",")}
-        tools = [t for t in tools if getattr(t, "name", "") not in disallowed_set]
-
-    # --- Resolve system prompt (string > file > default) ---
-    from duh.config import load_instructions
-    instruction_list = load_instructions(cwd)
-    base_prompt = args.system_prompt or SYSTEM_PROMPT
-    if not args.system_prompt and getattr(args, "system_prompt_file", None):
-        try:
-            base_prompt = open(args.system_prompt_file, encoding="utf-8").read()
-        except Exception as e:
-            sys.stderr.write(f"Warning: Could not read system prompt file: {e}\n")
-    system_prompt_parts = [base_prompt]
-    if getattr(args, "coordinator", False):
-        from duh.kernel.coordinator import COORDINATOR_SYSTEM_PROMPT
-        system_prompt_parts.insert(0, COORDINATOR_SYSTEM_PROMPT)
-    if getattr(args, "brief", False):
-        system_prompt_parts.append(BRIEF_INSTRUCTION)
-    if instruction_list:
-        system_prompt_parts.extend(instruction_list if isinstance(instruction_list, list) else [instruction_list])
-
-    # --- Wire per-project memory ---
-    from duh.adapters.memory_store import FileMemoryStore
-    from duh.kernel.memory import build_memory_prompt
-    memory_store = FileMemoryStore(cwd=cwd)
-    memory_prompt = build_memory_prompt(memory_store)
-    if memory_prompt:
-        system_prompt_parts.append(memory_prompt)
-
-    # --- Inject environment context (cwd, platform, shell) ---
-    import platform as _platform
-    _shell = os.environ.get("SHELL", "unknown").rsplit("/", 1)[-1]
-    system_prompt_parts.append(
-        f"<environment>\n"
-        f"cwd: {cwd}\n"
-        f"platform: {_platform.system().lower()}\n"
-        f"shell: {_shell}\n"
-        f"python: {_platform.python_version()}\n"
-        f"</environment>"
+    # Keep the legacy runner-level patch targets stable for unit tests that
+    # do things like ``patch("duh.cli.runner.Engine")``.
+    patch_targets = _BuilderPatchTargets(
+        engine_cls=Engine,
+        engine_config_cls=EngineConfig,
+        deps_cls=Deps,
+        native_executor_cls=NativeExecutor,
+        get_all_tools_fn=get_all_tools,
     )
 
-    # --- Inject git context ---
-    from duh.kernel.git_context import get_git_context, get_git_warnings
-    git_ctx = get_git_context(cwd)
-    if git_ctx:
-        system_prompt_parts.append(git_ctx)
-
-    # --- Print git safety warnings ---
-    for warning in get_git_warnings(cwd):
-        sys.stderr.write(f"\033[33mWARNING: {warning}\033[0m\n")
-
-    # --- Inject skill descriptions into system prompt (ADR-017) ---
-    if loaded_skills:
-        skill_lines = [
-            "\nAvailable skills (invoke via the Skill tool):"
-        ]
-        for s in loaded_skills:
-            hint = f" ({s.argument_hint})" if s.argument_hint else ""
-            skill_lines.append(f"- {s.name}: {s.description}{hint}")
-        system_prompt_parts.append("\n".join(skill_lines))
-
-    # --- Inject template descriptions into system prompt ---
-    from duh.kernel.templates import load_all_templates
-    loaded_templates = load_all_templates(cwd)
-    if loaded_templates:
-        tmpl_lines = ["\nAvailable prompt templates (invoke via /template):"]
-        for t in loaded_templates:
-            tmpl_lines.append(f"- {t.name}: {t.description}")
-        system_prompt_parts.append("\n".join(tmpl_lines))
-
-    # --- Inject deferred tools into system prompt (ADR-018) ---
-    if deferred_tools:
-        dt_lines = [
-            "\n<deferred-tools>",
-            "The following tools are available but their schemas are not yet loaded.",
-            "Use the ToolSearch tool to load a tool's full schema before calling it.",
-            "",
-        ]
-        for dt in deferred_tools:
-            dt_lines.append(f"- {dt.name}: {dt.description}")
-        dt_lines.append("</deferred-tools>")
-        system_prompt_parts.append("\n".join(dt_lines))
-
-    # --- Load config once (MCP + hooks + settings) ---
-    from duh.config import load_config
-    mcp_executor = None
-    from duh.hooks import HookRegistry
-    hook_registry = HookRegistry()
+    builder = SessionBuilder(
+        args, options, cwd=os.getcwd(), debug=debug, patch_targets=patch_targets,
+    )
     try:
-        app_config = load_config(cwd=cwd)
-        # --mcp-config CLI flag overrides project config
-        cli_mcp = getattr(args, "mcp_config", None)
-        if cli_mcp:
-            import json as _json
-            try:
-                if cli_mcp.strip().startswith("{"):
-                    mcp_data = _json.loads(cli_mcp)
-                else:
-                    mcp_data = _json.loads(open(cli_mcp).read())
-                app_config.mcp_servers = mcp_data
-            except Exception:
-                logger.debug("Failed to parse --mcp-config", exc_info=True)
-        if app_config.mcp_servers:
-            from duh.adapters.mcp_executor import MCPExecutor
-            mcp_executor = MCPExecutor.from_config(app_config.mcp_servers)
-        if app_config.hooks:
-            hook_registry = HookRegistry.from_config(app_config.hooks)
-    except Exception:
-        logger.debug("Config loading failed, using defaults", exc_info=True)
-
-    # --- Connect to MCP servers and wrap tools ---
-    if mcp_executor:
-        try:
-            discovered = await mcp_executor.connect_all()
-            from duh.tools.mcp_tool import MCPToolWrapper
-            for server_name, mcp_tools in discovered.items():
-                for info in mcp_tools:
-                    wrapper = MCPToolWrapper(info=info, executor=mcp_executor)
-                    tools.append(wrapper)
-                    if debug:
-                        logger.debug("MCP tool registered: %s", wrapper.name)
-            total_mcp = sum(len(t) for t in discovered.values())
-            if total_mcp:
-                logger.info("Loaded %d MCP tools from %d servers",
-                            total_mcp, len(discovered))
-        except Exception:
-            logger.debug("MCP connection failed, continuing without MCP tools",
-                         exc_info=True)
-
-    # --- Wire compactor ---
-    from duh.adapters.simple_compactor import SimpleCompactor
-    compactor = SimpleCompactor()
-
-    # --- Wire session store ---
-    from duh.adapters.file_store import FileStore
-    store = FileStore(cwd=cwd)
-
-    # --- Build executor and approver ---
-    # SEC-MEDIUM-1 audit: ``skip_perms`` short-circuits the interactive
-    # approver. It is gated on an explicit user opt-in (a CLI flag or a
-    # ``permission_mode`` of bypassPermissions/dontAsk, never implicit) and
-    # is logged below so operators can see when automation mode is active.
-    # The same metadata flag is forwarded to BashTool which emits its own
-    # WARNING on each dangerous command actually allowed through.
-    executor = NativeExecutor(tools=tools, cwd=cwd)
-    skip_perms = args.dangerously_skip_permissions or getattr(args, "permission_mode", None) in ("bypassPermissions", "dontAsk")
-    permission_cache = SessionPermissionCache()
-    approver: Any = AutoApprover() if skip_perms else InteractiveApprover(permission_cache=permission_cache)
-    if skip_perms:
-        logger.warning(
-            "Permission prompts disabled (--dangerously-skip-permissions or "
-            "automation permission_mode). All tool invocations will be auto-"
-            "approved for this session."
+        build = await builder.build(
+            provider_factories={
+                "anthropic": lambda m: AnthropicProvider(
+                    api_key=get_anthropic_api_key(), model=m
+                ),
+            }
         )
+    except ProviderResolutionError as exc:
+        if exc.provider_name is None:
+            # "No provider available" — keep the enriched first-run message.
+            sys.stderr.write(_no_provider_message())
+        else:
+            # Backend build error (unknown provider, missing API key, etc).
+            sys.stderr.write(f"Error: {exc.message}\n")
+        return exit_codes.PROVIDER_ERROR
 
-    # --- Wire audit logger (ADR-072 P1) ---
-    from duh.security.audit import AuditLogger
-    audit_logger = AuditLogger()
-
-    deps = Deps(
-        call_model=call_model,
-        run_tool=executor.run,
-        approve=approver.check,
-        compact=compactor.compact,
-        audit_logger=audit_logger,
-    )
-
-    # Wire AgentTool and SwarmTool now that Deps and tools are both built.
-    # Child agents get parent deps (call_model, run_tool) and parent tools
-    # (minus AgentTool/SwarmTool to prevent recursion).
-    for t in tools:
-        if getattr(t, "name", "") in ("Agent", "Swarm"):
-            t._parent_deps = deps
-            t._parent_tools = tools
-
-    # Resolve max_cost: CLI flag > env var > None
-    max_cost = getattr(args, "max_cost", None)
-    if max_cost is None:
-        env_cost = os.environ.get("DUH_MAX_COST")
-        if env_cost is not None:
-            try:
-                max_cost = float(env_cost)
-            except (ValueError, TypeError):
-                pass
-
-    # Build thinking config from --max-thinking-tokens
-    thinking = None
-    mtt = getattr(args, "max_thinking_tokens", None)
-    if mtt is not None:
-        thinking = {"type": "enabled", "budget_tokens": mtt} if mtt > 0 else {"type": "disabled"}
-
-    # Trifecta acknowledgement from CLI flag or config file
-    trifecta_ack = getattr(args, "i_understand_the_lethal_trifecta", False)
-    if not trifecta_ack:
-        try:
-            trifecta_ack = app_config.trifecta_acknowledged
-        except (NameError, AttributeError):
-            pass
-
-    engine_config = EngineConfig(
-        model=model,
-        fallback_model=getattr(args, "fallback_model", None),
-        system_prompt="\n\n".join(system_prompt_parts),
-        tools=tools,
-        max_turns=args.max_turns,
-        max_cost=max_cost,
-        tool_choice=args.tool_choice,
-        thinking=thinking,
-        trifecta_acknowledged=trifecta_ack,
-    )
-    # --- Wire structured JSON logger ---
-    structured_logger = None
-    if getattr(args, "log_json", False) or os.environ.get("DUH_LOG_JSON", "") == "1":
-        from duh.adapters.structured_logging import StructuredLogger
-        structured_logger = StructuredLogger()
-
-    engine = Engine(deps=deps, config=engine_config, session_store=store,
-                    structured_logger=structured_logger)
-
-    # --- Override session ID if --session-id provided ---
-    session_id = getattr(args, "session_id", None)
-    if session_id:
-        engine._session_id = session_id
-
-    # --- Wire session ID into deps for audit logging (ADR-072 P1) ---
-    deps.session_id = engine.session_id
-
-    # --- Resume session if --continue, --resume, or --session-id ---
-    should_resume = getattr(args, "continue_session", False) or args.resume or session_id
-    if should_resume:
-        try:
-            resume_id = args.resume or session_id
-            if resume_id:
-                prev = await store.load(resume_id)
-            else:
-                sessions = await store.list_sessions()
-                if sessions:
-                    latest = sorted(sessions, key=lambda s: s.get("modified", ""), reverse=True)[0]
-                    prev = await store.load(latest.get("session_id") or latest.get("id", ""))
-                else:
-                    prev = None
-            if prev:
-                from duh.kernel.messages import Message as Msg
-                for m in prev:
-                    role = m.get("role", "user") if isinstance(m, dict) else getattr(m, "role", "user")
-                    content = m.get("content", "") if isinstance(m, dict) else getattr(m, "content", "")
-                    meta = m.get("metadata", {}) if isinstance(m, dict) else getattr(m, "metadata", {})
-                    engine._messages.append(Msg(role=role, content=content, metadata=meta or {}))
-                if debug:
-                    logger.debug("resumed %d messages", len(prev))
-
-                # --- ADR-063: Restore coordinator mode from session metadata ---
-                if engine._messages and engine._messages[0].metadata.get("coordinator_mode"):
-                    from duh.kernel.coordinator import COORDINATOR_SYSTEM_PROMPT
-                    current_prompt = engine._config.system_prompt
-                    if isinstance(current_prompt, str) and not current_prompt.startswith(COORDINATOR_SYSTEM_PROMPT):
-                        engine._config.system_prompt = (
-                            COORDINATOR_SYSTEM_PROMPT + "\n\n" + current_prompt
-                        )
-
-                # --- ADR-058 Phase 3: --summarize compacts on resume ---
-                if getattr(args, "summarize", False) and engine._messages:
-                    compact_fn = deps.compact
-                    if compact_fn:
-                        before_count = len(engine._messages)
-                        # Use 50% of default limit as threshold for summarized resume
-                        engine._messages = await compact_fn(
-                            engine._messages, token_limit=compactor.default_limit // 2
-                        )
-                        after_count = len(engine._messages)
-                        if debug:
-                            logger.debug(
-                                "summarize: compacted %d -> %d messages",
-                                before_count, after_count,
-                            )
-            elif debug:
-                logger.debug("no session to resume")
-        except Exception as e:
-            import traceback
-            logger.debug("resume failed: %s", e)
-            if debug:
-                traceback.print_exc(file=sys.stderr)
+    engine = build.engine
+    deps = build.deps
+    model = build.model
+    mcp_executor = build.mcp_executor
+    hook_registry = build.hook_registry
+    structured_logger = build.structured_logger
 
     # --- Session start hooks ---
     try:
@@ -588,21 +294,9 @@ async def run_print_mode(args: argparse.Namespace) -> int:
     except Exception:
         logger.debug("Session end hooks failed", exc_info=True)
 
-    # --- Close structured logger ---
-    if structured_logger:
-        structured_logger.session_end(
-            turns=engine.turn_count,
-            input_tokens=engine.total_input_tokens,
-            output_tokens=engine.total_output_tokens,
-        )
-        structured_logger.close()
-
-    # --- Disconnect MCP ---
-    if mcp_executor:
-        try:
-            await mcp_executor.disconnect_all()
-        except Exception:
-            logger.debug("MCP disconnect failed", exc_info=True)
+    # --- Close structured logger + disconnect MCP ---
+    build.close_structured_logger()
+    await build.teardown_mcp()
 
     return exit_code
 

@@ -807,236 +807,96 @@ async def run_repl(args: argparse.Namespace) -> int:
     # --- Build renderer (Rich when available, plain ANSI otherwise) ---
     renderer = _make_renderer(debug=debug)
 
-    # --- Resolve provider ---
-    def _check_ollama() -> bool:
-        try:
-            import httpx
-            r = httpx.get("http://localhost:11434/api/tags", timeout=2)
-            return r.status_code == 200
-        except Exception:
-            return False
-
-    provider_name = resolve_provider_name(
-        explicit_provider=args.provider,
-        model=getattr(args, "model", None),
-        check_ollama=_check_ollama,
+    # --- Build the shared session via SessionBuilder (issue #18 / CQ-4) ---
+    # REPL-specific bits (renderer, prewarm, slash commands, plan mode) stay
+    # in this function; provider resolution, tool loading, MCP connection,
+    # system-prompt assembly, deps wiring and session resume are shared.
+    from duh.cli.session_builder import (
+        ProviderResolutionError,
+        SessionBuilder,
+        SessionBuilderOptions,
+        _BuilderPatchTargets,
     )
 
-    if not provider_name:
-        sys.stderr.write(
-            "Error: No provider available.\n"
-            "  Option 1: export ANTHROPIC_API_KEY=sk-ant-...\n"
-            "  Option 2: start Ollama (ollama serve)\n"
-        )
+    options = SessionBuilderOptions(
+        # The legacy REPL only loaded base tools (no skills / deferred / memory).
+        include_skills_in_tools=False,
+        include_deferred_tools=False,
+        include_memory_prompt=False,
+        include_env_block=False,
+        include_templates_hint=False,
+        include_model_context_block=True,
+        honour_tool_filters=False,
+        approver_mode="repl",
+        wire_hook_registry_in_deps=True,
+        wire_audit_logger_in_deps=False,
+        honour_tool_choice=False,
+        honour_thinking=False,
+        allow_session_id_override=False,
+        log_skip_perms_warning=True,
+        default_system_prompt=SYSTEM_PROMPT,
+        brief_instruction=BRIEF_INSTRUCTION,
+    )
+    # Use lambdas so monkeypatch on the repl module (e.g. tests that set
+    # ``repl.build_model_backend = fake``) is picked up at call time.
+    patch_targets = _BuilderPatchTargets(
+        engine_cls=Engine,
+        engine_config_cls=EngineConfig,
+        deps_cls=Deps,
+        native_executor_cls=NativeExecutor,
+        get_all_tools_fn=get_all_tools,
+        build_model_backend_fn=lambda *a, **kw: build_model_backend(*a, **kw),
+        resolve_provider_name_fn=lambda **kw: resolve_provider_name(**kw),
+    )
+
+    cwd = os.getcwd()
+    builder = SessionBuilder(
+        args, options, cwd=cwd, debug=debug, patch_targets=patch_targets,
+    )
+    try:
+        build = await builder.build()
+    except ProviderResolutionError as exc:
+        if exc.provider_name is None:
+            sys.stderr.write(
+                "Error: No provider available.\n"
+                "  Option 1: export ANTHROPIC_API_KEY=sk-ant-...\n"
+                "  Option 2: start Ollama (ollama serve)\n"
+            )
+        else:
+            sys.stderr.write(f"Error: {exc.message}\n")
         return 1
 
-    backend = build_model_backend(provider_name, getattr(args, "model", None))
-    if not backend.ok:
-        sys.stderr.write(f"Error: {backend.error}\n")
-        return 1
-    model = backend.model
-    call_model = backend.call_model
+    provider_name = build.provider_name
+    model = build.model
+    call_model = build.call_model
+    tools = build.tools
+    executor = build.executor
+    deps = build.deps
+    engine = build.engine
+    mcp_executor = build.mcp_executor
+    compactor = build.compactor
+    store = build.store
+    structured_logger = build.structured_logger
+    _hook_registry = build.hook_registry
+    _task_manager = build.task_manager
 
-    # --- Pre-warm the model connection in background ---
+    # --- Pre-warm the model connection in background (REPL-only) ---
     import asyncio
     from duh.cli.prewarm import prewarm_connection
     _prewarm_task = asyncio.ensure_future(prewarm_connection(call_model))
 
-    cwd = os.getcwd()
-
-    # --- Build PathPolicy for filesystem boundary enforcement (ADR-072) ---
-    from duh.config import _find_git_root
-    from duh.security.path_policy import PathPolicy
-    _project_root = _find_git_root(cwd) or cwd
-    path_policy = PathPolicy(str(_project_root))
-
-    tools = list(get_all_tools(path_policy=path_policy))
-
-    # --- Load config and connect MCP servers ---
-    mcp_executor = None
-    try:
-        from duh.config import load_config
-        app_config = load_config(cwd=cwd)
-        if app_config.mcp_servers:
-            from duh.adapters.mcp_executor import MCPExecutor
-            mcp_executor = MCPExecutor.from_config(app_config.mcp_servers)
-            discovered = await mcp_executor.connect_all()
-            from duh.tools.mcp_tool import MCPToolWrapper
-            for _server_name, mcp_tools in discovered.items():
-                for info in mcp_tools:
-                    wrapper = MCPToolWrapper(info=info, executor=mcp_executor)
-                    tools.append(wrapper)
-                    if debug:
-                        logger.debug("MCP tool registered: %s", wrapper.name)
-    except Exception:
-        logger.debug("MCP loading failed in REPL, continuing without MCP", exc_info=True)
-
-    # --- Build system prompt with git context ---
-    system_prompt_parts = [args.system_prompt or SYSTEM_PROMPT]
-    if getattr(args, "coordinator", False):
-        from duh.kernel.coordinator import COORDINATOR_SYSTEM_PROMPT
-        system_prompt_parts.insert(0, COORDINATOR_SYSTEM_PROMPT)
-    if getattr(args, "brief", False):
-        system_prompt_parts.append(BRIEF_INSTRUCTION)
-
-    from duh.kernel.git_context import get_git_context, get_git_warnings
-    git_ctx = get_git_context(cwd)
-    if git_ctx:
-        system_prompt_parts.append(git_ctx)
-
-    # --- Print git safety warnings ---
-    for warning in get_git_warnings(cwd):
-        sys.stderr.write(f"\033[33mWARNING: {warning}\033[0m\n")
-
-    # Model context block -- rebuilt on /model switch (ADR-070)
-    system_prompt_parts.append(model_context_block(model))
-
-    system_prompt = "\n\n".join(system_prompt_parts)
-
-    # --- Load prompt templates for /template commands ---
-    _template_state: dict[str, Any] = {"templates": {}, "active": None}
-    try:
-        from duh.kernel.templates import load_all_templates
-
-        loaded_templates = load_all_templates(cwd)
-        _template_state["templates"] = {t.name: t for t in loaded_templates}
-    except Exception:
-        logger.debug("Template loading failed in REPL", exc_info=True)
-
-    # --- Locate TaskTool's manager for /tasks slash command ---
-    _task_manager = None
-    for _t in tools:
-        if getattr(_t, "name", None) == "Task" and hasattr(_t, "task_manager"):
-            _task_manager = _t.task_manager
-            break
-
-    executor = NativeExecutor(tools=tools, cwd=cwd)
-
-    # --- Approval mode selection ---
-    # SEC-MEDIUM-1 audit: ``--dangerously-skip-permissions`` here is the
-    # explicit user opt-in to bypass interactive approval in the REPL.
-    # The bypass is logged so the audit trail records that automation mode
-    # was active for this session; BashTool further logs each dangerous
-    # command actually executed under the bypass.
-    permission_cache = SessionPermissionCache()
-    approval_mode_str = getattr(args, "approval_mode", None)
-    if approval_mode_str:
-        mode = ApprovalMode(approval_mode_str)
-        approver: Any = TieredApprover(mode=mode, cwd=cwd)
-    elif args.dangerously_skip_permissions:
-        approver = AutoApprover()
-        logger.warning(
-            "REPL started with --dangerously-skip-permissions: tool "
-            "invocations will be auto-approved without interactive prompts."
-        )
-    else:
-        approver = InteractiveApprover(permission_cache=permission_cache)
-
-    # --- Wire compactor ---
-    from duh.adapters.simple_compactor import SimpleCompactor
-    compactor = SimpleCompactor()
-
-    # --- Wire session store (auto-save after each turn) ---
-    from duh.adapters.file_store import FileStore
-    store = FileStore(cwd=cwd)
-
-    # --- Wire hook registry for lifecycle event emission ---
-    _hook_registry = HookRegistry()
-
-    deps = Deps(
-        call_model=call_model,
-        run_tool=executor.run,
-        approve=approver.check,
-        compact=compactor.compact,
-        hook_registry=_hook_registry,
-    )
-
-    # Wire AgentTool and SwarmTool now that Deps and tools are both built.
-    for t in tools:
-        if getattr(t, "name", "") in ("Agent", "Swarm"):
-            t._parent_deps = deps
-            t._parent_tools = tools
-
-    # Resolve max_cost: CLI flag > env var > None
-    max_cost = getattr(args, "max_cost", None)
-    if max_cost is None:
-        env_cost = os.environ.get("DUH_MAX_COST")
-        if env_cost is not None:
-            try:
-                max_cost = float(env_cost)
-            except (ValueError, TypeError):
-                pass
-
-    # Trifecta acknowledgement from CLI flag or config file
-    trifecta_ack = getattr(args, "i_understand_the_lethal_trifecta", False)
-    if not trifecta_ack:
+    # --- Load prompt templates for /template commands (REPL state) ---
+    _template_state: dict[str, Any] = {
+        "templates": {t.name: t for t in build.loaded_templates},
+        "active": None,
+    }
+    if not build.loaded_templates:
         try:
-            trifecta_ack = app_config.trifecta_acknowledged
-        except (NameError, AttributeError):
-            pass
-
-    engine_config = EngineConfig(
-        model=model,
-        fallback_model=getattr(args, "fallback_model", None),
-        system_prompt=system_prompt,
-        tools=tools,
-        max_turns=args.max_turns,
-        max_cost=max_cost,
-        trifecta_acknowledged=trifecta_ack,
-    )
-    # --- Wire structured JSON logger ---
-    structured_logger = None
-    if getattr(args, "log_json", False) or os.environ.get("DUH_LOG_JSON", "") == "1":
-        from duh.adapters.structured_logging import StructuredLogger
-        structured_logger = StructuredLogger()
-
-    engine = Engine(deps=deps, config=engine_config, session_store=store,
-                    structured_logger=structured_logger)
-
-    # --- Resume session if --continue or --resume (ADR-058) ---
-    should_resume = getattr(args, "continue_session", False) or getattr(args, "resume", None)
-    if should_resume:
-        try:
-            resume_id = getattr(args, "resume", None)
-            if resume_id:
-                prev = await store.load(resume_id)
-            else:
-                sessions = await store.list_sessions()
-                if sessions:
-                    latest = sorted(sessions, key=lambda s: s.get("modified", ""), reverse=True)[0]
-                    prev = await store.load(latest.get("session_id") or latest.get("id", ""))
-                else:
-                    prev = None
-            if prev:
-                for m in prev:
-                    role = m.get("role", "user") if isinstance(m, dict) else getattr(m, "role", "user")
-                    content = m.get("content", "") if isinstance(m, dict) else getattr(m, "content", "")
-                    meta = m.get("metadata", {}) if isinstance(m, dict) else getattr(m, "metadata", {})
-                    engine._messages.append(Message(role=role, content=content, metadata=meta or {}))
-                if debug:
-                    logger.debug("REPL resumed %d messages", len(prev))
-
-                # --- ADR-058: --summarize compacts on resume ---
-                if getattr(args, "summarize", False) and engine._messages:
-                    compact_fn = deps.compact
-                    if compact_fn:
-                        before_count = len(engine._messages)
-                        engine._messages = await compact_fn(
-                            engine._messages, token_limit=compactor.default_limit // 2
-                        )
-                        after_count = len(engine._messages)
-                        if debug:
-                            logger.debug(
-                                "REPL summarize: compacted %d -> %d messages",
-                                before_count, after_count,
-                            )
-            elif debug:
-                logger.debug("REPL: no session to resume")
-        except Exception as e:
-            logger.debug("REPL resume failed: %s", e)
-            if debug:
-                import traceback
-                traceback.print_exc(file=sys.stderr)
+            from duh.kernel.templates import load_all_templates
+            loaded_templates = load_all_templates(cwd)
+            _template_state["templates"] = {t.name: t for t in loaded_templates}
+        except Exception:
+            logger.debug("Template loading failed in REPL", exc_info=True)
 
     _query_guard = QueryGuard()
     _plan_mode = PlanMode(engine)
@@ -1273,20 +1133,8 @@ async def run_repl(args: argparse.Namespace) -> int:
     # --- Save readline history on exit ---
     _save_history()
 
-    # --- Close structured logger ---
-    if structured_logger:
-        structured_logger.session_end(
-            turns=engine.turn_count,
-            input_tokens=engine.total_input_tokens,
-            output_tokens=engine.total_output_tokens,
-        )
-        structured_logger.close()
-
-    # --- Disconnect MCP ---
-    if mcp_executor:
-        try:
-            await mcp_executor.disconnect_all()
-        except Exception:
-            logger.debug("MCP disconnect failed in REPL", exc_info=True)
+    # --- Close structured logger + disconnect MCP ---
+    build.close_structured_logger()
+    await build.teardown_mcp()
 
     return 0

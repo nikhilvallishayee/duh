@@ -22,6 +22,8 @@ from __future__ import annotations
 import sys
 from typing import Any
 
+from duh.ui.styles import OutputStyle, OutputTruncationPolicy
+
 # Shared prompt string. Kept here so the renderers are self-contained; the
 # REPL also imports it from this module via the legacy name in ``repl.py``.
 PROMPT = "\033[1;36mduh>\033[0m "  # bold cyan
@@ -113,6 +115,16 @@ class PlainRenderer:
     def status_bar(self, model: str, turns: int) -> None:
         pass
 
+    # -- live token counter (no-op for plain) --------------------------
+    def usage_delta(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        cost: float = 0.0,
+    ) -> None:
+        """ADR-073 Task 8: live token counter. PlainRenderer is a no-op."""
+        pass
+
 
 class RichRenderer:
     """Renderer that uses the Rich library for styled terminal output.
@@ -131,8 +143,16 @@ class RichRenderer:
       estimated cost so the user can track session economics at a glance.
     """
 
-    def __init__(self, debug: bool = False):
+    def __init__(
+        self,
+        debug: bool = False,
+        output_style: OutputStyle = OutputStyle.DEFAULT,
+    ):
         self.debug = debug
+        # Output verbosity — drives OutputTruncationPolicy selection. ADR-073
+        # makes this the single source of truth for tool-result truncation so
+        # REPL and TUI render identically for the same style.
+        self.output_style = output_style
         self._buf: list[str] = []
         # Track active tool name so the spinner label is meaningful.
         self._active_tool: str | None = None
@@ -173,6 +193,14 @@ class RichRenderer:
         blocks with syntax highlighting (auto-detected from the fence tag,
         e.g. ```python, ```bash, ```json), ordered/unordered lists, GFM
         tables, and blockquotes.
+
+        ADR-073 Wave 2 / Task 7: The cursor-rewind CSI sequence only works
+        on ANSI-compliant TTYs. In pipes, log files, and other non-TTY
+        destinations the escape codes are printed literally and corrupt
+        output. We detect non-TTY stdout, skip the rewind, and print a
+        ``---`` separator before the re-rendered markdown so consumers
+        still get the styled output (appended below the streamed text
+        instead of replacing it).
         """
         full = "".join(self._buf)
         self._buf.clear()
@@ -181,12 +209,27 @@ class RichRenderer:
         # Heuristic: only use Markdown renderer when content looks like it
         # has markdown constructs (headers, code fences, lists, bold, etc.)
         md_indicators = ("```", "##", "**", "* ", "- ", "1. ", "> ", "| ")
-        if any(ind in full for ind in md_indicators):
+        if not any(ind in full for ind in md_indicators):
+            return
+
+        # Detect whether stdout is an ANSI-compliant TTY. isatty() may raise
+        # on some unusual stream wrappers (closed streams, custom shims), so
+        # default to non-TTY on failure — that's the safe mode.
+        try:
+            is_tty = sys.stdout.isatty()
+        except (OSError, ValueError, AttributeError):
+            is_tty = False
+
+        if is_tty:
             # Move cursor up and overwrite the raw streamed text.
-            # Count how many lines were streamed.
             lines = full.count("\n") + 1
-            # Clear those lines
             sys.stdout.write(f"\033[{lines}A\033[J")
+            sys.stdout.flush()
+            self._console.print(RichMarkdown(full))
+        else:
+            # Non-TTY: skip cursor rewind (would print literal CSI codes
+            # into logs/pipes). Emit a separator and re-render below.
+            sys.stdout.write("\n---\n")
             sys.stdout.flush()
             self._console.print(RichMarkdown(full))
 
@@ -214,45 +257,71 @@ class RichRenderer:
     def tool_result(self, output: str, is_error: bool) -> None:
         """Clear the spinner and render the tool result in a Panel.
 
-        - Errors: full Panel, red border (always shown).
-        - Success: compact one-line summary Panel, green border (always shown).
-          Full output additionally shown in debug mode.
+        Truncation is driven by :class:`OutputTruncationPolicy` — same
+        thresholds the TUI uses, so the REPL and TUI show the same number of
+        characters for the same :class:`OutputStyle`.
         """
         # Clear the spinner line.
         sys.stderr.write("\r\033[K")
         sys.stderr.flush()
         self._active_tool = None
 
+        policy = OutputTruncationPolicy.for_style(self.output_style, is_error=is_error)
+
         if is_error:
+            preview, was_truncated = policy.apply(output or "")
+            if not preview:
+                preview = "(empty)"
+            title = "[bold red]tool error[/bold red]"
+            if was_truncated:
+                title += " [dim](truncated)[/dim]"
             self._err_console.print(
                 Panel(
-                    output[:300],
-                    title="[bold red]tool error[/bold red]",
+                    preview,
+                    title=title,
                     border_style="tool.err",
                     expand=False,
                 )
             )
-        else:
-            # Always show a compact summary so the user sees the result.
-            first_line = output.split("\n", 1)[0][:120] if output else "(empty)"
-            summary_text = first_line.strip() or f"({len(output)} chars)"
+            return
+
+        # Success path.
+        if policy.max_chars <= 0 or policy.max_lines <= 0:
+            # Concise style: status only, no output preview.
             self._err_console.print(
                 Panel(
-                    Text(summary_text, style="tool.ok"),
+                    Text("(ok)", style="tool.ok"),
                     title="[green]tool ok[/green]",
                     border_style="tool.ok",
                     expand=False,
                 )
             )
-            if self.debug and output and len(output) > len(summary_text):
-                self._err_console.print(
-                    Panel(
-                        output[:500],
-                        title="[green]tool output (full)[/green]",
-                        border_style="tool.ok",
-                        expand=False,
-                    )
-                )
+            return
+
+        # DEFAULT keeps the historical "first line" summary behaviour —
+        # take the first line, then apply the char cap.
+        if self.output_style is OutputStyle.DEFAULT and output:
+            first_line = output.split("\n", 1)[0]
+            summary_text, summary_truncated = policy.apply(first_line)
+            if not summary_text.strip():
+                summary_text = f"({len(output)} chars)"
+                summary_truncated = True if len(output) > len(summary_text) else summary_truncated
+        else:
+            summary_text, summary_truncated = policy.apply(output or "")
+            if not summary_text:
+                summary_text = "(empty)"
+
+        title = "[green]tool ok[/green]"
+        if summary_truncated:
+            title += " [dim](truncated)[/dim]"
+        self._err_console.print(
+            Panel(
+                Text(summary_text, style="tool.ok"),
+                title=title,
+                border_style="tool.ok",
+                expand=False,
+            )
+        )
 
     # -- stats update (called by REPL after each turn) -----------------
     def update_stats(
@@ -265,6 +334,46 @@ class RichRenderer:
         self._input_tokens = input_tokens
         self._output_tokens = output_tokens
         self._cost = cost
+
+    # -- live token counter (ADR-073 Task 8) ---------------------------
+    def usage_delta(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        cost: float = 0.0,
+    ) -> None:
+        """Update the live status line with incremental token counts.
+
+        Called during streaming (every ~40 chars of text_delta). Writes
+        a single overwritable line to stderr so the user sees token
+        burn in real time. The line is cleared at ``turn_end`` /
+        ``error`` / ``tool_result`` (any path that also clears an
+        active spinner).
+
+        If stderr is not a TTY we skip the carriage-return rewrite so
+        the output stays clean in log files.
+        """
+        # Track the latest estimate so the status bar stays consistent
+        # when it is re-rendered between turns.
+        self._input_tokens = input_tokens
+        self._output_tokens = output_tokens
+        if cost:
+            self._cost = cost
+        try:
+            is_tty = sys.stderr.isatty()
+        except (OSError, ValueError, AttributeError):
+            is_tty = False
+        if not is_tty:
+            # Non-TTY: skip the live line to avoid polluting logs with
+            # carriage-return spam. Final usage still arrives in
+            # update_stats + status_bar.
+            return
+        status = (
+            f"\r\033[K\033[2m  ~in={input_tokens:,} "
+            f"out={output_tokens:,} (est)\033[0m"
+        )
+        sys.stderr.write(status)
+        sys.stderr.flush()
 
     # -- errors --------------------------------------------------------
     def error(self, hint: str) -> None:

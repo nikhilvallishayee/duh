@@ -2,21 +2,164 @@
 
 Widgets
 -------
-MessageWidget      — renders a single conversation turn (user or assistant)
-ToolCallWidget     — collapsible panel: tool name, input summary, output
-ThinkingWidget     — dim/italic block for extended-thinking tokens
+MessageWidget        — renders a single conversation turn (user or assistant)
+HighlightedMarkdown  — Rich-backed Markdown Static with syntax highlighting
+ToolCallWidget       — collapsible panel: tool name, input summary, output
+ThinkingWidget       — dim/italic block for extended-thinking tokens
 """
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from textual.app import ComposeResult
 from textual.markup import escape as escape_markup
 from textual.reactive import reactive
 from textual.widget import Widget
-from textual.widgets import Collapsible, Label, Markdown, Static
+from textual.widgets import Collapsible, Label, Static
+
+from duh.ui.styles import OutputStyle, OutputTruncationPolicy
+
+# Rich is a hard dependency of duh-cli (see pyproject.toml: "rich>=13.0,<16.0"),
+# but we gate the import defensively so this module never hard-fails if a
+# downstream consumer strips it out.  When Rich is unavailable we degrade
+# `HighlightedMarkdown` to a plain Textual `Markdown` widget.
+try:
+    from rich.markdown import Markdown as RichMarkdown
+    from rich.syntax import Syntax as RichSyntax  # noqa: F401  (re-exported for tests)
+
+    _HAS_RICH = True
+except ImportError:  # pragma: no cover — Rich is a hard dep in practice
+    RichMarkdown = None  # type: ignore[assignment]
+    RichSyntax = None  # type: ignore[assignment]
+    _HAS_RICH = False
+
+
+# ---------------------------------------------------------------------------
+# HighlightedMarkdown — Rich-backed Markdown with syntax-highlighted code blocks
+# ---------------------------------------------------------------------------
+#
+# Textual ships a `MarkdownFence` widget that renders fenced code blocks but
+# *without* language-aware syntax highlighting — the rendered text uses the
+# theme's default color for every token.  The REPL's RichRenderer gets
+# highlighting for free because it pipes content through `rich.markdown.Markdown`
+# with `code_theme="monokai"`, which internally drives each fence through
+# `rich.syntax.Syntax` (Pygments-backed).
+#
+# This widget closes that gap for the TUI (ADR-073 Wave 2 #6).  It composes a
+# single `Static` whose renderable is a `rich.markdown.Markdown` instance.
+# Textual's `Static.update()` accepts arbitrary Rich renderables, so the full
+# Rich Markdown output — headers, bold, lists, tables, AND syntax-highlighted
+# code fences — is rendered natively inside the Textual widget tree.
+#
+# Streaming semantics: `update(content)` re-renders the entire markdown string.
+# Rich's parser is fast enough that doing this on every `text_delta` is fine
+# (measured <2ms for 4 KB messages).
+
+
+# Rich markdown themes (Pygments themes for code blocks).
+#
+# "monokai" — dark, high-contrast; matches RichRenderer in `repl_renderers.py`.
+# "default" — light, Pygments' default; used when the user picks a light UI.
+#
+# The theme is passed to `rich.markdown.Markdown(code_theme=...)`, which uses
+# it only for fenced code blocks.  Everything else (headers, bold, lists) is
+# styled by Rich's own markdown styles + the Textual CSS theme.
+DEFAULT_CODE_THEME = "monokai"
+
+
+class HighlightedMarkdown(Static):
+    """Markdown renderer with language-aware syntax highlighting.
+
+    Parameters
+    ----------
+    content:
+        Markdown source.  May contain fenced code blocks with or without a
+        language tag; unknown languages fall back to Pygments' ``TextLexer``
+        (Rich handles this automatically — no exception is raised).
+    code_theme:
+        Pygments theme name used by ``rich.syntax.Syntax`` for code fences.
+        Defaults to ``"monokai"``.
+
+    Notes
+    -----
+    When Rich is unavailable at import time, the widget degrades to rendering
+    the raw markdown text via Textual's default Static markup so that the TUI
+    never crashes on a malformed environment.
+    """
+
+    DEFAULT_CSS = """
+    HighlightedMarkdown {
+        height: auto;
+        background: transparent;
+        color: $text;
+    }
+    """
+
+    def __init__(
+        self,
+        content: str = "",
+        *,
+        code_theme: str = DEFAULT_CODE_THEME,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+    ) -> None:
+        super().__init__(name=name, id=id, classes=classes, markup=False)
+        self._markdown_source = content
+        self._code_theme = code_theme
+        # Populate the initial renderable.  Do this *after* super().__init__()
+        # so the widget is fully constructed.
+        self._refresh_renderable()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def update_markdown(self, content: str) -> None:
+        """Replace the markdown source and re-render.
+
+        This is the streaming-friendly entry point: MessageWidget.append()
+        calls it on every `text_delta`.  Rich's markdown parser is fast
+        enough that re-parsing on every delta is acceptable.
+        """
+        self._markdown_source = content
+        self._refresh_renderable()
+
+    @property
+    def markdown_source(self) -> str:
+        """Return the raw markdown source (for tests / debugging)."""
+        return self._markdown_source
+
+    @property
+    def code_theme(self) -> str:
+        """Return the configured Pygments theme name."""
+        return self._code_theme
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _refresh_renderable(self) -> None:
+        """Build a Rich Markdown renderable from the current source and
+        hand it to ``Static.update()``.
+
+        Falls back to plain-text rendering when Rich is not importable.
+        """
+        if _HAS_RICH and RichMarkdown is not None:
+            try:
+                renderable = RichMarkdown(
+                    self._markdown_source,
+                    code_theme=self._code_theme,
+                )
+                self.update(renderable)
+                return
+            except Exception:
+                # Defensive: if Rich raises on malformed markdown, fall back
+                # to plain text so the TUI never crashes.
+                pass
+        # Plain-text fallback (Rich unavailable or raised).
+        self.update(self._markdown_source)
 
 
 # ---------------------------------------------------------------------------
@@ -69,15 +212,21 @@ class MessageWidget(Widget):
         label_text = "You" if self._role == "user" else "Assistant"
         yield Label(label_text, classes="message-role-label")
         if self._role == "user":
+            # User messages are plain text: no markdown parsing, no
+            # syntax highlighting.  Keeps visual distinction between roles
+            # (ADR-073 Wave 2 #6: assistant output must look richer than
+            # user input).
             yield Static(self._content, classes="message-body", markup=False)
         else:
-            yield Markdown(self._content, classes="message-body")
+            # Assistant messages use HighlightedMarkdown (Rich-backed Static)
+            # to get language-aware syntax highlighting on fenced code blocks.
+            yield HighlightedMarkdown(self._content, classes="message-body")
 
     def on_mount(self) -> None:
         if self._role == "user":
             self._body = self.query_one(".message-body", Static)
         else:
-            self._md_body = self.query_one(".message-body", Markdown)
+            self._md_body = self.query_one(".message-body", HighlightedMarkdown)
 
     # ------------------------------------------------------------------
     # Public API
@@ -91,12 +240,15 @@ class MessageWidget(Widget):
                 self._body.update(self._content)
         else:
             if hasattr(self, "_md_body") and self._md_body is not None:
-                self._md_body.update(self._content)
+                # HighlightedMarkdown.update_markdown() re-parses the full
+                # source and re-renders via Rich.  Fast enough for streaming
+                # (Rich's markdown parser is ~O(n) and measured <2ms/4KB).
+                self._md_body.update_markdown(self._content)
 
     def finish(self) -> None:
         """Called when streaming is complete — do a final markdown render."""
         if self._role != "user" and hasattr(self, "_md_body") and self._md_body is not None:
-            self._md_body.update(self._content)
+            self._md_body.update_markdown(self._content)
 
 
 # ---------------------------------------------------------------------------
@@ -178,10 +330,9 @@ class ToolCallWidget(Widget):
         is_error:
             Whether the tool returned an error.
         style:
-            One of ``"default"``, ``"concise"``, ``"verbose"``.
-            - concise: show just "OK" or "ERR" (no output preview).
-            - verbose: show up to 1000 chars of output.
-            - default: first line, up to 120 chars.
+            One of ``"default"``, ``"concise"``, ``"verbose"``.  Mapped to an
+            :class:`OutputTruncationPolicy` (ADR-073) so the REPL and TUI
+            render the same number of characters for the same style.
         tool_name:
             Name of the tool that produced this result.  When the tool is
             ``"Edit"`` or ``"Write"`` and the output looks like a diff,
@@ -198,28 +349,57 @@ class ToolCallWidget(Widget):
         effective_name = tool_name or self._tool_name
         time_suffix = _format_elapsed(elapsed_ms)
 
+        # Resolve the user-facing style string into an OutputStyle enum so we
+        # can look up the shared truncation policy.  Unknown values degrade to
+        # DEFAULT — matches the TUI's existing "fall through to default" logic.
+        try:
+            style_enum = OutputStyle(style)
+        except ValueError:
+            style_enum = OutputStyle.DEFAULT
+        policy = OutputTruncationPolicy.for_style(style_enum, is_error=is_error)
+
         if is_error:
-            if style == "concise":
+            if policy.max_chars <= 0 or policy.max_lines <= 0:
+                # Concise-like policy that suppresses preview text entirely.
                 self._result_label.update(f"[red]ERR[/red]{time_suffix}")
             else:
-                limit = 300
-                preview = escape_markup(output[:limit]) if output else "(empty)"
-                self._result_label.update(f"[red]Error[/red]{time_suffix}: {preview}")
+                truncated, was_truncated = policy.apply(output or "")
+                preview = escape_markup(truncated) if truncated else "(empty)"
+                suffix = " [dim](truncated)[/dim]" if was_truncated else ""
+                self._result_label.update(
+                    f"[red]Error[/red]{time_suffix}: {preview}{suffix}"
+                )
             self._result_label.remove_class("spinner-message")
             self._result_label.add_class("tool-result-error")
         else:
-            # Check for diff-like output from Edit/Write tools
+            # Check for diff-like output from Edit/Write tools.
+            # Diff rendering has its own line cap (_render_diff max_lines=60)
+            # that matches VERBOSE's max_lines — intentionally independent of
+            # OutputTruncationPolicy because diffs need their own line-oriented
+            # truncation semantics (whole hunks, not arbitrary cuts).
             if effective_name in ("Edit", "Write") and _looks_like_diff(output):
                 rendered = _render_diff(output, time_suffix=time_suffix)
                 self._result_label.update(rendered)
-            elif style == "concise":
+            elif policy.max_chars <= 0 or policy.max_lines <= 0:
+                # Concise success: status only, no preview.
                 self._result_label.update(f"[green]OK[/green]{time_suffix}")
-            elif style == "verbose":
-                preview = escape_markup(output[:1000]) if output else "(empty)"
-                self._result_label.update(f"[green]OK[/green]{time_suffix}: {preview}")
+            elif style_enum is OutputStyle.DEFAULT and output:
+                # Preserve the historical "first line only" summary for the
+                # DEFAULT style, then apply the char cap from the policy.
+                first_line = output.split("\n", 1)[0]
+                truncated, was_truncated = policy.apply(first_line)
+                preview = escape_markup(truncated) if truncated else "(empty)"
+                suffix = " [dim](truncated)[/dim]" if was_truncated else ""
+                self._result_label.update(
+                    f"[green]OK[/green]{time_suffix}: {preview}{suffix}"
+                )
             else:
-                first_line = escape_markup(output.split("\n", 1)[0][:120]) if output else "(empty)"
-                self._result_label.update(f"[green]OK[/green]{time_suffix}: {first_line}")
+                truncated, was_truncated = policy.apply(output or "")
+                preview = escape_markup(truncated) if truncated else "(empty)"
+                suffix = " [dim](truncated)[/dim]" if was_truncated else ""
+                self._result_label.update(
+                    f"[green]OK[/green]{time_suffix}: {preview}{suffix}"
+                )
             self._result_label.remove_class("spinner-message")
             self._result_label.add_class("tool-result-ok")
 

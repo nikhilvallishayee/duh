@@ -263,24 +263,38 @@ class TestRichRendererToolResultPanels:
         # Should still show a panel (not crash on empty)
         r._err_console.print.assert_called()
 
-    def test_debug_shows_full_output_panel(self):
+    def test_verbose_style_shows_more_output_in_single_panel(self):
+        """ADR-073 Wave 2: output volume is driven by OutputStyle, not the
+        --debug flag.  Under VERBOSE the success panel shows the full (capped
+        at 2000 chars) output in a single Panel — no separate "full output"
+        Panel is emitted any more."""
+        from duh.ui.styles import OutputStyle
+
         r = _make_rich(debug=True)
+        r.output_style = OutputStyle.VERBOSE
         r._active_tool = "Read"
         stderr_buf = StringIO()
         long_output = "first line\n" + "x" * 300
         with patch("sys.stderr", stderr_buf):
             r.tool_result(long_output, is_error=False)
-        # At least 2 panels: summary + full output
-        assert r._err_console.print.call_count >= 2
+        # Exactly one Panel — the shared OutputTruncationPolicy replaced the
+        # legacy debug-only "full output" panel.
+        assert r._err_console.print.call_count == 1
+        panel = r._err_console.print.call_args[0][0]
+        body = panel.renderable
+        text = body if isinstance(body, str) else body.plain
+        # Verbose budget (2000 chars) easily fits our 311-char payload.
+        assert "first line" in text
+        assert "x" * 300 in text
 
-    def test_non_debug_shows_only_summary_panel(self):
+    def test_default_style_shows_only_summary_panel(self):
+        """DEFAULT is the single-Panel summary path, unchanged by debug."""
         r = _make_rich(debug=False)
         r._active_tool = "Read"
         stderr_buf = StringIO()
         long_output = "first line\n" + "x" * 300
         with patch("sys.stderr", stderr_buf):
             r.tool_result(long_output, is_error=False)
-        # Only 1 panel in non-debug mode
         assert r._err_console.print.call_count == 1
 
 

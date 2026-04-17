@@ -110,10 +110,19 @@ from duh.cli.repl_renderers import (
 )
 
 
-def _make_renderer(debug: bool = False) -> _PlainRenderer | Any:
-    """Return a Rich renderer if available, else a plain one."""
+def _make_renderer(
+    debug: bool = False,
+    output_style: Any = None,
+) -> _PlainRenderer | Any:
+    """Return a Rich renderer if available, else a plain one.
+
+    ``output_style`` is passed through to :class:`RichRenderer` so the unified
+    :class:`OutputTruncationPolicy` (ADR-073) picks the right thresholds.
+    """
     if _HAS_RICH:
-        return _RichRenderer(debug=debug)
+        if output_style is None:
+            return _RichRenderer(debug=debug)
+        return _RichRenderer(debug=debug, output_style=output_style)
     return _PlainRenderer(debug=debug)
 
 
@@ -795,6 +804,16 @@ async def run_repl(args: argparse.Namespace) -> int:
 
                 if event_type == "text_delta":
                     renderer.text_delta(event.get("text", ""))
+
+                elif event_type == "usage_delta":
+                    # ADR-073 Task 8: live token counter — best-effort
+                    # update of the status line mid-stream. Old renderers
+                    # without this method stay backward-compatible.
+                    if hasattr(renderer, "usage_delta"):
+                        renderer.usage_delta(
+                            input_tokens=event.get("input_tokens", 0),
+                            output_tokens=event.get("output_tokens", 0),
+                        )
 
                 elif event_type == "thinking_delta":
                     renderer.thinking_delta(event.get("text", ""))

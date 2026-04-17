@@ -210,13 +210,27 @@ class TestToolCallWidgetStyleParam:
         # Concise should NOT include the output text
         assert "lots of output" not in call_text
 
-    def test_concise_style_error_shows_err(self):
+    def test_concise_style_error_shows_error_with_short_preview(self):
+        """ADR-073: concise+error policy is 200 chars / 5 lines — short
+        previews DO appear (so users see why it failed) but long ones are
+        truncated hard.  The style still suppresses success-path previews
+        entirely (see test_concise_style_ok_no_output)."""
         w, label = self._make_widget_with_mock_label()
         w.set_result("error details here", is_error=True, style="concise")
         call_text = label.update.call_args[0][0]
-        assert "ERR" in call_text
-        # Concise error should NOT show error details
-        assert "error details" not in call_text
+        assert "Error" in call_text
+        # Short error (19 chars) fits in the 200-char concise error budget.
+        assert "error details here" in call_text
+
+    def test_concise_style_error_truncates_long_output(self):
+        """ADR-073: concise errors are capped at 200 chars."""
+        w, label = self._make_widget_with_mock_label()
+        w.set_result("Z" * 500, is_error=True, style="concise")
+        call_text = label.update.call_args[0][0]
+        assert "Error" in call_text
+        assert "Z" * 200 in call_text
+        # Past the 200-char cap should be dropped.
+        assert "Z" * 201 not in call_text
 
     def test_verbose_style_shows_more_output(self):
         w, label = self._make_widget_with_mock_label()
@@ -245,14 +259,15 @@ class TestToolCallWidgetStyleParam:
         assert "X" * 120 in call_text
         assert "X" * 200 not in call_text
 
-    def test_verbose_caps_at_1000(self):
+    def test_verbose_caps_at_2000(self):
+        """ADR-073: verbose success policy is 2000 chars / 60 lines."""
         w, label = self._make_widget_with_mock_label()
-        huge = "Y" * 2000
+        huge = "Y" * 5000
         w.set_result(huge, is_error=False, style="verbose")
         call_text = label.update.call_args[0][0]
-        # Verbose caps at 1000
-        assert "Y" * 1000 in call_text
-        assert "Y" * 1001 not in call_text
+        # Verbose caps at 2000.
+        assert "Y" * 2000 in call_text
+        assert "Y" * 2001 not in call_text
 
 
 # ---------------------------------------------------------------------------

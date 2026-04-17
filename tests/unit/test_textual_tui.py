@@ -22,11 +22,11 @@ import pytest
 
 textual = pytest.importorskip("textual", reason="textual not installed")
 
-from textual.widgets import Input, Button, Static  # noqa: E402
+from textual.widgets import Input, Button, Static, TextArea  # noqa: E402
 
 from duh.ui.widgets import MessageWidget, ToolCallWidget, ThinkingWidget  # noqa: E402
 from duh.ui.theme import APP_CSS  # noqa: E402
-from duh.ui.app import DuhApp  # noqa: E402
+from duh.ui.app import DuhApp, SubmittableTextArea  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +200,7 @@ class TestDuhAppRunTest:
             assert app.query_one("#input-area")
             assert app.query_one("#statusbar")
             assert app.query_one("#sidebar")
-            assert app.query_one("#prompt-input", Input)
+            assert app.query_one("#prompt-input", SubmittableTextArea)
             assert app.query_one("#send-button", Button)
 
     async def test_sidebar_hidden_by_default(self):
@@ -237,8 +237,8 @@ class TestDuhAppRunTest:
         async with app.run_test(size=(120, 40)) as pilot:
             log = app.query_one("#message-log")
             initial_count = len(list(log.children))
-            inp = app.query_one("#prompt-input", Input)
-            inp.value = ""
+            inp = app.query_one("#prompt-input", SubmittableTextArea)
+            inp.clear()
             await pilot.click("#send-button")
             await pilot.pause(0.2)
             # No new messages beyond the welcome banner
@@ -252,8 +252,8 @@ class TestDuhAppRunTest:
         engine = _fake_engine(events)
         app = DuhApp(engine=engine)
         async with app.run_test(size=(120, 40)) as pilot:
-            inp = app.query_one("#prompt-input", Input)
-            inp.value = "hi"
+            inp = app.query_one("#prompt-input", SubmittableTextArea)
+            inp.load_text("hi")
             await pilot.click("#send-button")
             # Allow the worker to complete
             await pilot.pause(0.5)
@@ -271,8 +271,8 @@ class TestDuhAppRunTest:
         engine = _fake_engine(events)
         app = DuhApp(engine=engine)
         async with app.run_test(size=(120, 40)) as pilot:
-            inp = app.query_one("#prompt-input", Input)
-            inp.value = "list root"
+            inp = app.query_one("#prompt-input", SubmittableTextArea)
+            inp.load_text("list root")
             await pilot.click("#send-button")
             await pilot.pause(0.5)
             await pilot.pause(0.1)
@@ -288,8 +288,8 @@ class TestDuhAppRunTest:
         engine = _fake_engine(events)
         app = DuhApp(engine=engine)
         async with app.run_test(size=(120, 40)) as pilot:
-            inp = app.query_one("#prompt-input", Input)
-            inp.value = "do something"
+            inp = app.query_one("#prompt-input", SubmittableTextArea)
+            inp.load_text("do something")
             await pilot.click("#send-button")
             await pilot.pause(0.5)
             await pilot.pause(0.1)
@@ -304,8 +304,8 @@ class TestDuhAppRunTest:
         engine = _fake_engine(events)
         app = DuhApp(engine=engine, model="test-m")
         async with app.run_test(size=(120, 40)) as pilot:
-            inp = app.query_one("#prompt-input", Input)
-            inp.value = "go"
+            inp = app.query_one("#prompt-input", SubmittableTextArea)
+            inp.load_text("go")
             await pilot.click("#send-button")
             await pilot.pause(0.5)
             await pilot.pause(0.1)

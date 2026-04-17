@@ -67,16 +67,21 @@ class TestContextInHelp:
 # ---------------------------------------------------------------------------
 
 class TestContextInTuiHelp:
-    """Verify /context appears in the TUI /help text."""
+    """Verify /context appears in the TUI /help output (behavior test)."""
 
-    def test_tui_help_mentions_context(self):
-        # Import the TUI app module; the /help text is a string literal
-        # in _handle_slash. We verify it by reading the source.
-        import inspect
-        from duh.ui.app import DuhApp
+    @pytest.mark.asyncio
+    async def test_tui_help_mentions_context(self):
+        """/help output from the TUI must list /context (covered by the shared
+        SlashDispatcher help)."""
+        from duh.cli.slash_commands import SlashDispatcher, SlashContext
+        from unittest.mock import MagicMock
 
-        source = inspect.getsource(DuhApp._handle_slash)
-        assert "/context" in source
+        ctx = SlashContext(engine=MagicMock(), model="test", deps=None,
+                           executor=None, task_manager=None, template_state={},
+                           plan_mode=None, mcp_executor=None, provider_name="stub")
+        dispatcher = SlashDispatcher(ctx)
+        output, _ = await dispatcher.async_dispatch("/help", "")
+        assert "/context" in output
 
 
 # ---------------------------------------------------------------------------

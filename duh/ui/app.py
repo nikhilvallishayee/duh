@@ -40,11 +40,14 @@ import sys
 import time
 from typing import Any
 
-from textual import on, work
+from dataclasses import dataclass
+
+from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import ScrollableContainer, Horizontal, Vertical
-from textual.widgets import Button, Footer, Header, Input, Label, Static
+from textual.message import Message
+from textual.widgets import Button, Footer, Header, Input, Label, Static, TextArea
 
 from duh.ui.styles import OutputStyle
 from duh.ui.theme import APP_CSS
@@ -52,6 +55,61 @@ from duh.ui.logo import LOGO_COMPACT
 from duh.ui.file_tree import RecentFilesWidget
 from duh.ui.widgets import MessageWidget, ThinkingWidget, ToolCallWidget
 from duh.kernel.model_caps import model_context_block, rebuild_system_prompt
+
+
+# ---------------------------------------------------------------------------
+# SubmittableTextArea — multi-line prompt input (ADR-073 Wave 1)
+# ---------------------------------------------------------------------------
+
+
+class SubmittableTextArea(TextArea):
+    """A ``TextArea`` that treats ``Enter`` as *submit* and ``Shift+Enter`` /
+    ``Ctrl+J`` as *newline*.
+
+    Rationale (ADR-073 Wave 1 #4):
+        Textual's default ``Input`` is single-line.  Users composing code
+        snippets or multi-paragraph questions need a multi-line editor —
+        but with chat-style submission semantics (Enter = send).
+
+    Behaviour:
+        * ``enter``           → posts :class:`Submitted`.  No newline inserted.
+        * ``shift+enter``     → inserts ``\\n`` at the cursor.
+        * ``ctrl+j``          → inserts ``\\n`` (terminal fallback for terminals
+                                 that do not distinguish shift+enter from enter).
+        * Every other key    → default TextArea behaviour.
+    """
+
+    @dataclass
+    class Submitted(Message):
+        """Posted when the user presses Enter (without modifiers)."""
+
+        text_area: "SubmittableTextArea"
+        value: str
+
+        @property
+        def control(self) -> "SubmittableTextArea":
+            return self.text_area
+
+    async def _on_key(self, event: events.Key) -> None:  # type: ignore[override]
+        key = event.key
+        # Enter (no modifiers) → submit.
+        if key == "enter":
+            event.stop()
+            event.prevent_default()
+            self.post_message(self.Submitted(text_area=self, value=self.text))
+            return
+        # Shift+Enter or Ctrl+J → newline (treated identically by default, but
+        # some terminals only emit one or the other, so both are supported).
+        if key in ("shift+enter", "ctrl+j"):
+            event.stop()
+            event.prevent_default()
+            if self.read_only:
+                return
+            start, end = self.selection
+            self._replace_via_keyboard("\n", start, end)
+            return
+        # All other keys: default behaviour (printable → insert, arrows, etc.)
+        await super()._on_key(event)
 
 # Tools whose input contains a file path we want to track.
 _FILE_TOOLS = frozenset({"Read", "Write", "Edit", "MultiEdit", "Glob", "Grep"})
@@ -137,7 +195,13 @@ class DuhApp(App[int]):
             yield self._make_sidebar()
             yield ScrollableContainer(id="message-log")
         with Horizontal(id="input-area"):
-            yield Input(placeholder="Type a message… (Enter to send)", id="prompt-input")
+            # Multi-line input (ADR-073 Wave 1 #4). ``Enter`` submits,
+            # ``Shift+Enter`` / ``Ctrl+J`` insert a newline.
+            yield SubmittableTextArea(
+                id="prompt-input",
+                soft_wrap=True,
+                placeholder="Type a message… (Enter to send, Shift+Enter for newline)",
+            )
             yield Button("Send", id="send-button", variant="primary")
         yield Static(self._status_text(), id="statusbar")
 
@@ -282,7 +346,7 @@ class DuhApp(App[int]):
                 ))
 
         log.scroll_end(animate=False)
-        self.query_one("#prompt-input", Input).focus()
+        self.query_one("#prompt-input", SubmittableTextArea).focus()
 
     # ----------------------------------------------------------------- message helpers
 
@@ -322,16 +386,18 @@ class DuhApp(App[int]):
     async def handle_send_button(self, _event: Button.Pressed) -> None:
         await self._submit()
 
-    @on(Input.Submitted, "#prompt-input")
-    async def handle_input_submitted(self, _event: Input.Submitted) -> None:
+    @on(SubmittableTextArea.Submitted, "#prompt-input")
+    async def handle_textarea_submitted(
+        self, _event: SubmittableTextArea.Submitted,
+    ) -> None:
         await self._submit()
 
     async def _submit(self) -> None:
-        inp = self.query_one("#prompt-input", Input)
-        text = inp.value.strip()
+        inp = self.query_one("#prompt-input", SubmittableTextArea)
+        text = inp.text.strip()
         if not text:
             return
-        inp.value = ""
+        inp.clear()
 
         # Slash command dispatch — handle locally, don't send to model
         if text.startswith("/"):
@@ -347,103 +413,63 @@ class DuhApp(App[int]):
 
     # ----------------------------------------------------------------- slash commands
 
+    def _build_slash_context(self):
+        """Build a SlashContext for delegating to SlashDispatcher.
+
+        The TUI does not yet own a full ``SessionBuild`` (it constructs its
+        engine inline in ``run_tui``), so we assemble a minimal context from
+        the attributes we have.  ``executor`` / ``task_manager`` / ``plan_mode``
+        are ``None`` until ``run_tui`` is migrated to ``SessionBuilder``.
+        """
+        from duh.cli.slash_commands import SlashContext
+
+        deps = getattr(self._engine, "_deps", None)
+        return SlashContext(
+            engine=self._engine,
+            model=self._model,
+            deps=deps,
+            executor=getattr(self, "_executor", None),
+            task_manager=getattr(self, "_task_manager", None),
+            template_state=getattr(self, "_template_state", {}),
+            plan_mode=getattr(self, "_plan_mode", None),
+            mcp_executor=getattr(self, "_mcp_executor", None),
+            provider_name=getattr(self, "_provider_name", ""),
+        )
+
+    async def _add_system_message(self, text: str) -> None:
+        """Render *text* (captured-stdout-style) into the message log."""
+        # Strip the leading two-space indent that sync handlers emit for the
+        # readline REPL — looks awkward inside a bordered widget.
+        cleaned = "\n".join(
+            line[2:] if line.startswith("  ") else line
+            for line in text.splitlines()
+        ).rstrip()
+        if not cleaned:
+            return
+        await self._add_widget(Static(cleaned, classes="welcome-banner"))
+
     async def _handle_slash(self, text: str) -> bool:
-        """Handle /commands locally. Returns True if handled."""
+        """Handle /commands locally. Returns True if handled.
+
+        Delegates to :class:`SlashDispatcher.async_dispatch` for every
+        command that is not TUI-specific — see ADR-073 Wave 1 tasks 1 & 2.
+        Only ``/style``, ``/mode``, ``/session`` (a TUI-only info panel
+        distinct from the REPL's ``/status``), ``/clear`` (needs to wipe
+        visible widgets) and the ``/quit``/``/q`` aliases stay local.
+        """
+        from duh.cli.slash_commands import SlashDispatcher
+
         parts = text.split(maxsplit=1)
         cmd = parts[0].lower()
         arg = parts[1] if len(parts) > 1 else ""
 
-        if cmd == "/help":
-            await self._add_widget(Static(
-                "[bold]Available commands:[/]\n"
-                "  [cyan]/help[/]          — Show this help\n"
-                "  [cyan]/model[/] [name]  — Show or switch model\n"
-                "  [cyan]/style[/] [name]  — Show or set output style (default/concise/verbose)\n"
-                "  [cyan]/cost[/]          — Show token usage and cost\n"
-                "  [cyan]/context[/]       — Show context window token breakdown\n"
-                "  [cyan]/compact[/]       — Force context compaction\n"
-                "  [cyan]/mode[/] [name]   — Show or switch mode (normal/coordinator)\n"
-                "  [cyan]/memory[/]        — Memory facts (list/search/show/delete)\n"
-                "  [cyan]/clear[/]         — Clear message display\n"
-                "  [cyan]/session[/]       — Show session info\n"
-                "  [cyan]/sessions[/]      — List sessions for this project\n"
-                "  [cyan]/quit[/]          — Exit D.U.H.\n",
-                classes="welcome-banner",
-            ))
+        # --- TUI-local commands (routed BEFORE the shared dispatcher) -----
+        if cmd == "/style":
+            await self._handle_style_local(arg)
             return True
 
-        if cmd == "/model":
-            if arg:
-                old_model = self._model
-                self._model = arg
-                self._engine._config.model = arg
-                self._rebuild_system_prompt(old_model, arg)
-                self._refresh_status()
-                await self._add_widget(Static(
-                    f"[green]Model switched to:[/] {arg}", classes="session-divider",
-                ))
-            else:
-                await self._add_widget(Static(
-                    f"[dim]Current model:[/] {self._model}", classes="session-divider",
-                ))
-            return True
-
-        if cmd == "/cost":
-            from duh.kernel.tokens import estimate_cost
-            cost = estimate_cost(self._model, self._input_tokens, self._output_tokens)
-            cache_line = ""
-            if self._engine is not None:
-                cache_line = f"\n  {self._engine.cache_tracker.summary()}"
-            await self._add_widget(Static(
-                f"[bold]Session cost:[/]\n"
-                f"  Input tokens:  {self._input_tokens:,}\n"
-                f"  Output tokens: {self._output_tokens:,}\n"
-                f"  Estimated cost: ${cost:.4f}\n"
-                f"  Turn: {self._turn}\n"
-                f"  Model: {self._model}"
-                f"{cache_line}",
-                classes="welcome-banner",
-            ))
-            return True
-
-        if cmd == "/context":
-            from duh.cli.repl import context_breakdown
-            output = context_breakdown(self._engine, self._model)
-            await self._add_widget(Static(
-                f"[bold]Context Window[/]\n{output}",
-                classes="welcome-banner",
-            ))
-            return True
-
-        if cmd == "/compact":
-            try:
-                compact_fn = self._engine._deps.compact
-                if compact_fn:
-                    import asyncio
-                    before = len(self._engine._messages)
-                    from duh.kernel.tokens import get_context_limit
-                    limit = int(get_context_limit(self._model) * 0.50)
-                    self._engine._messages = await compact_fn(
-                        self._engine._messages, token_limit=limit,
-                    )
-                    after = len(self._engine._messages)
-                    await self._add_widget(Static(
-                        f"[green]Compacted:[/] {before} → {after} messages",
-                        classes="session-divider",
-                    ))
-                else:
-                    await self._add_error_message("No compactor configured")
-            except Exception as e:
-                await self._add_error_message(f"Compact failed: {e}")
-            return True
-
-        if cmd == "/clear":
-            log = self.query_one("#message-log", ScrollableContainer)
-            await log.remove_children()
-            await self._add_widget(Static(
-                "[dim]Messages cleared. Context retained in engine.[/]",
-                classes="session-divider",
-            ))
+        if cmd == "/mode":
+            await self._handle_mode_local(arg)
             return True
 
         if cmd == "/session":
@@ -458,251 +484,176 @@ class DuhApp(App[int]):
             ))
             return True
 
-        if cmd == "/style":
-            if arg:
-                arg_lower = arg.strip().lower()
-                try:
-                    new_style = OutputStyle(arg_lower)
-                except ValueError:
-                    await self._add_error_message(
-                        f"Unknown style '{arg.strip()}'. "
-                        f"Choose from: default, concise, verbose"
-                    )
-                    return True
-                self._output_style = new_style
-                await self._add_widget(Static(
-                    f"[green]Output style set to:[/] {new_style.value}",
-                    classes="session-divider",
-                ))
-            else:
-                await self._add_widget(Static(
-                    f"[dim]Current output style:[/] {self._output_style.value}",
-                    classes="session-divider",
-                ))
-            return True
-
-        if cmd == "/mode":
-            if arg:
-                mode_arg = arg.strip().lower()
-                if mode_arg == "coordinator":
-                    if not self._coordinator_mode:
-                        from duh.kernel.coordinator import COORDINATOR_SYSTEM_PROMPT
-                        self._engine._config.system_prompt = (
-                            COORDINATOR_SYSTEM_PROMPT + "\n\n" + self._engine._config.system_prompt
-                        )
-                    self._coordinator_mode = True
-                    # Persist mode in session metadata (ADR-063)
-                    if self._engine._messages:
-                        self._engine._messages[0].metadata["coordinator_mode"] = True
-                    await self._add_widget(Static(
-                        "[green]Mode switched to:[/] coordinator",
-                        classes="session-divider",
-                    ))
-                elif mode_arg == "normal":
-                    if self._coordinator_mode:
-                        from duh.kernel.coordinator import COORDINATOR_SYSTEM_PROMPT
-                        prompt = self._engine._config.system_prompt
-                        prefix = COORDINATOR_SYSTEM_PROMPT + "\n\n"
-                        if prompt.startswith(prefix):
-                            self._engine._config.system_prompt = prompt[len(prefix):]
-                    self._coordinator_mode = False
-                    # Persist mode in session metadata (ADR-063)
-                    if self._engine._messages:
-                        self._engine._messages[0].metadata["coordinator_mode"] = False
-                    await self._add_widget(Static(
-                        "[green]Mode switched to:[/] normal",
-                        classes="session-divider",
-                    ))
-                else:
-                    await self._add_error_message(
-                        f"Unknown mode '{arg.strip()}'. Choose from: normal, coordinator"
-                    )
-            else:
-                current = "coordinator" if self._coordinator_mode else "normal"
-                await self._add_widget(Static(
-                    f"[dim]Current mode:[/] {current}",
-                    classes="session-divider",
-                ))
-            return True
-
-        if cmd == "/sessions":
-            store = getattr(self._engine, "_session_store", None)
-            if store is None:
-                await self._add_error_message("No session store configured.")
-                return True
-            try:
-                sessions = await store.list_sessions()
-            except Exception as exc:
-                await self._add_error_message(f"Error listing sessions: {exc}")
-                return True
-            if not sessions:
-                await self._add_widget(Static(
-                    "[dim]No sessions for this project.[/]",
-                    classes="session-divider",
-                ))
-                return True
-            sessions.sort(key=lambda s: s.get("modified", ""), reverse=True)
-            lines = [
-                f"[bold]Sessions for this project[/] ({len(sessions)} total)\n",
-                f"  {'ID':10s} {'Messages':>8s}  {'Last Modified'}",
-                f"  {'─' * 10} {'─' * 8}  {'─' * 20}",
-            ]
-            for s in sessions:
-                sid = s["session_id"][:8]
-                count = s.get("message_count", 0)
-                modified = s.get("modified", "?")
-                if modified != "?" and "T" in modified:
-                    modified = modified.replace("T", " ").split("+")[0][:19]
-                lines.append(f"  {sid:10s} {count:>8d}  {modified}")
-            await self._add_widget(Static(
-                "\n".join(lines),
-                classes="welcome-banner",
-            ))
-            return True
-
-        if cmd == "/memory":
-            import os
-            from duh.adapters.memory_store import FileMemoryStore
-
-            mem_cwd = self._cwd or os.getcwd()
-            mem_store = FileMemoryStore(cwd=mem_cwd)
-            sub_parts = arg.strip().split(None, 1)
-            sub = sub_parts[0].lower() if sub_parts else "list"
-            sub_arg = sub_parts[1].strip() if len(sub_parts) > 1 else ""
-
-            if sub == "list":
-                facts = mem_store.list_facts()
-                if not facts:
-                    await self._add_widget(Static(
-                        "[dim]No memory facts stored.[/]",
-                        classes="session-divider",
-                    ))
-                else:
-                    mem_lines = [f"[bold]Memory facts[/] ({len(facts)} total)\n"]
-                    for fact in facts:
-                        key = fact.get("key", "?")
-                        value = fact.get("value", "")
-                        tags = fact.get("tags", [])
-                        tag_str = f" [dim][{', '.join(tags)}][/dim]" if tags else ""
-                        mem_lines.append(f"  [cyan]{key}[/cyan]: {value}{tag_str}")
-                    await self._add_widget(Static(
-                        "\n".join(mem_lines),
-                        classes="welcome-banner",
-                    ))
-
-            elif sub == "search":
-                if not sub_arg:
-                    await self._add_widget(Static(
-                        "[dim]Usage: /memory search <query>[/]",
-                        classes="session-divider",
-                    ))
-                else:
-                    results = mem_store.recall_facts(sub_arg)
-                    if not results:
-                        await self._add_widget(Static(
-                            f"[dim]No facts matching \'{sub_arg}\'.[/]",
-                            classes="session-divider",
-                        ))
-                    else:
-                        srch_lines = [f"[bold]Search results[/] ({len(results)} match{'es' if len(results) != 1 else ''})\n"]
-                        for fact in results:
-                            key = fact.get("key", "?")
-                            value = fact.get("value", "")
-                            tags = fact.get("tags", [])
-                            tag_str = f" [dim][{', '.join(tags)}][/dim]" if tags else ""
-                            srch_lines.append(f"  [cyan]{key}[/cyan]: {value}{tag_str}")
-                        await self._add_widget(Static(
-                            "\n".join(srch_lines),
-                            classes="welcome-banner",
-                        ))
-
-            elif sub == "show":
-                if not sub_arg:
-                    await self._add_widget(Static(
-                        "[dim]Usage: /memory show <key>[/]",
-                        classes="session-divider",
-                    ))
-                else:
-                    all_facts = mem_store.list_facts()
-                    matched = [ff for ff in all_facts if ff.get("key") == sub_arg]
-                    if not matched:
-                        await self._add_widget(Static(
-                            f"[dim]No fact with key \'{sub_arg}\'.[/]",
-                            classes="session-divider",
-                        ))
-                    else:
-                        fact = matched[0]
-                        tags = fact.get("tags", [])
-                        tag_line = f"\n  [dim]Tags:[/dim] {', '.join(tags)}" if tags else ""
-                        ts = fact.get("timestamp", "")
-                        ts_line = f"\n  [dim]Saved:[/dim] {ts}" if ts else ""
-                        await self._add_widget(Static(
-                            f"[bold]Fact:[/] [cyan]{fact.get('key', '?')}[/cyan]\n"
-                            f"  [dim]Value:[/dim] {fact.get('value', '')}"
-                            f"{tag_line}{ts_line}",
-                            classes="welcome-banner",
-                        ))
-
-            elif sub == "delete":
-                if not sub_arg:
-                    await self._add_widget(Static(
-                        "[dim]Usage: /memory delete <key>[/]",
-                        classes="session-divider",
-                    ))
-                else:
-                    deleted = mem_store.delete_fact(sub_arg)
-                    if deleted:
-                        await self._add_widget(Static(
-                            f"[green]Deleted fact \'{sub_arg}\'.[/]",
-                            classes="session-divider",
-                        ))
-                    else:
-                        await self._add_widget(Static(
-                            f"[dim]No fact with key \'{sub_arg}\'.[/]",
-                            classes="session-divider",
-                        ))
-
-            elif sub == "gc":
-                from duh.kernel.memory_decay import gc_memories
-
-                max_facts = 200
-                if sub_arg:
-                    try:
-                        max_facts = int(sub_arg)
-                    except ValueError:
-                        await self._add_widget(Static(
-                            "[dim]Usage: /memory gc [max_facts][/]",
-                            classes="session-divider",
-                        ))
-                        return True
-                removed = gc_memories(mem_store, max_facts=max_facts)
-                remaining = len(mem_store.list_facts())
-                await self._add_widget(Static(
-                    f"[green]Memory GC:[/] removed {removed} stale fact(s), "
-                    f"{remaining} remaining.",
-                    classes="session-divider",
-                ))
-
-            else:
-                await self._add_widget(Static(
-                    "[bold]Usage:[/]\n"
-                    "  [cyan]/memory[/]              — list all facts\n"
-                    "  [cyan]/memory list[/]          — list all facts\n"
-                    "  [cyan]/memory search <q>[/]    — search facts by keyword\n"
-                    "  [cyan]/memory show <key>[/]    — show a specific fact\n"
-                    "  [cyan]/memory delete <key>[/]  — delete a fact\n"
-                    "  [cyan]/memory gc [max][/]      — garbage-collect stale facts\n",
-                    classes="welcome-banner",
-                ))
-
-            return True
-
-        if cmd in ("/quit", "/exit", "/q"):
+        if cmd in ("/quit", "/q"):
             self.exit(0)
             return True
 
-        # Unknown slash command — let the model handle it
-        return False
+        # --- /clear: also wipes the visible message log (TUI-only extra).
+        if cmd == "/clear":
+            log = self.query_one("#message-log", ScrollableContainer)
+            await log.remove_children()
+            self._engine._messages.clear()
+            await self._add_widget(Static(
+                "[dim]Messages cleared. Context retained in engine.[/]",
+                classes="session-divider",
+            ))
+            return True
+
+        # --- /model: TUI updates header/statusbar; delegate, then refresh.
+        if cmd == "/model" and arg.strip():
+            old_model = self._model
+            ctx = self._build_slash_context()
+            dispatcher = SlashDispatcher(ctx)
+            output, new_model = await dispatcher.async_dispatch(cmd, arg)
+            if new_model and not new_model.startswith("\x00"):
+                self._model = new_model
+                self._rebuild_system_prompt(old_model, new_model)
+            self._refresh_status()
+            await self._add_system_message(output)
+            return True
+
+        # --- /compact: sentinel from shared handler signals "run compaction".
+        if cmd == "/compact":
+            await self._handle_compact_local()
+            return True
+
+        # --- Delegate everything else to SlashDispatcher.async_dispatch.
+        ctx = self._build_slash_context()
+        dispatcher = SlashDispatcher(ctx)
+        try:
+            output, new_model = await dispatcher.async_dispatch(cmd, arg)
+        except Exception as exc:  # noqa: BLE001 — surface the failure
+            await self._add_error_message(f"{cmd} failed: {exc}")
+            return True
+
+        # --- /help: append TUI-local commands to the shared help output.
+        if cmd == "/help" and output:
+            output = (
+                output
+                + "\n[TUI-local]\n"
+                + "/style       Toggle output style (default|concise|verbose)\n"
+                + "/mode        Toggle coordinator mode (normal|coordinator)\n"
+                + "/session     Show TUI session info panel\n"
+                + "/quit, /q    Exit the TUI\n"
+            )
+
+        # Sentinel returns — /plan and /snapshot still need interactive UI
+        # support (tracked separately in Wave 1 task 2 notes).
+        if isinstance(new_model, str) and new_model.startswith("\x00"):
+            if new_model.startswith("\x00plan\x00"):
+                plan_desc = new_model[len("\x00plan\x00"):]
+                await self._add_widget(Static(
+                    f"[bold]Proposed plan:[/]\n{plan_desc}\n\n"
+                    "[dim]Plan mode approval not yet supported in TUI "
+                    "(see ADR-073 Wave 1 task 4).[/]",
+                    classes="welcome-banner",
+                ))
+                return True
+            if new_model.startswith("\x00snapshot\x00"):
+                snap_arg = new_model[len("\x00snapshot\x00"):]
+                await self._add_widget(Static(
+                    f"[bold]Snapshot:[/] {snap_arg or '(none)'}\n"
+                    "[dim]Interactive snapshot apply/discard not yet "
+                    "supported in TUI (see ADR-073 Wave 1 task 2).[/]",
+                    classes="welcome-banner",
+                ))
+                return True
+
+        # /exit from the shared dispatcher maps to quitting the TUI.
+        if cmd == "/exit":
+            self.exit(0)
+            return True
+
+        if output:
+            await self._add_system_message(output)
+        return True
+
+    async def _handle_style_local(self, arg: str) -> None:
+        """TUI-local `/style` handler (output style is TUI rendering state)."""
+        if arg:
+            arg_lower = arg.strip().lower()
+            try:
+                new_style = OutputStyle(arg_lower)
+            except ValueError:
+                await self._add_error_message(
+                    f"Unknown style '{arg.strip()}'. "
+                    f"Choose from: default, concise, verbose"
+                )
+                return
+            self._output_style = new_style
+            await self._add_widget(Static(
+                f"[green]Output style set to:[/] {new_style.value}",
+                classes="session-divider",
+            ))
+        else:
+            await self._add_widget(Static(
+                f"[dim]Current output style:[/] {self._output_style.value}",
+                classes="session-divider",
+            ))
+
+    async def _handle_mode_local(self, arg: str) -> None:
+        """TUI-local `/mode` handler (flips coordinator system-prompt prefix)."""
+        if arg:
+            mode_arg = arg.strip().lower()
+            if mode_arg == "coordinator":
+                if not self._coordinator_mode:
+                    from duh.kernel.coordinator import COORDINATOR_SYSTEM_PROMPT
+                    self._engine._config.system_prompt = (
+                        COORDINATOR_SYSTEM_PROMPT + "\n\n" + self._engine._config.system_prompt
+                    )
+                self._coordinator_mode = True
+                if self._engine._messages:
+                    self._engine._messages[0].metadata["coordinator_mode"] = True
+                await self._add_widget(Static(
+                    "[green]Mode switched to:[/] coordinator",
+                    classes="session-divider",
+                ))
+            elif mode_arg == "normal":
+                if self._coordinator_mode:
+                    from duh.kernel.coordinator import COORDINATOR_SYSTEM_PROMPT
+                    prompt = self._engine._config.system_prompt
+                    prefix = COORDINATOR_SYSTEM_PROMPT + "\n\n"
+                    if prompt.startswith(prefix):
+                        self._engine._config.system_prompt = prompt[len(prefix):]
+                self._coordinator_mode = False
+                if self._engine._messages:
+                    self._engine._messages[0].metadata["coordinator_mode"] = False
+                await self._add_widget(Static(
+                    "[green]Mode switched to:[/] normal",
+                    classes="session-divider",
+                ))
+            else:
+                await self._add_error_message(
+                    f"Unknown mode '{arg.strip()}'. Choose from: normal, coordinator"
+                )
+        else:
+            current = "coordinator" if self._coordinator_mode else "normal"
+            await self._add_widget(Static(
+                f"[dim]Current mode:[/] {current}",
+                classes="session-divider",
+            ))
+
+    async def _handle_compact_local(self) -> None:
+        """TUI-local `/compact` — runs compaction and reports result."""
+        deps = getattr(self._engine, "_deps", None)
+        compact_fn = getattr(deps, "compact", None) if deps else None
+        if not compact_fn:
+            await self._add_error_message("No compactor configured")
+            return
+        try:
+            from duh.kernel.tokens import get_context_limit
+            before = len(self._engine._messages)
+            limit = int(get_context_limit(self._model) * 0.50)
+            self._engine._messages = await compact_fn(
+                self._engine._messages, token_limit=limit,
+            )
+            after = len(self._engine._messages)
+            await self._add_widget(Static(
+                f"[green]Compacted:[/] {before} → {after} messages",
+                classes="session-divider",
+            ))
+        except Exception as exc:  # noqa: BLE001
+            await self._add_error_message(f"Compact failed: {exc}")
 
     # ----------------------------------------------------------------- worker
 
@@ -851,7 +802,7 @@ class DuhApp(App[int]):
                 _log.warning("Session save failed: %s", save_err)
 
             # Re-enable input
-            inp = self.query_one("#prompt-input", Input)
+            inp = self.query_one("#prompt-input", SubmittableTextArea)
             inp.disabled = False
             inp.focus()
             self.query_one("#send-button", Button).disabled = False
@@ -1120,12 +1071,17 @@ def run_tui(args: argparse.Namespace) -> int:
     # ADR-066 P1: Wire TUIApprover now that we have the app instance.
     # TUIApprover needs the app to push_screen_wait, so it can only be
     # created after the DuhApp is instantiated.
+    # ADR-073 Wave 1 task 3: honour approval_timeout_seconds from config.
     if _approval_label == "interactive":
         from duh.kernel.permission_cache import SessionPermissionCache
         from duh.ui.tui_approver import TUIApprover
 
         _tui_cache = SessionPermissionCache()
-        tui_approver = TUIApprover(app=app, permission_cache=_tui_cache)
+        tui_approver = TUIApprover(
+            app=app,
+            permission_cache=_tui_cache,
+            timeout_seconds=app_config.approval_timeout_seconds,
+        )
         deps.approve = tui_approver.check
 
     # Restore coordinator mode from CLI flag or session metadata (ADR-063)

@@ -185,7 +185,7 @@ class TestProgressIntegration:
         app = DuhApp(engine=engine, model="test-m")
         async with app.run_test(size=(120, 40)) as pilot:
             inp = app.query_one("#prompt-input")
-            inp.value = "hello"
+            inp.load_text("hello")
             await pilot.click("#send-button")
             await pilot.pause(0.5)
             await pilot.pause(0.1)
@@ -202,7 +202,7 @@ class TestProgressIntegration:
         app = DuhApp(engine=engine, model="test-m")
         async with app.run_test(size=(120, 40)) as pilot:
             inp = app.query_one("#prompt-input")
-            inp.value = "read file"
+            inp.load_text("read file")
             await pilot.click("#send-button")
             await pilot.pause(0.5)
             await pilot.pause(0.1)
@@ -218,7 +218,7 @@ class TestProgressIntegration:
         app = DuhApp(engine=engine, model="test-m")
         async with app.run_test(size=(120, 40)) as pilot:
             inp = app.query_one("#prompt-input")
-            inp.value = "list stuff"
+            inp.load_text("list stuff")
             await pilot.click("#send-button")
             await pilot.pause(0.5)
             await pilot.pause(0.1)

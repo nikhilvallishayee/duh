@@ -49,6 +49,9 @@ class Config:
     mcp_servers: dict[str, Any] = field(default_factory=dict)
     trifecta_acknowledged: bool = False
     auto_memory: bool = False
+    # ADR-073 Wave 1 task 3: TUI permission-modal auto-deny timeout.
+    # None disables the timeout (modal waits forever). Default 60s.
+    approval_timeout_seconds: float | None = 60.0
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +118,19 @@ def _merge_into(config: Config, data: dict[str, Any]) -> None:
         config.mcp_servers.update(data["mcpServers"])
     if "auto_memory" in data:
         config.auto_memory = bool(data["auto_memory"])
+    if "approval_timeout_seconds" in data:
+        val = data["approval_timeout_seconds"]
+        # Explicit None (JSON null) or string "none"/"null"/"" disables the timeout.
+        if val is None:
+            config.approval_timeout_seconds = None
+        elif isinstance(val, str) and val.strip().lower() in ("", "none", "null", "off", "disabled"):
+            config.approval_timeout_seconds = None
+        else:
+            try:
+                parsed = float(val)
+                config.approval_timeout_seconds = parsed if parsed > 0 else None
+            except (ValueError, TypeError):
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +144,7 @@ _ENV_MAP: dict[str, str] = {
     "DUH_MAX_COST": "max_cost",
     "DUH_SYSTEM_PROMPT": "system_prompt",
     "DUH_AUTO_MEMORY": "auto_memory",
+    "DUH_APPROVAL_TIMEOUT_SECONDS": "approval_timeout_seconds",
 }
 
 

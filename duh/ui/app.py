@@ -683,6 +683,24 @@ class DuhApp(App[int]):
                     log = self.query_one("#message-log", ScrollableContainer)
                     log.scroll_end(animate=False)
 
+                elif event_type == "usage_delta":
+                    # ADR-073 Task 8: live token counter — update the
+                    # status bar reactively while streaming. Textual's
+                    # Static.update() handles the redraw; we compute
+                    # cost from the estimate so the user sees burn too.
+                    try:
+                        from duh.kernel.tokens import estimate_cost as _est
+                        self._input_tokens = int(event.get("input_tokens", 0))
+                        self._output_tokens = int(event.get("output_tokens", 0))
+                        self._cost = _est(
+                            self._model,
+                            self._input_tokens,
+                            self._output_tokens,
+                        )
+                        self._refresh_status()
+                    except Exception:
+                        pass
+
                 elif event_type == "thinking_delta":
                     # VERBOSE/debug: expanded. DEFAULT: collapsed. CONCISE: hidden.
                     if self._output_style != OutputStyle.CONCISE:

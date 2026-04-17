@@ -124,6 +124,21 @@ class _TurnState:
     # Set True when the per-turn budget check fires a budget_exceeded
     # event — the orchestrator must stop the run.
     budget_exceeded: bool = False
+    # ADR-073 Wave 2 / Task 8: running sum of characters streamed via
+    # text_delta events this turn. Divided by USAGE_DELTA_CHARS_PER_TOKEN
+    # to produce an estimated output-token count surfaced in
+    # ``usage_delta`` events. Reset per turn.
+    streaming_output_chars: int = 0
+
+
+# ADR-073 Wave 2 / Task 8: rough char-to-token ratio used while streaming.
+# The authoritative count still arrives on ``done`` from the provider; this
+# is deliberately cheap (no tokenizer call per delta).
+USAGE_DELTA_CHARS_PER_TOKEN = 4
+
+# Emit a ``usage_delta`` event at most every N characters of streamed text
+# so we don't churn the status line on every single delta.
+USAGE_DELTA_EMIT_INTERVAL_CHARS = 40
 
 
 class Engine:
@@ -833,6 +848,35 @@ class Engine:
                 continue
 
             yield event
+
+            # ADR-073 Wave 2 / Task 8: after a text_delta, surface an
+            # incremental token estimate so renderers can update the
+            # status line mid-stream. We use a cheap char-based heuristic
+            # (no tokenizer call) and only emit every ~40 chars to keep
+            # the event rate low. Authoritative counts still arrive on
+            # the ``done`` event.
+            if event_type == "text_delta":
+                text = event.get("text", "") or ""
+                if text:
+                    prev_chars = state.streaming_output_chars
+                    state.streaming_output_chars += len(text)
+                    prev_bucket = prev_chars // USAGE_DELTA_EMIT_INTERVAL_CHARS
+                    new_bucket = (
+                        state.streaming_output_chars
+                        // USAGE_DELTA_EMIT_INTERVAL_CHARS
+                    )
+                    if new_bucket > prev_bucket:
+                        est_output = (
+                            state.streaming_output_chars
+                            // USAGE_DELTA_CHARS_PER_TOKEN
+                        )
+                        yield {
+                            "type": "usage_delta",
+                            "input_tokens": self._total_input_tokens,
+                            "output_tokens": self._total_output_tokens + est_output,
+                            "estimated": True,
+                            "model": effective_model,
+                        }
 
             if event_type == "done":
                 async for follow_up in self._on_done(

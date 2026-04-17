@@ -154,6 +154,7 @@ MarkdownBulletList, MarkdownOrderedList {
 #input-area {
     height: auto;
     min-height: 3;
+    max-height: 10;
     background: $surface;
     border-top: solid $primary-darken-2;
     layout: horizontal;
@@ -161,8 +162,15 @@ MarkdownBulletList, MarkdownOrderedList {
     align: left middle;
 }
 
+/* Multi-line TextArea (ADR-073 Wave 1 #4). Auto-grows from 1 to 6 lines.
+   ``min-height: 3`` matches the border (1) + text (1) + border (1); the
+   TextArea itself grows with content up to ``max-height: 8`` (= 6 text rows
+   + top + bottom border), then scrolls internally. */
 #prompt-input {
     width: 1fr;
+    height: auto;
+    min-height: 3;
+    max-height: 8;
     background: $background;
     border: solid $primary-darken-2;
     padding: 0 1;

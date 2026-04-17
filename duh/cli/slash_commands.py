@@ -11,17 +11,23 @@ Usage from the REPL::
     dispatcher = SlashDispatcher(ctx)
     keep_going, new_model = dispatcher.dispatch(name, arg)
 
+The TUI uses ``async_dispatch`` instead, which captures stdout into a string
+so the output can be mounted into the Textual message log.  See ADR-073 Wave 1
+task 1 for the TUI-parity rationale.
+
 The original ``_handle_slash`` function in ``repl.py`` delegates here.
 """
 
 from __future__ import annotations
 
+import contextlib
 import getpass
+import io
 import logging
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from duh.adapters.native_executor import NativeExecutor
 from duh.cli.runner import BRIEF_INSTRUCTION
@@ -195,6 +201,58 @@ class SlashDispatcher:
             return handler(self, arg)
         sys.stdout.write(f"  Unknown command: {name}. Type /help for commands.\n")
         return True, self.ctx.model
+
+    # ------------------------------------------------------------------
+    # Async dispatch for the TUI (ADR-073 Wave 1 task 1)
+    # ------------------------------------------------------------------
+
+    async def async_dispatch(
+        self, name: str, arg: str
+    ) -> tuple[str, str]:
+        """Async dispatch that returns captured output + new model.
+
+        Used by the TUI so it can mount handler output into the message log
+        instead of relying on ``sys.stdout.write``.  Returns a tuple of
+        ``(captured_output, new_model)``.
+
+        ``new_model`` follows the same sentinel contract as the sync path:
+
+          * ``"\\x00compact\\x00"`` — caller should run compaction
+          * ``"\\x00snapshot\\x00<arg>"`` — caller should handle snapshot
+          * ``"\\x00plan\\x00<arg>"`` — caller should handle plan mode
+          * any other string — the new active model name
+
+        An async-aware variant is used when a handler would otherwise block
+        on ``asyncio.run`` inside a running event loop (``/sessions``).  All
+        other commands reuse the sync handler with a stdout-capturing buffer.
+        """
+        # Async-first handlers — needed when the sync handler would call
+        # ``asyncio.run`` inside a running event loop (which raises).
+        async_handler = self._ASYNC_HANDLERS.get(name)
+        if async_handler is not None:
+            return await async_handler(self, arg)
+
+        handler = self._HANDLERS.get(name)
+        if handler is None:
+            return (
+                f"  Unknown command: {name}. Type /help for commands.\n",
+                self.ctx.model,
+            )
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            # Sync handlers return (should_continue, model_or_sentinel).
+            # Async dispatch drops ``should_continue`` because the TUI has
+            # no notion of "exit loop" — it handles /exit separately.
+            _, new_model = handler(self, arg)
+        return buf.getvalue(), new_model
+
+    # Dispatch table for async-first handlers.  Populated at the bottom of
+    # this module alongside ``_HANDLERS``.
+    _ASYNC_HANDLERS: dict[
+        str,
+        Callable[[SlashDispatcher, str], Awaitable[tuple[str, str]]],
+    ] = {}
 
     # ------------------------------------------------------------------
     # Private helpers shared across handlers
@@ -852,6 +910,44 @@ class SlashDispatcher:
     def _handle_exit(self, arg: str) -> _HandlerResult:
         return False, self.ctx.model
 
+    # ------------------------------------------------------------------
+    # Async-first handlers (used by async_dispatch)
+    # ------------------------------------------------------------------
+
+    async def _handle_sessions_async(self, arg: str) -> tuple[str, str]:
+        """Async variant of ``/sessions`` — safe inside a running event loop.
+
+        The sync ``_handle_sessions`` calls ``asyncio.run(...)`` which raises
+        ``RuntimeError`` when a loop is already running (TUI worker).  This
+        variant awaits ``store.list_sessions()`` directly.
+        """
+        model = self.ctx.model
+        store = getattr(self.ctx.engine, "_session_store", None)
+        if store is None:
+            return "  No session store configured.\n", model
+
+        try:
+            sessions = await store.list_sessions()
+        except Exception as exc:  # noqa: BLE001 — mirror sync behaviour
+            return f"  Error listing sessions: {exc}\n", model
+
+        if not sessions:
+            return "  No sessions for this project.\n", model
+
+        sessions.sort(key=lambda s: s.get("modified", ""), reverse=True)
+        lines = [
+            f"  {'ID':10s} {'Messages':>8s}  {'Last Modified'}",
+            f"  {'─' * 10} {'─' * 8}  {'─' * 20}",
+        ]
+        for s in sessions:
+            sid = s["session_id"][:8]
+            count = s.get("message_count", 0)
+            modified = s.get("modified", "?")
+            if modified != "?" and "T" in modified:
+                modified = modified.replace("T", " ").split("+")[0][:19]
+            lines.append(f"  {sid:10s} {count:>8d}  {modified}")
+        return "\n".join(lines) + "\n", model
+
 
 # ------------------------------------------------------------------
 # Populate the dispatch table
@@ -885,4 +981,10 @@ SlashDispatcher._HANDLERS = {
     "/memory": SlashDispatcher._handle_memory,
     "/sessions": SlashDispatcher._handle_sessions,
     "/exit": SlashDispatcher._handle_exit,
+}
+
+# Async-first handlers for async_dispatch.  Needed when the sync handler
+# would call ``asyncio.run`` inside an already-running event loop.
+SlashDispatcher._ASYNC_HANDLERS = {
+    "/sessions": SlashDispatcher._handle_sessions_async,
 }

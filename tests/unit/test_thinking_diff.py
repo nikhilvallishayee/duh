@@ -225,8 +225,8 @@ class TestThinkingDisplay:
         engine = _fake_engine(events)
         app = DuhApp(engine=engine, model="test")
         async with app.run_test(size=(120, 40)) as pilot:
-            inp = app.query_one("#prompt-input", Input)
-            inp.value = "edit file"
+            inp = app.query_one("#prompt-input")
+            inp.load_text("edit file")
             await pilot.click("#send-button")
             await pilot.pause(0.5)
             await pilot.pause(0.1)

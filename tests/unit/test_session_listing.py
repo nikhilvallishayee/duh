@@ -134,19 +134,18 @@ def _fake_engine_for_tui(session_store=None):
 
 
 class TestSessionsTUIHelp:
-    """Verify /sessions appears in TUI help and handler."""
+    """Verify /sessions appears in TUI help (behavior test)."""
 
-    def test_sessions_in_tui_help_text(self):
-        """Verify the /sessions entry appears in the TUI help output."""
-        import inspect
-        source = inspect.getsource(DuhApp._handle_slash)
-        assert "/sessions" in source
-
-    def test_sessions_handler_exists_in_tui(self):
-        """Verify the /sessions handler branch exists in the TUI."""
-        import inspect
-        source = inspect.getsource(DuhApp._handle_slash)
-        assert 'cmd == "/sessions"' in source
+    @pytest.mark.asyncio
+    async def test_sessions_in_tui_help_text(self):
+        """/sessions must appear in the /help output via shared dispatcher."""
+        from duh.cli.slash_commands import SlashDispatcher, SlashContext
+        ctx = SlashContext(engine=MagicMock(), model="test", deps=None,
+                           executor=None, task_manager=None, template_state={},
+                           plan_mode=None, mcp_executor=None, provider_name="stub")
+        dispatcher = SlashDispatcher(ctx)
+        output, _ = await dispatcher.async_dispatch("/help", "")
+        assert "/sessions" in output
 
 
 class TestSessionsTUIBanner:

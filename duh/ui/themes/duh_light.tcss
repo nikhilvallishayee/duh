@@ -1,0 +1,26 @@
+/* duh-light — light variant.
+ *
+ * White background with dark text.  Colours come from Textual's
+ * ``textual-light`` registered theme; the rules below adjust the
+ * welcome banner contrast so it reads on a light background.
+ */
+
+.welcome-banner {
+    background: $primary-lighten-3;
+    color: $text;
+    padding: 1 2;
+    margin: 0 0 1 0;
+    border: tall $primary;
+}
+
+.message-assistant {
+    background: $surface;
+    border-left: thick $success;
+    color: $text;
+}
+
+.message-user {
+    background: $primary-lighten-2;
+    border-left: thick $primary;
+    color: $text;
+}

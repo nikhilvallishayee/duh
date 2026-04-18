@@ -157,6 +157,7 @@ SLASH_COMMANDS = {
     "/memory": "Memory facts (/memory list|search <q>|show <key>|delete <key>|gc)",
     "/sessions": "List sessions for this project",
     "/audit": "Show recent audit log entries (/audit [N])",
+    "/theme": "Switch TUI theme (/theme, /theme <name>) — TUI only",
     "/exit": "Exit the REPL",
 }
 

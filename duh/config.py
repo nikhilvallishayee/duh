@@ -52,6 +52,14 @@ class Config:
     # ADR-073 Wave 1 task 3: TUI permission-modal auto-deny timeout.
     # None disables the timeout (modal waits forever). Default 60s.
     approval_timeout_seconds: float | None = 60.0
+    # ADR-073 Wave 3 task 12: transcript virtualization cap.
+    # When the number of mounted MessageWidgets in the TUI's #message-log
+    # exceeds this cap, the oldest widgets are replaced with a compact
+    # "N older messages" placeholder.  The raw content is always preserved
+    # in the session store — this only bounds the live widget tree.
+    # Default 500 is generous enough that most users never hit it; set to
+    # 0 to disable virtualization entirely.
+    tui_max_mounted_messages: int = 500
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +139,13 @@ def _merge_into(config: Config, data: dict[str, Any]) -> None:
                 config.approval_timeout_seconds = parsed if parsed > 0 else None
             except (ValueError, TypeError):
                 pass
+    if "tui_max_mounted_messages" in data:
+        try:
+            parsed_cap = int(data["tui_max_mounted_messages"])
+            # Clamp negatives to 0 (disabled); values >= 0 pass through.
+            config.tui_max_mounted_messages = max(0, parsed_cap)
+        except (ValueError, TypeError):
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +160,7 @@ _ENV_MAP: dict[str, str] = {
     "DUH_SYSTEM_PROMPT": "system_prompt",
     "DUH_AUTO_MEMORY": "auto_memory",
     "DUH_APPROVAL_TIMEOUT_SECONDS": "approval_timeout_seconds",
+    "DUH_TUI_MAX_MOUNTED_MESSAGES": "tui_max_mounted_messages",
 }
 
 

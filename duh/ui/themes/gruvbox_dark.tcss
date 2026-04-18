@@ -1,0 +1,26 @@
+/* gruvbox-dark — retro warm dark theme.
+ *
+ * Backed by Textual's ``gruvbox`` registered theme.  Warm earth tones
+ * for users who prefer a softer palette.
+ */
+
+.message-user {
+    background: $surface;
+    border-left: thick $warning;
+}
+
+.message-assistant {
+    background: $surface;
+    border-left: thick $success;
+}
+
+.tool-call-widget {
+    background: $panel;
+    border-left: thick $warning;
+}
+
+.welcome-banner {
+    background: $panel;
+    border: tall $warning;
+    color: $text;
+}

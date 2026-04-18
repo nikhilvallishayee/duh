@@ -1,0 +1,22 @@
+/* duh-dark — default D.U.H. theme (ADR-073 Wave 3 #10).
+ *
+ * This is the baseline that ships with the app.  Colours come from
+ * Textual's ``textual-dark`` registered theme; this file tweaks the
+ * widget-specific classes so they match the D.U.H. brand.
+ */
+
+.tool-result-ok {
+    color: $success;
+}
+
+.tool-result-error {
+    color: $error;
+}
+
+.welcome-banner {
+    background: $primary-darken-2;
+    color: $text;
+    padding: 1 2;
+    margin: 0 0 1 0;
+    border: tall $primary;
+}

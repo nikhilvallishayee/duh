@@ -38,7 +38,8 @@ import asyncio
 import argparse
 import sys
 import time
-from typing import Any
+from collections import deque
+from typing import Any, Callable
 
 from dataclasses import dataclass
 
@@ -116,6 +117,110 @@ _FILE_TOOLS = frozenset({"Read", "Write", "Edit", "MultiEdit", "Glob", "Grep"})
 
 
 # ---------------------------------------------------------------------------
+# TextDeltaCoalescer — frame-rate cap for streaming text (ADR-073 Wave 3 #13)
+# ---------------------------------------------------------------------------
+
+
+class TextDeltaCoalescer:
+    """Coalesce rapid ``text_delta`` events into a single widget update.
+
+    Textual's render driver already rate-limits at 60 FPS, but every
+    incoming ``text_delta`` that reaches ``MessageWidget.append()`` still
+    allocates a string, bumps the reactive attribute, and re-parses the
+    markdown.  At high streaming rates (hundreds of chars per second) this
+    burns render budget on sub-frame updates.
+
+    This coalescer buffers deltas that arrive within *interval_s* (default
+    8 ms → 125 FPS) and flushes the accumulated buffer as a single append
+    when the timer fires.  The frame cap is intentionally *faster* than
+    Textual's 60 FPS driver so the user never perceives lag — we're just
+    squelching the sub-frame updates the driver would drop anyway.
+
+    Correctness invariants:
+        * **No data loss.**  Every character pushed via :meth:`add` is
+          eventually delivered to *flush_cb*, either by the timer firing
+          or by an explicit :meth:`flush`.
+        * **Ordering preserved.**  Deltas flush in insertion order; the
+          buffer is a ``str``, not a set.
+        * **Flush on boundary events.**  Callers must call :meth:`flush`
+          synchronously before handling non-``text_delta`` events
+          (``tool_use``, ``assistant``, ``done``, ``error``, worker
+          cancellation) so those events don't reorder vs. pending text.
+    """
+
+    def __init__(
+        self,
+        *,
+        interval_s: float,
+        flush_cb: Callable[[str], None],
+    ) -> None:
+        self._interval_s = interval_s
+        self._flush_cb = flush_cb
+        self._buffer: str = ""
+        self._pending_handle: Any = None  # asyncio.TimerHandle when scheduled
+        # Diagnostic counters — used by tests to assert coalescing.
+        self.flush_count: int = 0
+        self.delta_count: int = 0
+
+    def add(self, delta: str) -> None:
+        """Append *delta* to the buffer, starting the flush timer if needed."""
+        if not delta:
+            return
+        self.delta_count += 1
+        self._buffer += delta
+        if self._pending_handle is not None:
+            # Timer is already scheduled — subsequent deltas ride that
+            # window, which is exactly the coalescing behaviour we want.
+            return
+        try:
+            loop = asyncio.get_event_loop()
+            if not loop.is_running():
+                raise RuntimeError("loop not running")
+        except RuntimeError:
+            # No running loop (unit tests may call add() without one) —
+            # just flush synchronously so no data is lost.
+            self.flush()
+            return
+        self._pending_handle = loop.call_later(self._interval_s, self._on_timer)
+
+    def flush(self) -> None:
+        """Drain the buffer to *flush_cb* immediately. Cancels any timer.
+
+        Safe to call multiple times; second and later calls are no-ops
+        when the buffer is empty.
+        """
+        handle = self._pending_handle
+        if handle is not None:
+            self._pending_handle = None
+            try:
+                handle.cancel()
+            except Exception:  # pragma: no cover — defensive
+                pass
+        if not self._buffer:
+            return
+        payload = self._buffer
+        self._buffer = ""
+        self.flush_count += 1
+        self._flush_cb(payload)
+
+    def _on_timer(self) -> None:
+        """Timer callback: drain buffer. Clears the handle first so a
+        flush_cb that triggers another ``add()`` re-arms correctly."""
+        self._pending_handle = None
+        if not self._buffer:
+            return
+        payload = self._buffer
+        self._buffer = ""
+        self.flush_count += 1
+        self._flush_cb(payload)
+
+    @property
+    def has_pending(self) -> bool:
+        """True if there is unflushed text in the buffer."""
+        return bool(self._buffer)
+
+
+# ---------------------------------------------------------------------------
 # DuhApp
 # ---------------------------------------------------------------------------
 
@@ -141,6 +246,8 @@ class DuhApp(App[int]):
 
     BINDINGS = [
         Binding("ctrl+b", "toggle_sidebar", "Sidebar", show=True),
+        Binding("ctrl+k", "command_palette", "Commands", show=True),
+        Binding("ctrl+t", "theme_selector", "Theme", show=True),
         Binding("ctrl+q", "quit", "Quit", show=True),
         Binding("escape", "quit", "Quit", show=False),
     ]
@@ -156,6 +263,7 @@ class DuhApp(App[int]):
         resumed_messages: list | None = None,
         cwd: str = "",
         approval_label: str = "auto-approve",
+        max_mounted_messages: int | None = None,
     ) -> None:
         super().__init__()
         self._engine = engine
@@ -186,6 +294,46 @@ class DuhApp(App[int]):
         # Recent files sidebar (ADR-067 P2)
         self._recent_files: list[str] = []
         self._recent_files_widget: RecentFilesWidget | None = None
+
+        # Frame-rate cap — coalesce text_delta events that arrive within
+        # 8 ms (125 FPS) into a single widget append. Reduces widget
+        # update cost from O(chars) to O(frames). See ADR-073 Wave 3 #13.
+        self._delta_coalescer = TextDeltaCoalescer(
+            interval_s=0.008, flush_cb=self._flush_delta_to_active,
+        )
+
+        # ADR-073 Wave 3 task 12: transcript virtualization.
+        # Cap mounted MessageWidgets at ``_max_mounted_messages``; older
+        # widgets are replaced with a compact ``Static`` placeholder that
+        # reports the count of archived messages.  Raw content stays in
+        # the session store (no data loss).  A value of ``0`` disables
+        # the cap (useful for tests asserting no eviction).
+        #
+        # Resolution order:
+        #   1. Explicit ``max_mounted_messages`` ctor arg.
+        #   2. ``Config.tui_max_mounted_messages`` (load_config with cwd).
+        #   3. Hard-coded default 500.
+        if max_mounted_messages is not None:
+            self._max_mounted_messages = int(max_mounted_messages)
+        else:
+            try:
+                from duh.config import load_config
+                self._max_mounted_messages = int(
+                    load_config(cwd=cwd or ".").tui_max_mounted_messages
+                )
+            except Exception:
+                self._max_mounted_messages = 500
+        # Ordered refs to every currently-mounted MessageWidget.  Append
+        # is O(1); eviction pops from the left.  We intentionally do NOT
+        # track ToolCallWidget / ThinkingWidget here — message bodies are
+        # the dominant DOM cost; evicting tool/thinking widgets would add
+        # complexity without much memory savings.
+        self._mounted_messages: deque[MessageWidget] = deque()
+        # Total MessageWidgets evicted so far (displayed by the placeholder).
+        self._archived_message_count: int = 0
+        # Reference to the "… N older messages" placeholder Static, if any.
+        # Updated in-place when the archive count grows.
+        self._archive_placeholder: Static | None = None
 
     # ---------------------------------------------------------------- compose
 
@@ -258,6 +406,54 @@ class DuhApp(App[int]):
         else:
             sidebar.add_class("visible")
 
+    # ----------------------------------------------------------------- command palette
+
+    async def action_command_palette(self) -> None:
+        """Open the Ctrl+K command palette (ADR-073 Wave 3 #9).
+
+        On dismissal with a selected command, insert ``/<name> `` into the
+        prompt ``TextArea`` and return focus so the user can type arguments
+        and press Enter.  ``Esc`` dismisses with no change.
+        """
+        from duh.ui.command_palette import CommandPalette
+
+        def _on_result(result: str | None) -> None:
+            textarea = self.query_one("#prompt-input", SubmittableTextArea)
+            if result:
+                # Insert ``/<name> `` at the current cursor position.  A
+                # trailing space is appended so the user can start typing
+                # arguments immediately.
+                insert = f"{result} "
+                if hasattr(textarea, "insert"):
+                    textarea.insert(insert)
+                else:
+                    textarea.text = textarea.text + insert
+            # Always re-focus the TextArea on dismissal (focus policy —
+            # the palette must not permanently steal focus).
+            textarea.focus()
+
+        await self.push_screen(CommandPalette(), _on_result)
+
+    async def action_theme_selector(self) -> None:
+        """Open the Ctrl+T theme selector (ADR-073 Wave 3 #10)."""
+        from duh.ui.theme_manager import ThemeManager, ThemeSelector
+
+        manager = ThemeManager()
+        # Ensure themes are registered before listing.
+        manager.ensure_registered(self)
+
+        def _on_result(result: str | None) -> None:
+            if result:
+                manager.apply_theme(self, result)
+                manager.save_preference(result)
+            textarea = self.query_one("#prompt-input", SubmittableTextArea)
+            textarea.focus()
+
+        await self.push_screen(
+            ThemeSelector(manager=manager, current=self.theme),
+            _on_result,
+        )
+
     # ----------------------------------------------------------------- recent files
 
     def _track_recent_file(self, path: str) -> None:
@@ -274,6 +470,20 @@ class DuhApp(App[int]):
     async def on_mount(self) -> None:
         """Show welcome banner and restored session messages."""
         log = self.query_one("#message-log", ScrollableContainer)
+
+        # Apply persisted theme preference (ADR-073 Wave 3 #10).  Failures
+        # are swallowed so a stale / corrupt preference file can never
+        # crash the TUI — the default theme stays in place.
+        try:
+            from duh.ui.theme_manager import ThemeManager
+
+            manager = ThemeManager()
+            manager.ensure_registered(self)
+            preferred = manager.load_preference()
+            if preferred and preferred in self.available_themes:
+                manager.apply_theme(self, preferred)
+        except Exception:
+            pass
 
         # Welcome banner with project awareness
         sid_short = self._session_id[:8] if self._session_id else "new"
@@ -336,7 +546,9 @@ class DuhApp(App[int]):
                     continue  # skip empty messages
                 text = text[:500]  # truncate for display
                 widget = MessageWidget(role=role, text=text)
-                await log.mount(widget)
+                # Route through _add_widget so resumed messages participate
+                # in the virtualization cap (ADR-073 Wave 3 task 12).
+                await self._add_widget(widget)
                 shown += 1
 
             if shown > 0:
@@ -351,10 +563,20 @@ class DuhApp(App[int]):
     # ----------------------------------------------------------------- message helpers
 
     async def _add_widget(self, widget: Any) -> None:
-        """Mount a widget into the message log and scroll to bottom."""
+        """Mount a widget into the message log and scroll to bottom.
+
+        ADR-073 Wave 3 task 12: when *widget* is a ``MessageWidget`` we
+        track it in ``_mounted_messages`` and, if the cap is exceeded,
+        evict the oldest (non-active) message widget and replace it with
+        a compact archive placeholder.
+        """
         log = self.query_one("#message-log", ScrollableContainer)
         await log.mount(widget)
         log.scroll_end(animate=False)
+        if isinstance(widget, MessageWidget):
+            self._mounted_messages.append(widget)
+            if self._max_mounted_messages > 0:
+                await self._enforce_mount_cap()
 
     async def _new_user_message(self, text: str) -> MessageWidget:
         widget = MessageWidget(role="user", text=text)
@@ -372,9 +594,94 @@ class DuhApp(App[int]):
         return widget
 
     async def _new_tool_widget(self, name: str, inp: dict) -> ToolCallWidget:
-        widget = ToolCallWidget(tool_name=name, input=inp)
+        widget = ToolCallWidget(
+            tool_name=name, input=inp, output_style=self._output_style.value,
+        )
         await self._add_widget(widget)
         return widget
+
+    # ----------------------------------------------------------------- virtualization
+
+    async def _enforce_mount_cap(self) -> None:
+        """Evict the oldest mounted MessageWidgets if we exceed the cap.
+
+        Invariants:
+            * Never evicts the currently-streaming ``_active_assistant``.
+            * The eviction placeholder (``_archive_placeholder``) is
+              mounted on first eviction; subsequent evictions update its
+              label in-place.
+            * Raw message content is always preserved in the engine's
+              session store — eviction only prunes the widget tree.
+        """
+        cap = self._max_mounted_messages
+        if cap <= 0:
+            return
+        while len(self._mounted_messages) > cap:
+            oldest = self._mounted_messages[0]
+            if oldest is self._active_assistant:
+                # Never evict a widget that is actively streaming — its
+                # reactive text buffer would be lost.  Break out; a later
+                # add after the stream finishes will retry the eviction.
+                break
+            self._mounted_messages.popleft()
+            try:
+                await oldest.remove()
+            except Exception:
+                # Defensive: Textual may have already unmounted the widget
+                # (e.g. parent removed by /clear).  Keep the bookkeeping
+                # consistent regardless.
+                pass
+            self._archived_message_count += 1
+        if self._archived_message_count > 0:
+            await self._refresh_archive_placeholder()
+
+    async def _refresh_archive_placeholder(self) -> None:
+        """Create or update the "… N older messages archived" Static."""
+        n = self._archived_message_count
+        label = (
+            f"[dim]… {n} older message{'s' if n != 1 else ''} "
+            f"archived (available in session history)[/]"
+        )
+        if self._archive_placeholder is not None:
+            try:
+                self._archive_placeholder.update(label)
+                return
+            except Exception:
+                # Placeholder was unmounted (e.g. by /clear) — drop the
+                # reference and fall through to create a fresh one.
+                self._archive_placeholder = None
+        placeholder = Static(label, classes="session-divider")
+        self._archive_placeholder = placeholder
+        log = self.query_one("#message-log", ScrollableContainer)
+        try:
+            await log.mount(placeholder)
+        except Exception:
+            self._archive_placeholder = None
+
+    # ----------------------------------------------------------------- delta coalescing
+
+    def _flush_delta_to_active(self, text: str) -> None:
+        """Flush callback for the TextDeltaCoalescer.
+
+        Appends *text* (the accumulated buffer) to the current assistant
+        widget.  Called synchronously — either from the coalescer's timer
+        tick or via an explicit ``flush()``.
+        """
+        if not text:
+            return
+        if self._active_assistant is None:
+            # No assistant widget yet — create one synchronously via
+            # call_later so we don't block the current event.  This is
+            # the same lazy-creation pattern used in the worker loop.
+            # In practice the worker loop creates the widget on first
+            # delta before calling ``add()``, so this path is rare.
+            return
+        self._active_assistant.append(text)
+        try:
+            log = self.query_one("#message-log", ScrollableContainer)
+            log.scroll_end(animate=False)
+        except Exception:  # pragma: no cover — no log yet during tests
+            pass
 
     async def _add_error_message(self, text: str) -> None:
         widget = Static(f"[red]Error:[/red] {text}", classes="message-assistant")
@@ -484,6 +791,10 @@ class DuhApp(App[int]):
             ))
             return True
 
+        if cmd == "/theme":
+            await self._handle_theme_local(arg)
+            return True
+
         if cmd in ("/quit", "/q"):
             self.exit(0)
             return True
@@ -493,6 +804,11 @@ class DuhApp(App[int]):
             log = self.query_one("#message-log", ScrollableContainer)
             await log.remove_children()
             self._engine._messages.clear()
+            # Reset virtualization bookkeeping — all widgets just went away
+            # (ADR-073 Wave 3 task 12).
+            self._mounted_messages.clear()
+            self._archived_message_count = 0
+            self._archive_placeholder = None
             await self._add_widget(Static(
                 "[dim]Messages cleared. Context retained in engine.[/]",
                 classes="session-divider",
@@ -633,6 +949,42 @@ class DuhApp(App[int]):
                 classes="session-divider",
             ))
 
+    async def _handle_theme_local(self, arg: str) -> None:
+        """TUI-local `/theme` handler (ADR-073 Wave 3 #10).
+
+        ``/theme``          lists available themes with a current marker.
+        ``/theme <name>``   switches to that theme and saves the preference.
+        """
+        from duh.ui.theme_manager import ThemeManager
+
+        manager = ThemeManager()
+        manager.ensure_registered(self)
+        name = arg.strip()
+
+        if not name:
+            lines = ["[bold]Available themes:[/]"]
+            current = self.theme
+            for tname, display, desc in manager.available_themes():
+                marker = "[green]*[/]" if tname == current else " "
+                lines.append(f"  {marker} [bold]{tname}[/] — [dim]{desc}[/]")
+            lines.append("")
+            lines.append("[dim]Use /theme <name> to switch.[/]")
+            await self._add_widget(Static(
+                "\n".join(lines),
+                classes="welcome-banner",
+            ))
+            return
+
+        ok, message = manager.apply_theme(self, name)
+        if ok:
+            manager.save_preference(name)
+            await self._add_widget(Static(
+                f"[green]Theme switched to:[/] {name}",
+                classes="session-divider",
+            ))
+        else:
+            await self._add_error_message(message)
+
     async def _handle_compact_local(self) -> None:
         """TUI-local `/compact` — runs compaction and reports result."""
         deps = getattr(self._engine, "_deps", None)
@@ -677,11 +1029,12 @@ class DuhApp(App[int]):
                 if event_type == "text_delta":
                     text = event.get("text", "")
                     if self._active_assistant is None:
+                        # Create the widget eagerly so the coalescer's
+                        # flush callback always has a target.
                         self._active_assistant = await self._new_assistant_message()
-                    self._active_assistant.append(text)
-                    # Scroll log to bottom
-                    log = self.query_one("#message-log", ScrollableContainer)
-                    log.scroll_end(animate=False)
+                    # Push into the coalescer; sub-8ms deltas are
+                    # merged into a single widget update (ADR-073 #13).
+                    self._delta_coalescer.add(text)
 
                 elif event_type == "usage_delta":
                     # ADR-073 Task 8: live token counter — update the
@@ -713,6 +1066,9 @@ class DuhApp(App[int]):
                         self._active_thinking.append(text)
 
                 elif event_type == "tool_use":
+                    # Flush any pending coalesced text first so tool
+                    # output can't visually reorder ahead of prose.
+                    self._delta_coalescer.flush()
                     # Finish the current assistant message first
                     self._active_assistant = None
                     name = event.get("name", "?")
@@ -743,16 +1099,21 @@ class DuhApp(App[int]):
                         self._active_tool = None
 
                 elif event_type == "assistant":
-                    # Full assistant message arrived — final markdown render
+                    # Full assistant message arrived — drain the
+                    # coalescer so the final markdown render sees all
+                    # streamed text, then finalise.
+                    self._delta_coalescer.flush()
                     if self._active_assistant is not None:
                         self._active_assistant.finish()
                     self._active_assistant = None
 
                 elif event_type == "error":
+                    self._delta_coalescer.flush()
                     error_text = str(event.get("error", "unknown error"))
                     await self._add_error_message(error_text)
 
                 elif event_type == "done":
+                    self._delta_coalescer.flush()
                     stop = event.get("stop_reason", "")
                     turns = event.get("turns", 0)
                     if stop == "max_turns":
@@ -776,8 +1137,11 @@ class DuhApp(App[int]):
                     await self._add_error_message(f"Context blocked: {msg}")
 
         except asyncio.CancelledError:
-            pass
+            # Flush pending deltas so no characters are lost on
+            # cancellation (ADR-073 Wave 3 #13 invariant).
+            self._delta_coalescer.flush()
         except Exception as exc:
+            self._delta_coalescer.flush()
             _log.exception("Query error: %s", exc)
             # Show the error prominently — don't swallow it
             error_msg = str(exc)
@@ -791,6 +1155,9 @@ class DuhApp(App[int]):
                 error_msg = f"Request timed out: {error_msg}\n\nThe API took too long to respond. Try again."
             await self._add_error_message(error_msg)
         finally:
+            # Final safety-net flush — guarantees no character is left
+            # in the coalescer after the worker exits.
+            self._delta_coalescer.flush()
             # Update token counts from engine
             try:
                 from duh.kernel.tokens import estimate_cost
@@ -1084,6 +1451,8 @@ def run_tui(args: argparse.Namespace) -> int:
         resumed_messages=_resumed_for_display,
         cwd=cwd,
         approval_label=_approval_label,
+        # ADR-073 Wave 3 task 12: transcript virtualization cap.
+        max_mounted_messages=getattr(app_config, "tui_max_mounted_messages", 500),
     )
 
     # ADR-066 P1: Wire TUIApprover now that we have the app instance.

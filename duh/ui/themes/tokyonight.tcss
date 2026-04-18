@@ -1,0 +1,26 @@
+/* tokyonight — modern vibrant dark theme.
+ *
+ * Backed by Textual's ``tokyo-night`` registered theme.  The widget
+ * accents below favour the bright blue/purple highlight palette.
+ */
+
+.message-user {
+    background: $surface;
+    border-left: thick $primary;
+}
+
+.message-assistant {
+    background: $surface;
+    border-left: thick $accent;
+}
+
+.tool-call-widget {
+    background: $panel;
+    border-left: thick $warning;
+}
+
+.welcome-banner {
+    background: $panel;
+    border: tall $primary;
+    color: $text;
+}

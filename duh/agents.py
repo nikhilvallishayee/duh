@@ -42,12 +42,18 @@ AGENT_PROMPTS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 AGENT_TYPE_DEFAULTS: dict[str, str] = {
-    "general": "inherit",   # use parent's model
-    "coder": "sonnet",      # balanced speed/quality
-    "researcher": "haiku",  # fast and cheap for search
-    "planner": "opus",      # complex reasoning
-    "reviewer": "sonnet",   # code review needs balanced quality
-    "subagent": "inherit",  # delegated tasks inherit parent model
+    # Default every agent type to ``inherit`` so sub-agents use the parent's
+    # currently-active model (and provider). Historically these used the
+    # Anthropic aliases ``haiku``/``sonnet``/``opus``, which 404 when the
+    # parent is running on Gemini/Groq/Ollama (no such model names exist
+    # there). Users who want the older per-type split can still pass it
+    # explicitly via the ``model`` field in each Swarm task.
+    "general":    "inherit",
+    "coder":      "inherit",
+    "researcher": "inherit",
+    "planner":    "inherit",
+    "reviewer":   "inherit",
+    "subagent":   "inherit",
 }
 
 
@@ -100,12 +106,15 @@ AGENT_TOOL_SCHEMA: dict[str, Any] = {
         },
         "model": {
             "type": "string",
-            "enum": ["haiku", "sonnet", "opus", "inherit"],
+            "enum": ["small", "medium", "large", "inherit"],
             "description": (
-                "Model for the subagent. 'inherit' (or omitted) uses the "
-                "agent type's default: general=inherit, coder=sonnet, "
-                "researcher=haiku, planner=opus."
+                "Size tier for the sub-agent, resolved per-provider. "
+                "'small' = fast/cheap (Haiku, Flash, Llama-8B, Qwen-1.5B); "
+                "'medium' = default (Sonnet, Pro, Llama-70B, Qwen-7B); "
+                "'large' = most capable (Opus, Pro, DeepSeek-V2); "
+                "'inherit' (default) uses the parent's current model."
             ),
+            "default": "inherit",
         },
     },
     "required": ["prompt"],
@@ -126,16 +135,28 @@ class AgentResult:
         return bool(self.error)
 
 
-def _resolve_model(model: str, agent_type: str) -> str:
+def _resolve_model(model: str, agent_type: str, parent_model: str = "") -> str:
     """Resolve the effective model name for a subagent.
 
-    Priority: explicit model > agent type default > inherit (empty string).
-    'inherit' or '' means: use the parent's deps/model unchanged.
+    Priority:
+      1. Explicit ``model`` (if a tier like ``"small"``, a literal like
+         ``"claude-haiku-4-5"``, or the sentinel ``"inherit"``).
+      2. The agent-type default from :data:`AGENT_TYPE_DEFAULTS` (currently
+         all ``"inherit"``).
+      3. ``parent_model`` when the effective selection is ``"inherit"`` or
+         empty — the sub-agent tracks whatever the parent is running.
+
+    Tier aliases (``small`` / ``medium`` / ``large``) are resolved against
+    ``parent_model``'s provider via
+    :func:`duh.providers.registry.resolve_agent_tier`.
     """
+    from duh.providers.registry import resolve_agent_tier
+
     effective = model or AGENT_TYPE_DEFAULTS.get(agent_type, "inherit")
-    if effective == "inherit":
-        return ""
-    return effective
+    if effective == "inherit" or effective == "":
+        return parent_model
+    # Delegate tier / literal-passthrough to the registry helper.
+    return resolve_agent_tier(effective, parent_model)
 
 
 async def run_agent(
@@ -143,6 +164,7 @@ async def run_agent(
     prompt: str,
     agent_type: str = "general",
     model: str = "",
+    parent_model: str = "",
     deps: Any = None,
     tools: list[Any] | None = None,
     cwd: str = ".",
@@ -156,9 +178,15 @@ async def run_agent(
     Args:
         prompt: The task for the agent.
         agent_type: One of the built-in agent types.
-        model: Model override ('haiku', 'sonnet', 'opus', 'inherit', or '').
-            Empty string uses the agent type's default. 'inherit' uses
-            the parent's model unchanged.
+        model: Tier or literal model for the subagent. One of
+            ``"small"`` / ``"medium"`` / ``"large"`` / ``"inherit"`` (tiers
+            resolved per-provider against *parent_model*), or a literal
+            model name (``"claude-haiku-4-5"``, ``"gemini-2.5-pro"``, …).
+            Empty string + ``"inherit"`` both mean "use parent's model".
+        parent_model: The model the parent Engine is currently running.
+            Required to resolve tier aliases into concrete per-provider
+            model names. When omitted, tiers fall through to an empty
+            string (the Engine then resorts to provider defaults).
         deps: Deps instance (call_model, run_tool, approve, etc.).
         tools: Tool instances. None = use whatever deps provides.
         cwd: Working directory for the agent.
@@ -171,7 +199,7 @@ async def run_agent(
     from duh.kernel.messages import Message
 
     agent_def = AgentDef.from_type(agent_type)
-    resolved_model = _resolve_model(model, agent_type)
+    resolved_model = _resolve_model(model, agent_type, parent_model)
 
     config = EngineConfig(
         model=resolved_model,

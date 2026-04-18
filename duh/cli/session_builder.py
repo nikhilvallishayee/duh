@@ -647,12 +647,19 @@ class SessionBuilder:
         self,
         tools: list[Any],
         deps: Any,
+        parent_model: Any = "",
     ) -> None:
-        """Inject parent deps + tool list into AgentTool/SwarmTool instances."""
+        """Inject parent deps + tool list into AgentTool/SwarmTool instances.
+
+        ``parent_model`` may be a string (static snapshot) or a callable
+        getter — the latter lets ``/model`` switches at runtime flow through
+        to tier resolution (``small`` / ``medium`` / ``large``).
+        """
         for t in tools:
             if getattr(t, "name", "") in ("Agent", "Swarm"):
                 t._parent_deps = deps
                 t._parent_tools = tools
+                t._parent_model = parent_model
 
     def _build_structured_logger(self) -> Any:
         if getattr(self.args, "log_json", False) or os.environ.get(
@@ -822,7 +829,10 @@ class SessionBuilder:
             compactor=compactor,
             hook_registry=hook_registry,
         )
-        self._patch_child_agent_tools(tools, deps)
+        # Initial patch with a static model snapshot; we re-patch below with
+        # a live getter once the Engine exists so /model switches propagate
+        # to tier resolution (small/medium/large).
+        self._patch_child_agent_tools(tools, deps, parent_model=model)
 
         # Engine
         engine_config = self._build_engine_config(
@@ -842,6 +852,11 @@ class SessionBuilder:
         # ToolContext. Using a lambda so /model switches are picked up live.
         if hasattr(executor, "get_current_model"):
             executor.get_current_model = lambda: engine._config.model
+        # Re-patch agent tools with a live getter so tier resolution
+        # (small/medium/large) tracks /model switches mid-session.
+        for t in tools:
+            if getattr(t, "name", "") in ("Agent", "Swarm"):
+                t._parent_model = lambda: engine._config.model
 
         # Optional session_id override (print-mode)
         session_id = (

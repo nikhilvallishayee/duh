@@ -91,6 +91,111 @@ def get_default_model(provider: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Sub-agent model tier resolution
+# ---------------------------------------------------------------------------
+#
+# The AgentTool / SwarmTool schema exposes generic tiers (``small`` /
+# ``medium`` / ``large`` / ``inherit``) instead of Anthropic-specific aliases
+# (``haiku`` / ``sonnet`` / ``opus``). At invocation time the tier is resolved
+# against the parent's *current* provider so the sub-agent stays on a model
+# that provider actually serves — no more 404s when the parent runs on
+# Gemini/Groq/Ollama and the child asks for ``haiku``.
+
+#
+# Last verified 2026-04-19 against live /models endpoints where the
+# maintainer had API keys: Gemini + Groq + Ollama are probed-live; Anthropic
+# and OpenAI entries are conservative pinned versions (no active keys on
+# hand to verify the April 2026 4.7 / 5.4 flagship releases). Upgrade path:
+# run ``gh workflow run model-drift-check`` — or just
+# ``curl $PROVIDER_MODELS_URL | jq`` — to bump these when newer keys exist.
+
+PROVIDER_TIER_MODELS: dict[str, dict[str, str]] = {
+    # CONSERVATIVE — verify claude-opus-4-7 / claude-haiku-4-5 via /v1/models
+    # before promoting. 4-6 entries confirmed present throughout 2026.
+    "anthropic": {
+        "small":  "claude-haiku-4-5",
+        "medium": "claude-sonnet-4-6",
+        "large":  "claude-opus-4-6",
+    },
+    # CONSERVATIVE — gpt-5.4 / gpt-5.4-pro released March 2026 per OpenAI
+    # announcements but not live-verified here. Upgrade once keys are probed.
+    "openai": {
+        "small":  "gpt-4o-mini",
+        "medium": "gpt-4o",
+        "large":  "o1",
+    },
+    # LIVE-VERIFIED 2026-04-19 via generativelanguage.googleapis.com/v1beta.
+    # 3.1-pro-preview reports 1M input tokens and supports generateContent.
+    "gemini": {
+        "small":  "gemini-2.5-flash",
+        "medium": "gemini-2.5-pro",
+        "large":  "gemini-3.1-pro-preview",
+    },
+    # LIVE-VERIFIED 2026-04-19 via api.groq.com/openai/v1/models.
+    # gpt-oss-120b is OpenAI's open-weights 120B hosted on Groq infra —
+    # the strongest reasoning model Groq serves.
+    "groq": {
+        "small":  "llama-3.1-8b-instant",
+        "medium": "llama-3.3-70b-versatile",
+        "large":  "openai/gpt-oss-120b",
+    },
+    # Local / Ollama. Pull with ``ollama pull <model>`` first.
+    "ollama": {
+        "small":  "qwen2.5-coder:1.5b",
+        "medium": "qwen2.5-coder:7b",
+        "large":  "deepseek-coder-v2:lite",
+    },
+    # litellm fallback keeps the ``gemini/`` namespace prefix.
+    "litellm": {
+        "small":  "gemini/gemini-2.5-flash",
+        "medium": "gemini/gemini-2.5-pro",
+        "large":  "gemini/gemini-3.1-pro-preview",
+    },
+}
+
+TIER_ALIASES: set[str] = {"small", "medium", "large", "inherit"}
+
+
+def resolve_agent_tier(tier: str, parent_model: str) -> str:
+    """Map a generic tier to a concrete model based on parent's provider.
+
+    - ``""`` or ``"inherit"`` → return *parent_model* unchanged so the
+      sub-agent runs on whatever the parent is currently using.
+    - ``"small"`` / ``"medium"`` / ``"large"`` → look up in
+      :data:`PROVIDER_TIER_MODELS` for the parent's inferred provider; fall
+      back to *parent_model* and log an actionable warning when the provider
+      is unknown or the tier is missing.
+    - Any other value → treated as a literal model name (backwards compat
+      for callers that still pass ``"claude-haiku-4-5"`` or similar).
+    """
+    if not tier or tier == "inherit":
+        return parent_model
+    if tier in TIER_ALIASES:
+        provider = infer_provider_from_model(parent_model)
+        if provider is None:
+            _logger.warning(
+                "Cannot resolve tier %r for provider 'unknown': no tier "
+                "mapping. Using parent model %r.",
+                tier,
+                parent_model,
+            )
+            return parent_model
+        tier_map = PROVIDER_TIER_MODELS.get(provider)
+        if tier_map is None or tier not in tier_map:
+            _logger.warning(
+                "Cannot resolve tier %r for provider %r: no tier mapping. "
+                "Using parent model %r.",
+                tier,
+                provider,
+                parent_model,
+            )
+            return parent_model
+        return tier_map[tier]
+    # Literal model name — pass through unchanged.
+    return tier
+
+
+# ---------------------------------------------------------------------------
 # Provider-prefix map — authoritative
 # ---------------------------------------------------------------------------
 #

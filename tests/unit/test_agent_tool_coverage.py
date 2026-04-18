@@ -110,6 +110,7 @@ class TestAgentToolCall:
             prompt="say hello",
             agent_type="general",
             model="",
+            parent_model="",
             deps=tool._parent_deps,
             tools=[],
         )

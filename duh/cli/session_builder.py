@@ -838,6 +838,10 @@ class SessionBuilder:
             session_store=store,
             structured_logger=structured_logger,
         )
+        # Surface the current model to tools (e.g. ReadTool size guard) via
+        # ToolContext. Using a lambda so /model switches are picked up live.
+        if hasattr(executor, "get_current_model"):
+            executor.get_current_model = lambda: engine._config.model
 
         # Optional session_id override (print-mode)
         session_id = (

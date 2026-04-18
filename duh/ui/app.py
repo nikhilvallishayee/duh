@@ -1377,6 +1377,9 @@ def run_tui(args: argparse.Namespace) -> int:
     )
 
     engine = Engine(deps=deps, config=engine_config, session_store=store)
+    # Surface the current model to tools (e.g. ReadTool size guard) via
+    # ToolContext. Using a lambda so /model switches are picked up live.
+    executor.get_current_model = lambda: engine._config.model
 
     # --- Session resume (--continue / --resume) ---
     resume_id = getattr(args, "resume", None)

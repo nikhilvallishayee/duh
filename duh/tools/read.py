@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from duh.kernel.file_size_guard import check_file_size
 from duh.kernel.tool import MAX_TOOL_OUTPUT, ToolContext, ToolResult
 from duh.kernel.untrusted import TaintSource, UntrustedStr
 from duh.security.trifecta import Capability
@@ -119,6 +120,29 @@ class ReadTool:
                 ),
                 is_error=True,
             )
+
+        # --- Context-window size guard (ADR: file size vs model context) ---
+        # When a model is known and the user is NOT explicitly slicing the
+        # file, refuse reads that would blow more than 50% of the context
+        # window. This surfaces in all three UIs via ``output``; we return
+        # is_error=False because it is an informational skip, not a failure.
+        user_sliced = offset > 0 or limit is not None
+        if context.model and not user_sliced and file_size > 0:
+            decision = check_file_size(
+                str(path), context.model, size_bytes=file_size
+            )
+            if not decision.allowed:
+                return ToolResult(
+                    output=decision.reason,
+                    is_error=False,
+                    metadata={
+                        "skipped_due_to_size": True,
+                        "estimated_tokens": decision.estimated_tokens,
+                        "budget_tokens": decision.budget_tokens,
+                        "file_size_bytes": file_size,
+                        "model": context.model,
+                    },
+                )
 
         # --- Jupyter notebook rendering ---
         if path.suffix == ".ipynb":

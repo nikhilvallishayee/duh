@@ -145,6 +145,10 @@ async def run_batch(args: argparse.Namespace) -> int:
         max_turns=max_turns,
     )
 
+    # Surface the current model to tools (e.g. ReadTool size guard).  In
+    # batch mode model is fixed for the run, so a simple closure suffices.
+    executor.get_current_model = lambda: engine_config.model
+
     # --- Process each prompt ---
     worst_exit = exit_codes.SUCCESS
     total = len(prompts)

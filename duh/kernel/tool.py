@@ -87,6 +87,10 @@ class ToolContext:
     tool_name: str = ""
     input_obj: dict[str, Any] = field(default_factory=dict)
     confirm_token: str | None = None
+    # Current model name — used by tools that need to reason about the active
+    # model's context window (e.g. file-size guard in ReadTool). ``None``
+    # means "not supplied"; size-aware tools MUST degrade gracefully then.
+    model: str | None = None
 
 
 # ---------------------------------------------------------------------------

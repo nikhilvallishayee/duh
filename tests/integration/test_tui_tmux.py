@@ -20,9 +20,7 @@ import time
 
 import pytest
 
-pytest.importorskip("libtmux", reason="tui-e2e extras not installed")
-
-from tests.integration.tmux_helpers import (  # noqa: E402
+from tests.integration.tmux_helpers import (
     capture_pane,
     cleanup,
     send_keys,

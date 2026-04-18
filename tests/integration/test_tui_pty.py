@@ -21,12 +21,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pexpect
 import pytest
 
-pexpect = pytest.importorskip("pexpect", reason="tui-e2e extras not installed")
-pytest.importorskip("pyte", reason="tui-e2e extras not installed")
-
-from tests.integration.pty_helpers import (  # noqa: E402
+from tests.integration.pty_helpers import (
     drain_until_eof,
     read_screen,
     screen_display_hash,

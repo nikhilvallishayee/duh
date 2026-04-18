@@ -102,13 +102,108 @@ _GPT_4O_MINI = ModelCapabilities(
     context_window=128_000,
 )
 
-_GEMINI = ModelCapabilities(
+_GEMINI_25_PRO = ModelCapabilities(
+    supports_tools=True,
+    supports_thinking=True,
+    supports_vision=True,
+    supports_cache_control=True,
+    max_output_tokens=65_536,
+    context_window=2_000_000,
+)
+
+_GEMINI_25_FLASH = ModelCapabilities(
+    supports_tools=True,
+    supports_thinking=True,
+    supports_vision=True,
+    supports_cache_control=True,
+    max_output_tokens=65_536,
+    context_window=1_048_576,
+)
+
+_GEMINI_20_FLASH = ModelCapabilities(
     supports_tools=True,
     supports_thinking=False,
     supports_vision=True,
     supports_cache_control=False,
     max_output_tokens=8192,
-    context_window=1_000_000,
+    context_window=1_048_576,
+)
+
+_GEMINI_15_PRO = ModelCapabilities(
+    supports_tools=True,
+    supports_thinking=False,
+    supports_vision=True,
+    supports_cache_control=False,
+    max_output_tokens=8192,
+    context_window=2_000_000,
+)
+
+_GEMINI_15_FLASH = ModelCapabilities(
+    supports_tools=True,
+    supports_thinking=False,
+    supports_vision=True,
+    supports_cache_control=False,
+    max_output_tokens=8192,
+    context_window=1_048_576,
+)
+
+# Groq — all models served with 128K context
+_GROQ_LLAMA_70B = ModelCapabilities(
+    supports_tools=True,
+    supports_thinking=False,
+    supports_vision=False,
+    supports_cache_control=False,
+    max_output_tokens=32_768,
+    context_window=128_000,
+)
+
+_GROQ_LLAMA_8B = ModelCapabilities(
+    supports_tools=True,
+    supports_thinking=False,
+    supports_vision=False,
+    supports_cache_control=False,
+    max_output_tokens=8192,
+    context_window=128_000,
+)
+
+# Qwen 2.5 family (Ollama local) — 128K native
+_QWEN_25 = ModelCapabilities(
+    supports_tools=True,
+    supports_thinking=False,
+    supports_vision=False,
+    supports_cache_control=False,
+    max_output_tokens=8192,
+    context_window=128_000,
+)
+
+# Qwen 2.5 Coder 1.5B — smaller context (32K native)
+_QWEN_25_SMALL = ModelCapabilities(
+    supports_tools=True,
+    supports_thinking=False,
+    supports_vision=False,
+    supports_cache_control=False,
+    max_output_tokens=4096,
+    context_window=32_000,
+)
+
+# DeepSeek Coder V2 Lite — 128K native
+_DEEPSEEK_CODER_V2 = ModelCapabilities(
+    supports_tools=True,
+    supports_thinking=False,
+    supports_vision=False,
+    supports_cache_control=False,
+    max_output_tokens=8192,
+    context_window=128_000,
+)
+
+# Llama 3.2 (local via Ollama) — 128K
+_LLAMA_32 = ModelCapabilities(
+    supports_tools=True,
+    supports_thinking=False,
+    supports_vision=False,
+    supports_cache_control=False,
+    max_output_tokens=8192,
+    context_window=128_000,
 )
 
 _OLLAMA_DEFAULT = ModelCapabilities(
@@ -144,8 +239,31 @@ _PREFIX_TABLE: list[tuple[str, ModelCapabilities]] = [
     # OpenAI
     ("gpt-4o-mini", _GPT_4O_MINI),
     ("gpt-4o", _GPT_4O),
-    # Gemini
-    ("gemini", _GEMINI),
+    # Gemini — longer prefixes first so 2.5-pro beats 2.5 and gemini
+    ("gemini/gemini-2.5-pro", _GEMINI_25_PRO),
+    ("gemini/gemini-2.5-flash", _GEMINI_25_FLASH),
+    ("gemini/gemini-2.0-flash", _GEMINI_20_FLASH),
+    ("gemini/gemini-1.5-pro", _GEMINI_15_PRO),
+    ("gemini/gemini-1.5-flash", _GEMINI_15_FLASH),
+    ("gemini-2.5-pro", _GEMINI_25_PRO),
+    ("gemini-2.5-flash", _GEMINI_25_FLASH),
+    ("gemini-2.0-flash", _GEMINI_20_FLASH),
+    ("gemini-1.5-pro", _GEMINI_15_PRO),
+    ("gemini-1.5-flash", _GEMINI_15_FLASH),
+    ("gemini", _GEMINI_20_FLASH),  # generic fallback (1M, reasonable default)
+    # Groq (via LiteLLM) — 128K context across all models
+    ("groq/llama-3.3-70b", _GROQ_LLAMA_70B),
+    ("groq/llama-3.1-70b", _GROQ_LLAMA_70B),
+    ("groq/llama-3.1-8b", _GROQ_LLAMA_8B),
+    ("groq/", _GROQ_LLAMA_70B),  # sensible default for unknown Groq models
+    # Ollama-local — longer/specific prefixes before generic substrings
+    ("qwen2.5-coder:1.5b", _QWEN_25_SMALL),
+    ("qwen2.5-coder", _QWEN_25),
+    ("qwen2.5:1.5b", _QWEN_25_SMALL),
+    ("qwen2.5", _QWEN_25),
+    ("deepseek-coder-v2", _DEEPSEEK_CODER_V2),
+    ("llama3.2", _LLAMA_32),
+    ("llama3.3", _LLAMA_32),
 ]
 
 # ── Substring fallbacks (for Ollama / local models) ─────────────────

@@ -267,6 +267,9 @@ async def run_stream_json_mode(args: argparse.Namespace) -> int:
         trifecta_acknowledged=True,  # SDK sessions are always explicit
     )
     engine = Engine(deps=deps, config=engine_config)
+    # Surface the current model to tools (e.g. ReadTool size guard) via
+    # ToolContext. Using a lambda so /model switches are picked up live.
+    executor.get_current_model = lambda: engine._config.model
     session_id = engine.session_id
 
     # --- Read stdin NDJSON ---

@@ -92,11 +92,62 @@ class TestGetCapabilities:
         assert caps.context_window == 128_000
         assert caps.supports_tools is True
 
-    def test_gemini(self) -> None:
+    def test_gemini_15_pro(self) -> None:
         caps = get_capabilities("gemini-1.5-pro")
-        assert caps.context_window == 1_000_000
+        assert caps.context_window == 2_000_000
         assert caps.supports_tools is True
         assert caps.supports_vision is True
+
+    def test_gemini_15_flash(self) -> None:
+        caps = get_capabilities("gemini-1.5-flash")
+        assert caps.context_window == 1_048_576
+        assert caps.supports_tools is True
+
+    def test_gemini_20_flash(self) -> None:
+        caps = get_capabilities("gemini/gemini-2.0-flash-exp")
+        assert caps.context_window == 1_048_576
+        assert caps.supports_tools is True
+
+    def test_gemini_25_pro(self) -> None:
+        caps = get_capabilities("gemini/gemini-2.5-pro")
+        assert caps.context_window == 2_000_000
+        assert caps.supports_thinking is True
+        assert caps.supports_cache_control is True
+
+    def test_gemini_25_flash(self) -> None:
+        caps = get_capabilities("gemini/gemini-2.5-flash")
+        assert caps.context_window == 1_048_576
+        assert caps.supports_thinking is True
+
+    def test_groq_llama_70b(self) -> None:
+        caps = get_capabilities("groq/llama-3.3-70b-versatile")
+        assert caps.context_window == 128_000
+        assert caps.supports_tools is True
+
+    def test_groq_llama_8b(self) -> None:
+        caps = get_capabilities("groq/llama-3.1-8b-instant")
+        assert caps.context_window == 128_000
+
+    def test_groq_unknown_falls_back(self) -> None:
+        caps = get_capabilities("groq/some-new-model")
+        assert caps.context_window == 128_000
+
+    def test_qwen25_coder_7b(self) -> None:
+        caps = get_capabilities("qwen2.5-coder:7b")
+        assert caps.context_window == 128_000
+
+    def test_qwen25_coder_1_5b_small(self) -> None:
+        """1.5B variant correctly gets the 32K small-context entry."""
+        caps = get_capabilities("qwen2.5-coder:1.5b")
+        assert caps.context_window == 32_000
+
+    def test_deepseek_coder_v2(self) -> None:
+        caps = get_capabilities("deepseek-coder-v2:lite")
+        assert caps.context_window == 128_000
+
+    def test_llama32_local(self) -> None:
+        caps = get_capabilities("llama3.2:3b")
+        assert caps.context_window == 128_000
 
     def test_ollama_model(self) -> None:
         caps = get_capabilities("ollama/llama3:8b")
@@ -119,9 +170,10 @@ class TestGetCapabilities:
         caps = get_capabilities("mistral-7b")
         assert caps.context_window == 32_000
 
-    def test_deepseek_substring(self) -> None:
+    def test_deepseek_coder_v2_uses_128k_not_default(self) -> None:
+        """deepseek-coder-v2 now has a dedicated 128K entry (was 32K default)."""
         caps = get_capabilities("deepseek-coder-v2")
-        assert caps.context_window == 32_000
+        assert caps.context_window == 128_000
 
     def test_unknown_model_returns_default(self) -> None:
         caps = get_capabilities("some-unknown-model-v42")

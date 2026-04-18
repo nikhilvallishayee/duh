@@ -39,10 +39,23 @@ class NativeExecutor:
     Implements the ToolExecutor port contract.
     """
 
-    def __init__(self, tools: list[Any] | None = None, *, cwd: str = ".", redact: bool = False):
+    def __init__(
+        self,
+        tools: list[Any] | None = None,
+        *,
+        cwd: str = ".",
+        redact: bool = False,
+        get_current_model: Any = None,
+    ):
         self._tools: dict[str, Any] = {}
         self._cwd = cwd
         self._redact = redact
+        # Optional callable returning the current model name (or ``None``).
+        # Used by size-aware tools like ReadTool to check files against the
+        # active model's context window.  Can also be set after construction
+        # once the engine is wired up:
+        #     executor.get_current_model = lambda: engine._config.model
+        self.get_current_model = get_current_model
         self.file_tracker = FileTracker()
         self.undo_stack = UndoStack()
         if tools:
@@ -84,10 +97,18 @@ class NativeExecutor:
         if tool is None:
             raise KeyError(f"Tool not found: {tool_name}")
 
+        current_model: str | None = None
+        if self.get_current_model is not None:
+            try:
+                current_model = self.get_current_model()
+            except Exception:
+                current_model = None
+
         ctx = ToolContext(
             cwd=self._cwd,
             tool_use_id=tool_use_id,
             session_id=getattr(context, "session_id", "") if context else "",
+            model=current_model,
         )
 
         # Check tool-level permissions

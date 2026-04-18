@@ -267,6 +267,27 @@ class ToolCallWidget(Widget):
         await app.mount(w)
         # … later …
         w.set_result("total 64\\n...", is_error=False)
+
+    Animated spinner (ADR-073 Wave 3 #11)
+    -------------------------------------
+    While the widget is running (``_tool_running`` is ``True`` and no
+    result has arrived yet), a :class:`~textual.timer.Timer` started in
+    :meth:`on_mount` cycles through :data:`_SPINNER_FRAMES` every 80 ms.
+    The glyph is updated *inline* into the "running…" label so the TUI
+    visibly breathes while tool calls execute.
+
+    Race-free behaviour:
+        * If :meth:`set_result` is called *before* :meth:`on_mount`
+          (possible because Textual composition is async), ``_tool_running``
+          flips to ``False`` first, and :meth:`on_mount` then sees that
+          and does not start the timer.
+        * If :meth:`set_result` is called *after* :meth:`on_mount`, the
+          timer is explicitly stopped inside :meth:`set_result`.
+
+    Output-style awareness:
+        * :attr:`OutputStyle.CONCISE` — no animation (save render cycles).
+        * :attr:`OutputStyle.DEFAULT` / :attr:`OutputStyle.VERBOSE` —
+          full 80 ms animation.
     """
 
     DEFAULT_CSS = """
@@ -276,11 +297,16 @@ class ToolCallWidget(Widget):
     }
     """
 
+    # 80 ms per frame = 12.5 FPS — matches the REPL's Braille spinner and
+    # Textual's default 60 FPS render budget with room to spare.
+    _SPINNER_INTERVAL_S: float = 0.08
+
     def __init__(
         self,
         tool_name: str,
         input: dict[str, Any],
         *,
+        output_style: str = "default",
         name: str | None = None,
         id: str | None = None,
         classes: str | None = None,
@@ -290,7 +316,11 @@ class ToolCallWidget(Widget):
         self._tool_name = tool_name
         self._input = input
         self._result_label: Static | None = None
-        self._running = True
+        self._tool_running = True
+        self._output_style = output_style
+        # Spinner state — set in on_mount, stopped in set_result / on_unmount.
+        self._spinner_timer: Any = None
+        self._spinner_frame_idx = 0
 
     # ------------------------------------------------------------------
     # Compose
@@ -308,6 +338,51 @@ class ToolCallWidget(Widget):
 
     def on_mount(self) -> None:
         self._result_label = self.query_one("#tool-result", Static)
+        # Race guard: if set_result() already fired (pre-mount), _running
+        # is False and the result label has already been populated — do
+        # NOT start the spinner.
+        if not self._tool_running:
+            return
+        # CONCISE style skips animation entirely — one static frame only.
+        if self._output_style == "concise":
+            return
+        # Start the animation timer.  ``set_interval`` returns a Timer we
+        # keep a handle to so ``set_result`` can cancel it.
+        self._spinner_timer = self.set_interval(
+            self._SPINNER_INTERVAL_S, self._advance_spinner,
+        )
+
+    def on_unmount(self) -> None:
+        """Safety net — cancel the timer if the widget is removed before
+        a result arrives (e.g. app teardown mid-tool-call)."""
+        self._stop_spinner()
+
+    # ------------------------------------------------------------------
+    # Spinner animation
+    # ------------------------------------------------------------------
+
+    def _advance_spinner(self) -> None:
+        """Timer callback: cycle to the next Braille frame."""
+        if not self._tool_running or self._result_label is None:
+            # Either the result arrived between ticks, or the widget has
+            # not composed its label yet — skip this tick.
+            return
+        self._spinner_frame_idx = (
+            self._spinner_frame_idx + 1
+        ) % len(_SPINNER_FRAMES)
+        frame = _SPINNER_FRAMES[self._spinner_frame_idx]
+        self._result_label.update(f"{frame} running…")
+
+    def _stop_spinner(self) -> None:
+        """Cancel the spinner timer if one is running.  Idempotent."""
+        timer = self._spinner_timer
+        if timer is None:
+            return
+        self._spinner_timer = None
+        try:
+            timer.stop()
+        except Exception:  # pragma: no cover — defensive
+            pass
 
     # ------------------------------------------------------------------
     # Public API
@@ -342,7 +417,11 @@ class ToolCallWidget(Widget):
             elapsed time is shown next to the status indicator, e.g.
             ``"OK (1.2s)"`` or ``"Error (0.3s)"``.
         """
-        self._running = False
+        self._tool_running = False
+        # Stop the animation the instant a result arrives, whether or not
+        # the result label is composed yet.  (Stopping a never-started
+        # timer is a no-op via the None check in ``_stop_spinner``.)
+        self._stop_spinner()
         if self._result_label is None:
             return
 

@@ -1,0 +1,27 @@
+/* catppuccin-mocha — soothing pastel dark palette.
+ *
+ * Port of OpenCode's catppuccin-mocha variant.  Colours are supplied by
+ * Textual's ``catppuccin-mocha`` registered theme; this file nudges the
+ * message/tool widget accents to match the mauve/rosewater palette.
+ */
+
+.message-user {
+    background: $surface;
+    border-left: thick $accent;
+}
+
+.message-assistant {
+    background: $surface;
+    border-left: thick $success;
+}
+
+.tool-call-widget {
+    background: $panel;
+    border-left: thick $warning;
+}
+
+.welcome-banner {
+    background: $panel;
+    border: tall $accent;
+    color: $text;
+}

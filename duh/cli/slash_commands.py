@@ -907,6 +907,21 @@ class SlashDispatcher:
             sys.stdout.write(f"  {sid:10s} {count:>8d}  {modified}\n")
         return True, model
 
+    def _handle_theme(self, arg: str) -> _HandlerResult:
+        """Theme switching (ADR-073 Wave 3 #10).
+
+        ``/theme`` is only meaningful inside the Textual TUI — the REPL is
+        Rich-rendered so Textual themes do not apply.  The handler prints
+        an informational message when invoked from the REPL; the TUI
+        intercepts ``/theme`` in ``_handle_slash`` *before* reaching the
+        shared dispatcher, so this code path is REPL-only in practice.
+        """
+        sys.stdout.write(
+            "  Themes only apply in the TUI. Launch with 'duh --tui' "
+            "and try /theme there, or press Ctrl+T for the picker.\n"
+        )
+        return True, self.ctx.model
+
     def _handle_exit(self, arg: str) -> _HandlerResult:
         return False, self.ctx.model
 
@@ -973,6 +988,7 @@ SlashDispatcher._HANDLERS = {
     "/health": SlashDispatcher._handle_health,
     "/errors": SlashDispatcher._handle_errors,
     "/audit": SlashDispatcher._handle_audit,
+    "/theme": SlashDispatcher._handle_theme,
     "/clear": SlashDispatcher._handle_clear,
     "/compact": SlashDispatcher._handle_compact,
     "/compact-stats": SlashDispatcher._handle_compact_stats,

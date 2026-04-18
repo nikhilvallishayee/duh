@@ -14,7 +14,11 @@ from __future__ import annotations
 
 import pytest
 
-from tests.snapshots.conftest import SCRIPTS_DIR, SNAPSHOT_TERMINAL_SIZE
+pytest.importorskip(
+    "pytest_textual_snapshot", reason="tui-e2e extras not installed"
+)
+
+from tests.snapshots.conftest import SCRIPTS_DIR, SNAPSHOT_TERMINAL_SIZE  # noqa: E402
 
 
 pytestmark = pytest.mark.snapshot

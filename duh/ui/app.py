@@ -246,9 +246,9 @@ class DuhApp(App[int]):
 
     BINDINGS = [
         Binding("ctrl+b", "toggle_sidebar", "Sidebar", show=True),
-        Binding("ctrl+k", "command_palette", "Commands", show=True),
-        Binding("ctrl+t", "theme_selector", "Theme", show=True),
-        Binding("ctrl+q", "quit", "Quit", show=True),
+        Binding("ctrl+k", "command_palette", "Commands", show=True, priority=True),
+        Binding("ctrl+t", "theme_selector", "Theme", show=True, priority=True),
+        Binding("ctrl+q", "quit", "Quit", show=True, priority=True),
         Binding("escape", "quit", "Quit", show=False),
     ]
 

@@ -417,7 +417,10 @@ class TestGetContextLimit:
         assert get_context_limit("o1") == 200_000
 
     def test_unknown_model_returns_default(self):
-        assert get_context_limit("totally-unknown-xyz") == _DEFAULT_CONTEXT_LIMIT
+        """Unknown model falls back to the unified model_caps default (200K)."""
+        # After the tokens → model_caps unification, unknown models resolve
+        # via ModelCapabilities() default (200K, safer than the old 100K).
+        assert get_context_limit("totally-unknown-xyz") == 200_000
 
     def test_pattern_match_claude_variant(self):
         assert get_context_limit("claude-sonnet-99") == 200_000
@@ -528,7 +531,7 @@ class TestAutoCompaction:
             pass
 
     async def test_compaction_with_unknown_model_uses_default(self):
-        """Unknown model falls back to 100K limit for compaction threshold."""
+        """Unknown model falls back to unified model_caps default (200K)."""
         from typing import AsyncGenerator
         from duh.kernel.deps import Deps
         from duh.kernel.engine import Engine, EngineConfig
@@ -548,16 +551,16 @@ class TestAutoCompaction:
         deps = Deps(call_model=fake_model, compact=fake_compact)
         engine = Engine(deps=deps, config=EngineConfig(model="unknown-model-xyz"))
 
-        # 100K default, 80% = 80K tokens. Need > 320K chars
-        big_text = "x" * 330_000  # ~82.5K tokens
+        # Unified default is 200K; 80% = 160K tokens → need > 640K chars.
+        big_text = "x" * 660_000  # ~165K tokens
         engine._messages.append(Message(role="user", content=big_text))
 
         async for _ in engine.run("hi"):
             pass
 
         assert len(compact_called_with) == 1
-        # Default 100K * 0.80 = 80,000
-        assert compact_called_with[0][1] == int(100_000 * 0.80)
+        # Default 200K * 0.80 = 160,000
+        assert compact_called_with[0][1] == int(200_000 * 0.80)
 
     async def test_compaction_with_model_override(self):
         """Model passed to run() should be used for context limit, not config model."""

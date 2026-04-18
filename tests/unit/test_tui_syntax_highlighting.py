@@ -202,9 +202,11 @@ class TestNonCodeMarkdown:
 
 @pytest.mark.asyncio
 class TestMessageWidgetIntegration:
-    async def test_assistant_message_uses_highlighted_markdown(self):
-        """Assistant messages must compose a HighlightedMarkdown body
-        so they benefit from code-fence syntax highlighting."""
+    async def test_assistant_message_uses_highlighted_markdown_after_finish(self):
+        """Assistant messages must *eventually* render via
+        :class:`HighlightedMarkdown` so they benefit from code-fence
+        syntax highlighting.  The parse is deferred to ``finish()`` to
+        avoid O(n²) re-parsing during streaming."""
         from duh.ui.app import DuhApp
 
         from unittest.mock import MagicMock
@@ -223,8 +225,13 @@ class TestMessageWidgetIntegration:
         async with app.run_test(size=(120, 40)):
             mw = MessageWidget(role="assistant", text="# hi\n\n```python\nprint(1)\n```")
             await app.query_one("#message-log").mount(mw)
-            # After mount, `_md_body` must be a HighlightedMarkdown instance.
-            assert hasattr(mw, "_md_body")
+            # During streaming (pre-finish), body is a plain Static —
+            # NOT a HighlightedMarkdown.  This is the optimization.
+            assert mw._md_body is None
+            assert isinstance(mw._body, Static)
+            # After finish(), the final markdown parse runs once and
+            # _md_body is populated.
+            mw.finish()
             assert isinstance(mw._md_body, HighlightedMarkdown)
             assert mw._md_body.markdown_source == "# hi\n\n```python\nprint(1)\n```"
 
@@ -254,9 +261,10 @@ class TestMessageWidgetIntegration:
             assert not isinstance(uw._body, HighlightedMarkdown)
             assert isinstance(uw._body, Static)
 
-    async def test_streaming_append_updates_highlighted_body(self):
-        """Incremental ``append()`` calls must re-render the Rich
-        markdown so syntax highlighting appears as the assistant streams."""
+    async def test_streaming_append_defers_markdown_until_finish(self):
+        """Incremental ``append()`` calls must accumulate raw text in
+        a plain Static (no parse) — and the full Rich markdown parse
+        runs exactly once at :meth:`finish`."""
         from duh.ui.app import DuhApp
         from unittest.mock import MagicMock
 
@@ -274,9 +282,15 @@ class TestMessageWidgetIntegration:
         async with app.run_test(size=(120, 40)):
             mw = MessageWidget(role="assistant", text="")
             await app.query_one("#message-log").mount(mw)
-            # Stream three deltas; final source must be the concatenation.
+            # Stream three deltas; during streaming body is a plain Static
+            # and no HighlightedMarkdown has been constructed.
             mw.append("```python\n")
             mw.append("def hi():\n")
             mw.append("    pass\n```\n")
             assert mw._content == "```python\ndef hi():\n    pass\n```\n"
+            assert mw._md_body is None
+            assert isinstance(mw._body, Static)
+            # finish() promotes to HighlightedMarkdown with the full source.
+            mw.finish()
+            assert mw._md_body is not None
             assert mw._md_body.markdown_source == mw._content

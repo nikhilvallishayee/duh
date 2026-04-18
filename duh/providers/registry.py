@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
+import logging
 import os
+import sys
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -23,6 +26,80 @@ OPENAI_CODEX_MODEL_HINTS = ("codex", "gpt-5")
 _MODEL_CACHE_TTL_S = 300
 _MODEL_CACHE: dict[str, tuple[float, list[str]]] = {}
 
+_logger = logging.getLogger("duh.providers")
+
+# Single-shot session warnings / info (ADR-075).
+_LITELLM_DEPRECATION_WARNED = False
+_ADAPTER_STARTUP_LOGGED: set[str] = set()
+
+
+def _module_importable(name: str) -> bool:
+    """True if ``name`` can be imported without actually importing it.
+
+    We check ``sys.modules`` first so tests can simulate "package missing"
+    by setting ``sys.modules[name] = None``.
+    """
+    if name in sys.modules:
+        return sys.modules[name] is not None
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def _google_genai_available() -> bool:
+    return _module_importable("google.genai") or _module_importable("google_genai")
+
+
+def _groq_sdk_available() -> bool:
+    return _module_importable("groq")
+
+
+def _litellm_available() -> bool:
+    return _module_importable("litellm")
+
+
+def is_gemini_model(model: str | None) -> bool:
+    if not model:
+        return False
+    m = model.lower()
+    return m.startswith("gemini/") or m.startswith("gemini-")
+
+
+def is_groq_model(model: str | None) -> bool:
+    if not model:
+        return False
+    m = model.lower()
+    return m.startswith("groq/")
+
+
+def _emit_adapter_startup_log(adapter: str, model: str) -> None:
+    """Emit a single log line per (adapter, model) per session."""
+    key = f"{adapter}:{model}"
+    if key in _ADAPTER_STARTUP_LOGGED:
+        return
+    _ADAPTER_STARTUP_LOGGED.add(key)
+    _logger.info("%s for %s", adapter, model)
+
+
+def emit_litellm_deprecation_warning() -> None:
+    """Emit the deprecation stderr notice once per session."""
+    global _LITELLM_DEPRECATION_WARNED
+    if _LITELLM_DEPRECATION_WARNED:
+        return
+    _LITELLM_DEPRECATION_WARNED = True
+    sys.stderr.write(
+        "[duh] LiteLLM adapter is opt-in fallback. Prefer native providers "
+        "when available (ADR-075).\n"
+    )
+
+
+def _reset_session_state_for_tests() -> None:
+    """Test helper: clear the one-shot session flags."""
+    global _LITELLM_DEPRECATION_WARNED
+    _LITELLM_DEPRECATION_WARNED = False
+    _ADAPTER_STARTUP_LOGGED.clear()
+
 
 @dataclass
 class ProviderBackend:
@@ -40,8 +117,18 @@ class ProviderBackend:
 def infer_provider_from_model(model: str | None) -> str | None:
     if not model:
         return None
-    # litellm convention: model strings with "/" (e.g. "gemini/gemini-2.5-flash",
-    # "bedrock/claude-3-haiku") are litellm model strings.  Check before native
+    # ADR-075: gemini/* and groq/* prefer native adapters when the SDK is
+    # installed; otherwise they fall through to LiteLLM as the opt-in fallback.
+    if is_gemini_model(model):
+        if _google_genai_available():
+            return "gemini"
+        return "litellm"
+    if is_groq_model(model):
+        if _groq_sdk_available():
+            return "groq"
+        return "litellm"
+    # Everything else with a "/" (e.g. "bedrock/claude-3-haiku",
+    # "together_ai/…") is a LiteLLM model string. Check before native
     # providers since a litellm string like "bedrock/claude-3-haiku" would
     # otherwise match the "haiku" keyword for anthropic.
     if "/" in model:
@@ -113,6 +200,10 @@ def connected_providers(check_ollama: Callable[[], bool]) -> list[str]:
         out.append("openai")
     if check_ollama():
         out.append("ollama")
+    if _google_genai_available() and os.environ.get("GEMINI_API_KEY", ""):
+        out.append("gemini")
+    if _groq_sdk_available() and os.environ.get("GROQ_API_KEY", ""):
+        out.append("groq")
     return list(dict.fromkeys(out))
 
 
@@ -263,6 +354,33 @@ ProviderFactory = Callable[[str], Any]
 ProviderFactories = dict[str, ProviderFactory]
 
 
+def _try_native_gemini(model: str) -> Any | None:
+    """Return a GeminiProvider instance if google-genai is importable; else None.
+
+    The adapter module may not exist yet while ADR-075 is rolling out
+    (GeminiProvider is implemented concurrently by another agent). Import
+    is deferred and wrapped so callers don't crash when the file is absent.
+    """
+    if not _google_genai_available():
+        return None
+    try:
+        from duh.adapters.gemini import GeminiProvider  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    return GeminiProvider(model=model)
+
+
+def _try_native_groq(model: str) -> Any | None:
+    """Return a GroqProvider instance if the ``groq`` SDK is importable; else None."""
+    if not _groq_sdk_available():
+        return None
+    try:
+        from duh.adapters.groq import GroqProvider  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    return GroqProvider(model=model)
+
+
 def build_model_backend(
     provider_name: str,
     model: str | None,
@@ -341,14 +459,62 @@ def build_model_backend(
             from duh.adapters.ollama import OllamaProvider
 
             create = lambda m: OllamaProvider(model=m)
+        _emit_adapter_startup_log("Using OllamaProvider (native)", resolved)
         return ProviderBackend("ollama", resolved, create(resolved).stream, auth_mode="local")
+
+    if provider_name == "gemini":
+        resolved = model or "gemini-2.5-flash"
+        create = provider_factories.get("gemini")
+        if create is not None:
+            provider = create(resolved)
+        else:
+            provider = _try_native_gemini(resolved)
+        if provider is None:
+            return ProviderBackend(
+                "gemini",
+                resolved,
+                None,
+                "google-genai is not installed. Install with: pip install 'google-genai'",
+            )
+        _emit_adapter_startup_log("Using GeminiProvider (native)", resolved)
+        return ProviderBackend("gemini", resolved, provider.stream, auth_mode="api_key")
+
+    if provider_name == "groq":
+        resolved = model or "groq/llama-3.3-70b-versatile"
+        create = provider_factories.get("groq")
+        if create is not None:
+            provider = create(resolved)
+        else:
+            provider = _try_native_groq(resolved)
+        if provider is None:
+            return ProviderBackend(
+                "groq",
+                resolved,
+                None,
+                "groq SDK is not installed. Install with: pip install groq",
+            )
+        _emit_adapter_startup_log("Using GroqProvider (native)", resolved)
+        return ProviderBackend("groq", resolved, provider.stream, auth_mode="api_key")
 
     if provider_name == "litellm":
         resolved = model or "gemini/gemini-2.5-flash"
         create = provider_factories.get("litellm")
         if create is None:
+            # ADR-075: litellm is opt-in. Produce a clear error if it's not
+            # installed instead of letting the import explode at stream time.
+            if not _litellm_available():
+                return ProviderBackend(
+                    "litellm",
+                    resolved,
+                    None,
+                    (
+                        f"LiteLLM is required for provider {resolved!r}. "
+                        "Install with: pip install 'duh-cli[litellm]'"
+                    ),
+                )
             from duh.adapters.litellm_provider import LiteLLMProvider
             create = lambda m: LiteLLMProvider(model=m)  # noqa: E731
+        _emit_adapter_startup_log("Using LiteLLM fallback", resolved)
         return ProviderBackend("litellm", resolved, create(resolved).stream, auth_mode="env_vars")
 
     return ProviderBackend(provider_name, model or "", None, f"Unknown provider: {provider_name}")

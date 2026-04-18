@@ -549,6 +549,11 @@ class DuhApp(App[int]):
                 # Route through _add_widget so resumed messages participate
                 # in the virtualization cap (ADR-073 Wave 3 task 12).
                 await self._add_widget(widget)
+                # Resumed messages are historical / complete — promote
+                # assistant bodies from the streaming plain-Static to the
+                # final HighlightedMarkdown so markdown formatting
+                # (headers, code fences) appears immediately.
+                widget.finish()
                 shown += 1
 
             if shown > 0:

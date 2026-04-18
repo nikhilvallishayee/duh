@@ -387,12 +387,27 @@ class TestLiteLLMNotInstalled:
 # ===================================================================
 
 class TestModelStringDetection:
-    def test_slash_model_infers_litellm(self):
-        from duh.providers.registry import infer_provider_from_model
-        assert infer_provider_from_model("gemini/gemini-2.5-flash") == "litellm"
-        assert infer_provider_from_model("bedrock/claude-3-haiku-20240307") == "litellm"
-        assert infer_provider_from_model("together_ai/meta-llama/Llama-3-70b") == "litellm"
-        assert infer_provider_from_model("groq/llama-3.1-8b-instant") == "litellm"
+    def test_slash_model_infers_litellm_when_no_native(self, monkeypatch):
+        """After ADR-075, only non-native slash models go to LiteLLM."""
+        from duh.providers import registry as reg
+        # Force "native SDKs not available" so the fallback path is exercised.
+        monkeypatch.setattr(reg, "_google_genai_available", lambda: False)
+        monkeypatch.setattr(reg, "_groq_sdk_available", lambda: False)
+        assert reg.infer_provider_from_model("gemini/gemini-2.5-flash") == "litellm"
+        assert reg.infer_provider_from_model("bedrock/claude-3-haiku-20240307") == "litellm"
+        assert reg.infer_provider_from_model("together_ai/meta-llama/Llama-3-70b") == "litellm"
+        assert reg.infer_provider_from_model("groq/llama-3.1-8b-instant") == "litellm"
+
+    def test_gemini_and_groq_prefer_native_when_sdk_present(self, monkeypatch):
+        """ADR-075: native adapters win over LiteLLM for gemini/ and groq/ models."""
+        from duh.providers import registry as reg
+        monkeypatch.setattr(reg, "_google_genai_available", lambda: True)
+        monkeypatch.setattr(reg, "_groq_sdk_available", lambda: True)
+        assert reg.infer_provider_from_model("gemini/gemini-2.5-flash") == "gemini"
+        assert reg.infer_provider_from_model("groq/llama-3.1-8b-instant") == "groq"
+        # Non-native slash models still route to LiteLLM.
+        assert reg.infer_provider_from_model("bedrock/claude-3-haiku") == "litellm"
+        assert reg.infer_provider_from_model("together_ai/meta-llama/Llama-3-70b") == "litellm"
 
     def test_native_providers_not_affected(self):
         from duh.providers.registry import infer_provider_from_model
@@ -408,6 +423,8 @@ class TestModelStringDetection:
 
 class TestRegistryIntegration:
     def test_build_model_backend_litellm(self):
+        """LiteLLM backend builds when the SDK is installed (opt-in extras)."""
+        pytest.importorskip("litellm", reason="LiteLLM is opt-in after ADR-075")
         from duh.providers.registry import build_model_backend
         backend = build_model_backend("litellm", "gemini/gemini-2.5-flash")
         assert backend.provider == "litellm"

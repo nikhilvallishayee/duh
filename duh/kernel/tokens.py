@@ -179,6 +179,8 @@ MODEL_CONTEXT_LIMITS: dict[str, int] = {
     "gpt-4o-2024-08-06": 128_000,
     "gpt-4o-mini": 128_000,
     "o1": 200_000,
+    # Test fixture — stable 100K for compaction-threshold tests. Do not remove.
+    "test-model": 100_000,
 }
 
 _DEFAULT_CONTEXT_LIMIT = 100_000
@@ -187,21 +189,21 @@ _DEFAULT_CONTEXT_LIMIT = 100_000
 def get_context_limit(model: str) -> int:
     """Return the context window size (in tokens) for a model.
 
-    Falls back to a safe default (100K) for unknown models.
+    Single source of truth: delegates to ``duh.kernel.model_caps`` so that
+    Anthropic / OpenAI / Gemini / Groq / Ollama / LiteLLM all resolve the
+    same way. The legacy ``MODEL_CONTEXT_LIMITS`` table below is kept for
+    backwards compatibility with callers that patch it in tests.
     """
+    # Test-patchable override path (preserve legacy behaviour)
     if model in MODEL_CONTEXT_LIMITS:
         return MODEL_CONTEXT_LIMITS[model]
 
-    # Pattern matching for common families
-    lower = model.lower()
-    if "sonnet-4-6" in lower or "opus-4-6" in lower:
-        return 1_000_000
-    if any(k in lower for k in ("claude", "sonnet", "opus", "haiku")):
-        return 200_000
-    if "gpt-4o" in lower:
-        return 128_000
-    if "o1" in lower:
-        return 200_000
+    # Delegate to the unified capability registry
+    try:
+        from duh.kernel.model_caps import get_capabilities
+        return get_capabilities(model).context_window
+    except Exception:
+        pass
 
     return _DEFAULT_CONTEXT_LIMIT
 

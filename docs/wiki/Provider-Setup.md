@@ -161,14 +161,47 @@ In `.duh/settings.json`:
 
 ---
 
-## LiteLLM
+## Native vs LiteLLM fallback
 
-LiteLLM is a universal proxy that supports 100+ LLM providers through a unified interface. Use it to connect D.U.H. to any provider LiteLLM supports (Azure, Bedrock, Vertex AI, Together, Groq, etc.).
+As of [ADR-075](../adrs/ADR-075-drop-litellm-native-adapters.md), D.U.H. ships native adapters for every provider that is installed by default. LiteLLM is kept as an **opt-in fallback** for the long tail.
+
+Motivation (see ADR-075 for the full write-up):
+
+- **Supply-chain history**: LiteLLM 1.82.7 / 1.82.8 shipped malicious payloads in March 2026 after the maintainer's PyPI credentials were stolen. Several unrelated RCE / auth-bypass CVEs have followed (CVE-2026-40217, CVE-2026-35029, CVE-2026-35030). D.U.H. now floors LiteLLM at `>=1.83.8` and moves it behind a `[litellm]` extras group so a default install never pulls it in.
+- **Feature fidelity**: native SDKs expose Anthropic `cache_control`, Gemini `thinking_budget` + explicit cache objects, and Groq rate-limit headers. LiteLLM's OpenAI-shaped normalization drops most of these.
+
+### Adapter per provider
+
+| Provider | Adapter | SDK package | Installed by default |
+|----------|---------|-------------|----------------------|
+| Anthropic | `duh/adapters/anthropic.py` (native) | `anthropic` | yes |
+| OpenAI (API key) | `duh/adapters/openai.py` (native) | `openai` | yes |
+| OpenAI (ChatGPT OAuth) | `duh/adapters/openai_chatgpt.py` (native) | `httpx` | yes |
+| Ollama | `duh/adapters/ollama.py` (native) | `httpx` | yes |
+| Gemini | `duh/adapters/gemini.py` (native) | `google-genai` | yes |
+| Groq | `duh/adapters/groq.py` (native) | `groq` | yes |
+| Long-tail (Azure, Bedrock, Vertex, Together, Cohere, Mistral, …) | `duh/adapters/litellm_provider.py` (fallback) | `litellm` | **no** (install `duh-cli[litellm]`) |
+
+Routing (see `duh/providers/registry.py`):
+
+- `gemini/<model>` or `gemini-<model>` → native `GeminiProvider` when `google-genai` is importable; otherwise falls through to LiteLLM.
+- `groq/<model>` → native `GroqProvider` when the `groq` SDK is importable; otherwise LiteLLM.
+- `--provider litellm` is always honored (override), and emits a single stderr deprecation notice per session.
+
+Run `duh doctor` to see which adapters are available in your environment.
+
+---
+
+## LiteLLM (opt-in fallback)
+
+LiteLLM is a universal proxy that supports 100+ LLM providers through a unified interface. As of ADR-075, it is opt-in — use it to connect D.U.H. to any provider without a native adapter (Azure, Bedrock, Vertex AI, Together, Fireworks, Cohere, Mistral, etc.).
 
 ### Setup
 
 ```bash
-pip install litellm
+pip install 'duh-cli[litellm]'
+# or, to install every optional adapter at once:
+pip install 'duh-cli[all]'
 ```
 
 Set the appropriate API key for your underlying provider:

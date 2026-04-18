@@ -20,8 +20,10 @@ def test_audit_handler_unwatched_event_throughput() -> None:
         _audit_handler("some.unwatched.event", ())
     elapsed = time.perf_counter() - start
     per_call_ns = (elapsed / n) * 1e9
-    # Must be under 1000ns per call (CI runners are ~2x slower than M-series)
-    assert per_call_ns < 1000, f"Unwatched event: {per_call_ns:.0f}ns/call exceeds 1000ns"
+    # Must be under 2000ns per call. Local M-series runs ~450ns; CI runners
+    # are 2–4× slower depending on runner contention. 2000 is a safe ceiling
+    # that still fails on a genuine regression (pre-PEP-578 path was 10K+ ns).
+    assert per_call_ns < 2000, f"Unwatched event: {per_call_ns:.0f}ns/call exceeds 2000ns"
 
 
 def test_audit_handler_watched_event_throughput() -> None:

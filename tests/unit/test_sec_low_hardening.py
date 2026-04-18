@@ -64,7 +64,11 @@ class TestDependencyUpperBounds:
 
     @pytest.mark.parametrize(
         "dep",
-        ["anthropic", "httpx", "openai", "litellm", "mcp"],
+        # ADR-075: litellm moved to the [litellm] extras group (see
+        # ``test_litellm_extras_has_safe_floor_and_upper_bound`` below).
+        # The core list now includes google-genai + groq which replace
+        # LiteLLM for the default install path.
+        ["anthropic", "httpx", "openai", "google-genai", "groq", "mcp"],
     )
     def test_security_critical_deps_have_upper_bound(
         self, deps: list[str], dep: str
@@ -73,6 +77,26 @@ class TestDependencyUpperBounds:
         assert "<" in spec, (
             f"security-critical dep '{dep}' must have an upper bound "
             f"(SEC-MEDIUM-7); got: {spec!r}"
+        )
+
+    def test_litellm_extras_has_safe_floor_and_upper_bound(self) -> None:
+        """ADR-075: litellm is opt-in extras, floored at >=1.83.8 to skip
+        the March 2026 supply-chain compromise (1.82.7 / 1.82.8) and capped
+        below the next unvetted major.
+        """
+        with self._PYPROJECT.open("rb") as fh:
+            data = tomllib.load(fh)
+        extras = data["project"]["optional-dependencies"]
+        assert "litellm" in extras, "litellm extras group missing (ADR-075)"
+        specs = [str(x) for x in extras["litellm"]]
+        litellm_spec = next((s for s in specs if s.startswith("litellm")), None)
+        assert litellm_spec is not None, "litellm pin missing in [litellm] extras"
+        assert ">=1.83.8" in litellm_spec, (
+            "litellm floor must skip the 1.82.7/1.82.8 compromise "
+            f"(ADR-075); got: {litellm_spec!r}"
+        )
+        assert "<" in litellm_spec, (
+            f"litellm must have an upper bound; got: {litellm_spec!r}"
         )
 
     @pytest.mark.parametrize(

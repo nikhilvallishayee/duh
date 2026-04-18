@@ -140,5 +140,49 @@ def run_doctor() -> int:
             all_ok = False
         sys.stdout.write(f"  [{status:>4}] {name}: {detail}\n")
 
+    # --- Adapter availability (ADR-075) ---
+    sys.stdout.write(_render_adapter_section())
+
     sys.stdout.write(f"\n{'All checks passed.' if all_ok else 'Some checks failed.'}\n")
     return 0 if all_ok else 1
+
+
+def _render_adapter_section() -> str:
+    """Render the provider-adapter availability table (ADR-075)."""
+    from duh.providers.registry import (
+        _google_genai_available,
+        _groq_sdk_available,
+        _litellm_available,
+    )
+
+    rows: list[tuple[str, bool, str]] = [
+        ("anthropic", True, "native (always)"),
+        ("openai", True, "native (always)"),
+        ("ollama", True, "native (always)"),
+        (
+            "gemini",
+            _google_genai_available(),
+            "native (google-genai installed)"
+            if _google_genai_available()
+            else "not installed (pip install google-genai)",
+        ),
+        (
+            "groq",
+            _groq_sdk_available(),
+            "native (groq installed)"
+            if _groq_sdk_available()
+            else "not installed (pip install groq)",
+        ),
+        (
+            "litellm",
+            _litellm_available(),
+            "opt-in extras (installed)"
+            if _litellm_available()
+            else "opt-in extras (install with: pip install 'duh-cli[litellm]')",
+        ),
+    ]
+    lines = ["\nProviders:\n"]
+    for name, ok, detail in rows:
+        mark = "\u2713" if ok else "\u2717"
+        lines.append(f"  {name:<11} {mark}  {detail}\n")
+    return "".join(lines)

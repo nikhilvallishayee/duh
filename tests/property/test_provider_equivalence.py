@@ -17,6 +17,20 @@ from duh.adapters.openai_chatgpt import OpenAIChatGPTProvider
 from duh.adapters.ollama import OllamaProvider
 from duh.adapters.stub_provider import StubProvider
 
+# GroqProvider is gated on the optional ``groq`` SDK (ADR-075). Skip
+# inclusion when the SDK isn't installed so the property tests keep running
+# in the minimum-install configuration.
+try:
+    from duh.adapters.groq import GroqProvider  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional dep
+    GroqProvider = None  # type: ignore[assignment]
+
+# GeminiProvider is gated on the optional ``google-genai`` SDK (ADR-075).
+try:
+    from duh.adapters.gemini import GeminiProvider  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional dep
+    GeminiProvider = None  # type: ignore[assignment]
+
 # Strategy: well-formed tool_use blocks
 tool_use_json = st.fixed_dictionaries({
     "type": st.just("tool_use"),
@@ -48,6 +62,10 @@ ALL_PROVIDERS = [
     OllamaProvider,
     StubProvider,
 ]
+if GroqProvider is not None:
+    ALL_PROVIDERS.append(GroqProvider)
+if GeminiProvider is not None:
+    ALL_PROVIDERS.append(GeminiProvider)
 
 
 @given(block=tool_use_json)

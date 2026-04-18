@@ -52,6 +52,12 @@ security = [
     "detect-secrets>=1.5,<2.0",
     "cyclonedx-bom>=7,<8",
 ]
+tui-e2e = [
+    "pytest-textual-snapshot>=1.0,<2",
+    "pexpect>=4.9,<5",
+    "pyte>=0.8,<1",
+    "libtmux>=0.35,<1",
+]
 
 [project.scripts]
 duh = "duh.cli.main:main"
@@ -84,4 +90,6 @@ addopts = "--strict-markers"
 markers = [
     "integration: marks tests that talk to real external services",
     "slow: marks tests that may take more than a few seconds",
+    "snapshot: visual regression tests using pytest-textual-snapshot",
+    "tmux: tmux-based integration tests requiring the tmux binary",
 ]

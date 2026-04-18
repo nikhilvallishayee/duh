@@ -10,6 +10,7 @@ ThinkingWidget       — dim/italic block for extended-thinking tokens
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from textual.app import ComposeResult
@@ -388,6 +389,7 @@ class ToolCallWidget(Widget):
         self._tool_name = tool_name
         self._input = input
         self._result_label: Static | None = None
+        self._collapsible: Collapsible | None = None
         self._tool_running = True
         self._output_style = output_style
         # Spinner state — set in on_mount, stopped in set_result / on_unmount.
@@ -404,12 +406,20 @@ class ToolCallWidget(Widget):
         safe_summary = escape_markup(summary)
         safe_name = escape_markup(self._tool_name)
         title = f"Tool: {safe_name}({safe_summary})"
-        with Collapsible(title=title, collapsed=False):
+        with Collapsible(title=title, collapsed=False) as c:
+            self._collapsible = c
             yield Label(f"Input: {safe_summary}", classes="tool-call-label")
             yield Static("⠋ running…", classes="spinner-message", id="tool-result")
 
     def on_mount(self) -> None:
         self._result_label = self.query_one("#tool-result", Static)
+        # Cache the Collapsible handle so set_result() can toggle it even
+        # on call-sites where compose()'s context-manager assignment was
+        # short-circuited (belt-and-braces — matches ThinkingWidget.on_mount).
+        try:
+            self._collapsible = self.query_one(Collapsible)
+        except Exception:
+            pass
         # Race guard: if set_result() already fired (pre-mount), _running
         # is False and the result label has already been populated — do
         # NOT start the spinner.
@@ -534,6 +544,18 @@ class ToolCallWidget(Widget):
             elif policy.max_chars <= 0 or policy.max_lines <= 0:
                 # Concise success: status only, no preview.
                 self._result_label.update(f"[green]OK[/green]{time_suffix}")
+            elif (
+                effective_name in ("Swarm", "Agent")
+                and (multi_agent_summary := _summarise_multi_agent_output(output))
+                is not None
+            ):
+                # Multi-agent tools (Swarm / Agent) emit a structured block
+                # per sub-task.  Showing only the first line hides the other
+                # N-1 results — the bug that prompted this branch.  Build a
+                # task-aware summary instead.
+                self._result_label.update(
+                    f"[green]OK[/green]{time_suffix}: {multi_agent_summary}"
+                )
             elif style_enum is OutputStyle.DEFAULT and output:
                 # Preserve the historical "first line only" summary for the
                 # DEFAULT style, then apply the char cap from the policy.
@@ -553,6 +575,16 @@ class ToolCallWidget(Widget):
                 )
             self._result_label.remove_class("spinner-message")
             self._result_label.add_class("tool-result-ok")
+
+        # Multi-agent tool results are always content-rich — expand by
+        # default so sub-agent outputs are visible without an extra click.
+        # (Error results also benefit: users want to see which sub-task
+        # failed and why.)
+        if effective_name in ("Swarm", "Agent") and self._collapsible is not None:
+            try:
+                self._collapsible.collapsed = False
+            except Exception:  # pragma: no cover — defensive
+                pass
 
 
 def _format_elapsed(elapsed_ms: float | None) -> str:
@@ -575,6 +607,84 @@ def _summarise_input(inp: dict[str, Any]) -> str:
             v = v[:40] + "…"
         parts.append(f"{k}={v!r}")
     return ", ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Multi-agent (Swarm / Agent) preview helper
+# ---------------------------------------------------------------------------
+#
+# Swarm and Agent tools return output formatted as a sequence of per-task
+# blocks::
+#
+#     --- Task 1/4 [researcher] ---
+#     Prompt: ...
+#     Status: OK
+#     Result: ...
+#
+#     --- Task 2/4 [reviewer] ---
+#     ...
+#
+# The default TUI preview path takes only the first line — so a 4-task
+# swarm looked like a 1-task swarm in the collapsed view, which misled
+# users into thinking only one sub-agent ran.  `_summarise_multi_agent_output`
+# parses the block markers and produces a task-count summary that is
+# visible from the collapsed state.
+
+# Block-header regex.  Tolerant: allows variable whitespace, alphanumeric
+# agent-type identifiers, and falls through cleanly when the pattern never
+# matches (caller falls back to first-line preview).
+_MULTI_AGENT_HEADER_RE = re.compile(
+    r"---\s*Task\s+(\d+)\s*/\s*(\d+)\s*\[([^\]]+)\]\s*---",
+)
+
+
+def _summarise_multi_agent_output(text: str) -> str | None:
+    """Return an ``"N/M tasks OK[, K errors]"`` summary or ``None``.
+
+    Returns ``None`` when the text does not contain any recognisable
+    ``--- Task N/M [type] ---`` headers — the caller should then fall
+    back to the normal first-line preview.  This keeps the helper safe
+    to call for any tool output without false positives.
+    """
+    if not text:
+        return None
+    headers = _MULTI_AGENT_HEADER_RE.findall(text)
+    if not headers:
+        return None
+
+    # Defensive: prefer the highest declared total (M).  If different task
+    # headers report different M values (malformed output) we still surface
+    # a sensible number rather than crashing.
+    try:
+        total = max(int(m) for _n, m, _agent in headers)
+    except ValueError:  # pragma: no cover — regex guarantees \d+
+        return None
+    # Clamp total to at least the number of headers we actually saw, so we
+    # never report "1/0 tasks".  Also guard against M == 0.
+    total = max(total, len(headers))
+    if total <= 0:
+        return None
+
+    # Count Status lines across the full output.  Simple substring scan is
+    # fine: the marker is unambiguous and this runs once per tool result.
+    ok_count = 0
+    err_count = 0
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("Status:"):
+            status_val = stripped[len("Status:"):].strip().upper()
+            if status_val.startswith("OK"):
+                ok_count += 1
+            elif status_val.startswith("ERROR") or status_val.startswith("ERR") or status_val.startswith("FAIL"):
+                err_count += 1
+
+    # Singular vs plural "task" when total == 1 (Agent tool wrapping a
+    # single sub-agent call — still hits the Swarm-like output path).
+    noun = "task" if total == 1 else "tasks"
+    summary = f"{ok_count}/{total} {noun} OK"
+    if err_count:
+        summary += f", {err_count} errors"
+    return summary
 
 
 # ---------------------------------------------------------------------------

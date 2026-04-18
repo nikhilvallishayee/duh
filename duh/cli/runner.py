@@ -82,15 +82,23 @@ def _interpret_error(error_text: str) -> str:
     return error_text
 
 
-# Per-provider env-var documentation surfaced to first-time users when no
-# provider can be detected.  Keep the labels short -- the error message is
-# already verbose.
-_PROVIDER_ENV_HELP: tuple[tuple[str, str], ...] = (
-    ("Anthropic", "ANTHROPIC_API_KEY=sk-ant-..."),
-    ("OpenAI",    "OPENAI_API_KEY=sk-..."),
-    ("Google",    "GEMINI_API_KEY=..."),
-    ("Ollama",    "(start a local server: ollama serve)"),
-)
+def _build_provider_env_help() -> tuple[tuple[str, str], ...]:
+    """Per-provider env-var documentation surfaced to first-time users.
+
+    Pulls env-var names from the ``PROVIDER_ENV_VARS`` registry so updates to
+    accepted env names only need to happen in one place.
+    """
+    from duh.providers.registry import PROVIDER_ENV_VARS
+    return (
+        ("Anthropic", f"{PROVIDER_ENV_VARS['anthropic'][0]}=sk-ant-..."),
+        ("OpenAI",    f"{PROVIDER_ENV_VARS['openai'][0]}=sk-..."),
+        ("Google",    f"{PROVIDER_ENV_VARS['gemini'][0]}=..."),
+        ("Ollama",    "(start a local server: ollama serve)"),
+    )
+
+
+# Backwards-compat alias — some tests / external scripts import this.
+_PROVIDER_ENV_HELP: tuple[tuple[str, str], ...] = _build_provider_env_help()
 
 
 def _no_provider_message() -> str:

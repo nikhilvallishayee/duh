@@ -70,6 +70,18 @@ _HandlerResult = tuple[bool, str]
 _COST_WARN_RATIO = 10.0
 
 
+def _resolve_model_alias(requested: str) -> str:
+    """Map short / friendly aliases (e.g. ``codex``) to canonical model names.
+
+    Keeps ``/model`` and ``/models use`` in sync — both handlers accept the
+    same aliases. Unknown aliases pass through unchanged.
+    """
+    from duh.providers.registry import ModelAliases
+    if requested.lower() == "codex":
+        return ModelAliases.CHATGPT_CODEX_MODEL
+    return requested
+
+
 def _short_name(model: str) -> str:
     """Strip dates/sizes for a friendly short label (haiku/sonnet/opus/...)."""
     lower = model.lower()
@@ -319,7 +331,8 @@ class SlashDispatcher:
     # ------------------------------------------------------------------
 
     def _handle_help(self, arg: str) -> _HandlerResult:
-        from duh.cli.repl import SLASH_COMMANDS
+        # SLASH_COMMANDS is defined at the bottom of this module — referenced
+        # via the module globals to avoid the ordering dependency.
         for k, v in SLASH_COMMANDS.items():
             sys.stdout.write(f"  {k:12s} {v}\n")
         return True, self.ctx.model
@@ -330,9 +343,7 @@ class SlashDispatcher:
 
         model = self.ctx.model
         if arg:
-            requested = arg.strip()
-            if requested.lower() == "codex":
-                requested = "gpt-5.2-codex"
+            requested = _resolve_model_alias(arg.strip())
 
             # Cost warning when jumping to a much pricier model.
             warning = _format_cost_delta_warning(model, requested)
@@ -420,9 +431,7 @@ class SlashDispatcher:
             if len(sub) < 2 or not sub[1].strip():
                 sys.stdout.write("  Usage: /models use <name>\n")
                 return True, model
-            target = sub[1].strip()
-            if target.lower() == "codex":
-                target = "gpt-5.2-codex"
+            target = _resolve_model_alias(sub[1].strip())
             ok, result = self._switch_backend_for_model(target)
             sys.stdout.write(f"  Model changed to: {target} ({result})\n")
             return True, target
@@ -1004,3 +1013,48 @@ SlashDispatcher._HANDLERS = {
 SlashDispatcher._ASYNC_HANDLERS = {
     "/sessions": SlashDispatcher._handle_sessions_async,
 }
+
+
+# ------------------------------------------------------------------
+# Canonical help strings — single source of truth for /help output, the
+# ``_SlashCompleter`` table, and the TUI command palette.
+# ------------------------------------------------------------------
+#
+# One entry per command in ``SlashDispatcher._HANDLERS``. A regression test
+# asserts the two tables stay in sync (see ``tests/unit/test_registry_unified.py``).
+SLASH_COMMANDS: dict[str, str] = {
+    "/help": "Show available commands",
+    "/model": "Show or set model (/model <name>)",
+    "/connect": "Connect provider auth (/connect openai|anthropic [...])",
+    "/models": "List models for current provider (/models, /models use <name>)",
+    "/cost": "Show estimated session cost",
+    "/status": "Show session status",
+    "/context": "Show context window token breakdown",
+    "/changes": "Show files touched in this session (+ git diff --stat)",
+    "/git": "Show git branch, status, and recent commits",
+    "/tasks": "Show task checklist",
+    "/brief": "Toggle brief mode (/brief on, /brief off, /brief)",
+    "/search": "Search session messages (/search <query>)",
+    "/template": "Prompt templates (/template list | use <name> | <name> <prompt>)",
+    "/plan": "Plan mode (/plan <desc>, /plan show, /plan clear)",
+    "/pr": "GitHub PRs (/pr list, /pr view <n>, /pr diff <n>, /pr checks <n>)",
+    "/undo": "Undo the last file modification (Write or Edit)",
+    "/jobs": "Background jobs (/jobs to list, /jobs <id> for result)",
+    "/health": "Run provider and MCP health checks",
+    "/errors": "Show the last N errors recorded in the session (/errors [N])",
+    "/clear": "Clear conversation history",
+    "/compact": "Compact older messages",
+    "/compact-stats": "Show compaction analytics for this session",
+    "/snapshot": "Ghost snapshot (/snapshot, /snapshot apply, /snapshot discard)",
+    "/attach": "Attach a file to the next message (/attach path/to/file)",
+    "/memory": "Memory facts (/memory list|search <q>|show <key>|delete <key>|gc)",
+    "/sessions": "List sessions for this project",
+    "/audit": "Show recent audit log entries (/audit [N])",
+    "/theme": "Switch TUI theme (/theme, /theme <name>) — TUI only",
+    "/exit": "Exit the REPL",
+}
+
+# Generated per-command help derived from the canonical SLASH_COMMANDS dict.
+# Available to downstream consumers that want ``name → one-line help`` without
+# pulling in the whole dispatcher.
+__slash_help__: dict[str, str] = dict(SLASH_COMMANDS)

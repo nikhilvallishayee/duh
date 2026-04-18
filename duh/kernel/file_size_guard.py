@@ -19,9 +19,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from duh.kernel.model_caps import get_capabilities
+from duh.kernel.tokens import CHARS_PER_TOKEN
 
+# ``CHARS_PER_TOKEN`` is re-exported so existing imports of
+# ``duh.kernel.file_size_guard.CHARS_PER_TOKEN`` (including tests) keep
+# working. The single source of truth lives in ``duh.kernel.tokens``.
+__all__ = ["CHARS_PER_TOKEN", "MAX_FILE_FRACTION", "FileSizeDecision", "check_file_size"]
 
-CHARS_PER_TOKEN = 4  # coarse heuristic, matches engine.py USAGE_DELTA_CHARS_PER_TOKEN
 MAX_FILE_FRACTION = 0.5  # skip files > 50% of context window
 
 

@@ -35,6 +35,7 @@ from duh.kernel.post_compact import (
     restore_skill_context,
 )
 from duh.kernel.tokens import (
+    CHARS_PER_TOKEN,
     count_tokens,
     count_tokens_for_model,
     estimate_cost,
@@ -134,7 +135,9 @@ class _TurnState:
 # ADR-073 Wave 2 / Task 8: rough char-to-token ratio used while streaming.
 # The authoritative count still arrives on ``done`` from the provider; this
 # is deliberately cheap (no tokenizer call per delta).
-USAGE_DELTA_CHARS_PER_TOKEN = 4
+# Backwards-compat alias — the canonical constant lives in ``duh.kernel.tokens``
+# (``CHARS_PER_TOKEN``). This name is preserved for tests / external consumers.
+USAGE_DELTA_CHARS_PER_TOKEN = CHARS_PER_TOKEN
 
 # Emit a ``usage_delta`` event at most every N characters of streamed text
 # so we don't churn the status line on every single delta.

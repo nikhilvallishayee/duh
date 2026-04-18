@@ -679,11 +679,15 @@ class TestWebSearchEmpty:
         monkeypatch.setattr("duh.tools.web_search.httpx.AsyncClient", _FakeClient)
         monkeypatch.setenv("SERPER_API_KEY", "dummy")
         monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+        monkeypatch.delenv("BRAVE_SEARCH_API_KEY", raising=False)
         result = await tool.call(
             {"query": "hello"},
             ToolContext(cwd=str(tmp_path)),
         )
-        assert "No results" in result.output
+        # New empty-result phrasing: "No links found." (previously "No results found for:").
+        assert "No links found" in result.output
+        assert result.metadata["provider"] == "serper"
+        assert result.metadata["result_count"] == 0
 
     async def test_tavily_no_results(self, tmp_path, monkeypatch):
         from duh.tools.web_search import WebSearchTool
@@ -713,11 +717,14 @@ class TestWebSearchEmpty:
         monkeypatch.setattr("duh.tools.web_search.httpx.AsyncClient", _FakeClient)
         monkeypatch.delenv("SERPER_API_KEY", raising=False)
         monkeypatch.setenv("TAVILY_API_KEY", "dummy")
+        monkeypatch.delenv("BRAVE_SEARCH_API_KEY", raising=False)
         result = await tool.call(
             {"query": "hello"},
             ToolContext(cwd=str(tmp_path)),
         )
-        assert "No results" in result.output
+        assert "No links found" in result.output
+        assert result.metadata["provider"] == "tavily"
+        assert result.metadata["result_count"] == 0
 
 
 # ==========================================================================

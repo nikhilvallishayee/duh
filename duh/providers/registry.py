@@ -22,7 +22,6 @@ from duh.auth.openai_chatgpt import (
 )
 
 
-OPENAI_CODEX_MODEL_HINTS = ("codex", "gpt-5")
 _MODEL_CACHE_TTL_S = 300
 _MODEL_CACHE: dict[str, tuple[float, list[str]]] = {}
 
@@ -31,6 +30,146 @@ _logger = logging.getLogger("duh.providers")
 # Single-shot session warnings / info (ADR-075).
 _LITELLM_DEPRECATION_WARNED = False
 _ADAPTER_STARTUP_LOGGED: set[str] = set()
+
+
+# ---------------------------------------------------------------------------
+# Centralised model-name / provider-prefix / env-var registries
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ModelAliases:
+    """Canonical model-name constants.
+
+    Single source of truth for default model selections across the codebase.
+    Adapters, registry fallbacks, CLI slash handlers, and the Codex auth
+    module all pull their names from here instead of duplicating literals.
+    """
+
+    CHATGPT_CODEX_MODEL: str = "gpt-5.2-codex"
+    CHATGPT_CODEX_HINTS: tuple[str, ...] = ("codex", "gpt-5")
+    ANTHROPIC_DEFAULT: str = "claude-sonnet-4-6"
+    OPENAI_DEFAULT: str = "gpt-4o"
+    GEMINI_DEFAULT: str = "gemini-2.5-flash"
+    GROQ_DEFAULT: str = "llama-3.3-70b-versatile"
+    OLLAMA_DEFAULT: str = "qwen2.5-coder:1.5b"
+
+
+# Module-level singleton exposing the aliases as attribute access.
+# Consumers prefer ``ModelAliases.CHATGPT_CODEX_MODEL`` (class-level access)
+# over instance lookups.
+_ALIASES = ModelAliases()
+
+# Legacy alias preserved for backwards compatibility with callers that
+# already imported ``OPENAI_CODEX_MODEL_HINTS`` from this module.
+OPENAI_CODEX_MODEL_HINTS: tuple[str, ...] = ModelAliases.CHATGPT_CODEX_HINTS
+
+
+# Default model per provider. ``get_default_model()`` is the public accessor;
+# keep this dict just below ``ModelAliases`` so additions stay colocated.
+DEFAULT_MODELS: dict[str, str] = {
+    "anthropic": ModelAliases.ANTHROPIC_DEFAULT,
+    "openai": ModelAliases.OPENAI_DEFAULT,
+    "gemini": ModelAliases.GEMINI_DEFAULT,
+    "groq": ModelAliases.GROQ_DEFAULT,
+    "ollama": ModelAliases.OLLAMA_DEFAULT,
+    "litellm": f"gemini/{ModelAliases.GEMINI_DEFAULT}",
+    "openai_chatgpt": ModelAliases.CHATGPT_CODEX_MODEL,
+}
+
+
+def get_default_model(provider: str) -> str:
+    """Return the canonical default model for *provider*.
+
+    Returns an empty string when the provider is unknown. Every call-site
+    that previously hardcoded a default model literal (anthropic adapter,
+    OpenAI adapter fallback, gemini/groq registry fallback, etc.) resolves
+    through this helper so renaming a default only requires editing
+    ``ModelAliases``.
+    """
+    return DEFAULT_MODELS.get(provider, "")
+
+
+# ---------------------------------------------------------------------------
+# Provider-prefix map — authoritative
+# ---------------------------------------------------------------------------
+#
+# Ordered list of ``(prefix, provider)`` tuples. Longer / more specific
+# prefixes must come first when two entries could both match a given model.
+# ``is_<provider>_model`` predicates and ``infer_provider_from_model`` both
+# consult this single table so adding a new provider prefix is a one-liner.
+
+_PROVIDER_PREFIX_MAP: list[tuple[str, str]] = [
+    ("gemini/", "gemini"),
+    ("gemini-", "gemini"),
+    ("groq/", "groq"),
+]
+
+
+def _lookup_provider_by_prefix(model: str | None) -> str | None:
+    """Return the provider for *model* by scanning the prefix map.
+
+    Case-insensitive; returns ``None`` when no prefix matches or *model* is
+    falsy.
+    """
+    if not model:
+        return None
+    m = model.lower()
+    for prefix, provider in _PROVIDER_PREFIX_MAP:
+        if m.startswith(prefix):
+            return provider
+    return None
+
+
+def strip_provider_prefix(model: str) -> str:
+    """Strip any registered provider *namespace* prefix from *model*.
+
+    Native SDKs want bare model names (``gemini-2.5-flash``,
+    ``llama-3.3-70b-versatile``) — the registry emits ``gemini/…`` /
+    ``groq/…`` for display and this helper gets used before the API call.
+    Only slash-terminated namespace prefixes (``gemini/``, ``groq/``) are
+    stripped — the bare ``gemini-`` prefix is preserved because it's part
+    of the canonical model name for Google's own API.
+    """
+    if not model:
+        return model
+    lower = model.lower()
+    for prefix, _ in _PROVIDER_PREFIX_MAP:
+        if not prefix.endswith("/"):
+            continue
+        if lower.startswith(prefix):
+            return model[len(prefix):]
+    return model
+
+
+# ---------------------------------------------------------------------------
+# API-key env var registry
+# ---------------------------------------------------------------------------
+
+# Each provider lists its accepted env vars in MRO order — first non-empty
+# value wins. ``get_api_key("gemini")`` therefore returns ``GEMINI_API_KEY``
+# if set, else falls back to ``GOOGLE_API_KEY``.
+PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "openai": ("OPENAI_API_KEY",),
+    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    "groq": ("GROQ_API_KEY",),
+    "cerebras": ("CEREBRAS_API_KEY",),
+}
+
+
+def get_api_key(provider: str) -> str:
+    """Return the first non-empty env var for *provider*, or an empty string.
+
+    Providers with saved-auth files (Anthropic/OpenAI) should still fall
+    through to their ``get_saved_*_api_key`` helpers — this only checks the
+    env. Unknown providers return ``""``.
+    """
+    for name in PROVIDER_ENV_VARS.get(provider, ()):
+        val = os.environ.get(name, "")
+        if val:
+            return val
+    return ""
 
 
 def _module_importable(name: str) -> bool:
@@ -60,17 +199,11 @@ def _litellm_available() -> bool:
 
 
 def is_gemini_model(model: str | None) -> bool:
-    if not model:
-        return False
-    m = model.lower()
-    return m.startswith("gemini/") or m.startswith("gemini-")
+    return _lookup_provider_by_prefix(model) == "gemini"
 
 
 def is_groq_model(model: str | None) -> bool:
-    if not model:
-        return False
-    m = model.lower()
-    return m.startswith("groq/")
+    return _lookup_provider_by_prefix(model) == "groq"
 
 
 def _emit_adapter_startup_log(adapter: str, model: str) -> None:
@@ -119,14 +252,11 @@ def infer_provider_from_model(model: str | None) -> str | None:
         return None
     # ADR-075: gemini/* and groq/* prefer native adapters when the SDK is
     # installed; otherwise they fall through to LiteLLM as the opt-in fallback.
-    if is_gemini_model(model):
-        if _google_genai_available():
-            return "gemini"
-        return "litellm"
-    if is_groq_model(model):
-        if _groq_sdk_available():
-            return "groq"
-        return "litellm"
+    prefix_provider = _lookup_provider_by_prefix(model)
+    if prefix_provider == "gemini":
+        return "gemini" if _google_genai_available() else "litellm"
+    if prefix_provider == "groq":
+        return "groq" if _groq_sdk_available() else "litellm"
     # Everything else with a "/" (e.g. "bedrock/claude-3-haiku",
     # "together_ai/…") is a LiteLLM model string. Check before native
     # providers since a litellm string like "bedrock/claude-3-haiku" would
@@ -161,7 +291,7 @@ def resolve_openai_auth_mode(model: str | None) -> str:
     m = (model or "").lower()
     oauth = get_valid_openai_chatgpt_oauth()
     api_key = get_openai_api_key()
-    wants_codex = any(k in m for k in OPENAI_CODEX_MODEL_HINTS)
+    wants_codex = any(k in m for k in ModelAliases.CHATGPT_CODEX_HINTS)
 
     if wants_codex and oauth:
         return "chatgpt"
@@ -200,9 +330,9 @@ def connected_providers(check_ollama: Callable[[], bool]) -> list[str]:
         out.append("openai")
     if check_ollama():
         out.append("ollama")
-    if _google_genai_available() and os.environ.get("GEMINI_API_KEY", ""):
+    if _google_genai_available() and get_api_key("gemini"):
         out.append("gemini")
-    if _groq_sdk_available() and os.environ.get("GROQ_API_KEY", ""):
+    if _groq_sdk_available() and get_api_key("groq"):
         out.append("groq")
     return list(dict.fromkeys(out))
 
@@ -346,7 +476,7 @@ def available_models_for_provider(provider_name: str, *, current_model: str | No
             return _discover_openai_models_chatgpt(current_model)
         return _discover_openai_models_api_key(current_model)
     if provider_name == "ollama":
-        return _merge_current_model(["qwen2.5-coder:1.5b"], current_model)
+        return _merge_current_model([ModelAliases.OLLAMA_DEFAULT], current_model)
     return []
 
 
@@ -401,9 +531,10 @@ def build_model_backend(
 
     if provider_name == "anthropic":
         api_key = get_anthropic_api_key()
+        default_model = get_default_model("anthropic")
         if not api_key:
-            return ProviderBackend("anthropic", model or "claude-sonnet-4-6", None, "ANTHROPIC_API_KEY not set.")
-        resolved = model or "claude-sonnet-4-6"
+            return ProviderBackend("anthropic", model or default_model, None, "ANTHROPIC_API_KEY not set.")
+        resolved = model or default_model
         create = provider_factories.get("anthropic")
         if create is None:
             from duh.adapters.anthropic import AnthropicProvider
@@ -419,7 +550,7 @@ def build_model_backend(
     if provider_name == "openai":
         mode = resolve_openai_auth_mode(model)
         if mode == "chatgpt":
-            resolved = model or "gpt-5.2-codex"
+            resolved = model or ModelAliases.CHATGPT_CODEX_MODEL
             create = provider_factories.get("openai_chatgpt")
             if create is None:
                 from duh.adapters.openai_chatgpt import OpenAIChatGPTProvider
@@ -431,9 +562,10 @@ def build_model_backend(
                 create(resolved).stream,
                 auth_mode="chatgpt",
             )
+        openai_default = get_default_model("openai")
         if mode == "api_key":
             api_key = get_openai_api_key()
-            resolved = model or "gpt-4o"
+            resolved = model or openai_default
             create = provider_factories.get("openai_api")
             if create is None:
                 from duh.adapters.openai import OpenAIProvider
@@ -447,13 +579,13 @@ def build_model_backend(
             )
         return ProviderBackend(
             "openai",
-            model or "gpt-4o",
+            model or openai_default,
             None,
             "OpenAI not configured. Use /connect openai or set OPENAI_API_KEY.",
         )
 
     if provider_name == "ollama":
-        resolved = model or "qwen2.5-coder:1.5b"
+        resolved = model or get_default_model("ollama")
         create = provider_factories.get("ollama")
         if create is None:
             from duh.adapters.ollama import OllamaProvider
@@ -463,7 +595,7 @@ def build_model_backend(
         return ProviderBackend("ollama", resolved, create(resolved).stream, auth_mode="local")
 
     if provider_name == "gemini":
-        resolved = model or "gemini-2.5-flash"
+        resolved = model or get_default_model("gemini")
         create = provider_factories.get("gemini")
         if create is not None:
             provider = create(resolved)
@@ -480,7 +612,7 @@ def build_model_backend(
         return ProviderBackend("gemini", resolved, provider.stream, auth_mode="api_key")
 
     if provider_name == "groq":
-        resolved = model or "groq/llama-3.3-70b-versatile"
+        resolved = model or f"groq/{ModelAliases.GROQ_DEFAULT}"
         create = provider_factories.get("groq")
         if create is not None:
             provider = create(resolved)
@@ -497,7 +629,7 @@ def build_model_backend(
         return ProviderBackend("groq", resolved, provider.stream, auth_mode="api_key")
 
     if provider_name == "litellm":
-        resolved = model or "gemini/gemini-2.5-flash"
+        resolved = model or get_default_model("litellm")
         create = provider_factories.get("litellm")
         if create is None:
             # ADR-075: litellm is opt-in. Produce a clear error if it's not

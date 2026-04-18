@@ -130,36 +130,10 @@ def _make_renderer(
 # Slash commands
 # ---------------------------------------------------------------------------
 
-SLASH_COMMANDS = {
-    "/help": "Show available commands",
-    "/model": "Show or set model (/model <name>)",
-    "/connect": "Connect provider auth (/connect openai|anthropic [...])",
-    "/models": "List models for current provider (/models, /models use <name>)",
-    "/cost": "Show estimated session cost",
-    "/status": "Show session status",
-    "/context": "Show context window token breakdown",
-    "/changes": "Show files touched in this session (+ git diff --stat)",
-    "/git": "Show git branch, status, and recent commits",
-    "/tasks": "Show task checklist",
-    "/brief": "Toggle brief mode (/brief on, /brief off, /brief)",
-    "/search": "Search session messages (/search <query>)",
-    "/template": "Prompt templates (/template list | use <name> | <name> <prompt>)",
-    "/plan": "Plan mode (/plan <desc>, /plan show, /plan clear)",
-    "/pr": "GitHub PRs (/pr list, /pr view <n>, /pr diff <n>, /pr checks <n>)",
-    "/undo": "Undo the last file modification (Write or Edit)",
-    "/jobs": "Background jobs (/jobs to list, /jobs <id> for result)",
-    "/health": "Run provider and MCP health checks",
-    "/clear": "Clear conversation history",
-    "/compact": "Compact older messages",
-    "/compact-stats": "Show compaction analytics for this session",
-    "/snapshot": "Ghost snapshot (/snapshot, /snapshot apply, /snapshot discard)",
-    "/attach": "Attach a file to the next message (/attach path/to/file)",
-    "/memory": "Memory facts (/memory list|search <q>|show <key>|delete <key>|gc)",
-    "/sessions": "List sessions for this project",
-    "/audit": "Show recent audit log entries (/audit [N])",
-    "/theme": "Switch TUI theme (/theme, /theme <name>) — TUI only",
-    "/exit": "Exit the REPL",
-}
+# SLASH_COMMANDS lives in ``duh.cli.slash_commands`` now — that module is the
+# single source of truth (ADR drift-risk refactor).  Re-exported here so that
+# existing imports (``from duh.cli.repl import SLASH_COMMANDS``) keep working.
+from duh.cli.slash_commands import SLASH_COMMANDS  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

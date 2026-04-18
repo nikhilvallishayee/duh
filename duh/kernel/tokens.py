@@ -23,7 +23,16 @@ from __future__ import annotations
 # Token estimation — model-aware
 # ---------------------------------------------------------------------------
 
-_CHARS_PER_TOKEN = 4  # generic default (conservative)
+# Single source of truth for the coarse "1 token ≈ 4 chars" heuristic.
+# Consumed by engine.py (usage-delta synthesis while streaming) and by
+# file_size_guard.py (pre-read file budget check). A real tokenizer would
+# generally produce fewer tokens than this for English prose, so any file
+# we refuse under this rule is almost certainly an unwise read anyway.
+CHARS_PER_TOKEN = 4  # generic default (conservative)
+
+# Backwards-compat alias: existing tests import ``_CHARS_PER_TOKEN`` directly
+# and the function bodies below still use the private name.
+_CHARS_PER_TOKEN = CHARS_PER_TOKEN
 
 # Per-model-family chars-per-token ratios, empirically calibrated.
 # Lower ratio = denser tokenization = more tokens per char.

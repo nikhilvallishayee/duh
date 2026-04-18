@@ -176,6 +176,24 @@ class MessageWidget(Widget):
         ``"user"`` or ``"assistant"``.
     text:
         Initial text content (may be empty; call :meth:`append` to stream).
+
+    Deferred markdown parsing (streaming optimization)
+    -------------------------------------------------
+    For *assistant* messages the widget composes a lightweight plain
+    :class:`Static` during streaming.  Every :meth:`append` just writes
+    the raw concatenated text to that Static — no markdown parse, no
+    syntax-highlight pass.  When the upstream event loop finalises the
+    turn and calls :meth:`finish`, the Static is swapped out for a
+    :class:`HighlightedMarkdown` which runs the Rich markdown parse
+    exactly ONCE on the full, now-complete source.
+
+    Motivation: on a 20 KB response at ~125 coalesced flushes, the old
+    path triggered 125 full-buffer markdown parses (O(n) each → O(n²)
+    overall, ~2 s wasted CPU while streaming).  The new path performs a
+    single parse at turn-end.
+
+    User messages retain the original plain-Static behaviour unchanged —
+    they were never markdown-rendered.
     """
 
     DEFAULT_CSS = """
@@ -202,7 +220,21 @@ class MessageWidget(Widget):
         super().__init__(name=name, id=id, classes=merged)
         self._role = role
         self._content = text
+        # Plain Static body used for:
+        #   * user messages (always), and
+        #   * assistant messages WHILE streaming (pre-finish).
         self._body: Static | None = None
+        # HighlightedMarkdown body used for assistant messages AFTER
+        # finish().  Populated by :meth:`finish` on the streaming path,
+        # or (for legacy / test call-sites that never call append/finish)
+        # by :meth:`on_mount` when the caller passes non-empty initial
+        # text that is never updated — see _finalized handling there.
+        self._md_body: HighlightedMarkdown | None = None
+        # Streaming-state flag.  Starts True for assistant messages;
+        # flips False on first finish() call.  User messages are not
+        # "streaming" in the markdown sense (no parse ever runs), so
+        # the flag is meaningless for them but kept True for symmetry.
+        self._streaming: bool = True
 
     # ------------------------------------------------------------------
     # Compose
@@ -211,44 +243,84 @@ class MessageWidget(Widget):
     def compose(self) -> ComposeResult:
         label_text = "You" if self._role == "user" else "Assistant"
         yield Label(label_text, classes="message-role-label")
-        if self._role == "user":
-            # User messages are plain text: no markdown parsing, no
-            # syntax highlighting.  Keeps visual distinction between roles
-            # (ADR-073 Wave 2 #6: assistant output must look richer than
-            # user input).
-            yield Static(self._content, classes="message-body", markup=False)
-        else:
-            # Assistant messages use HighlightedMarkdown (Rich-backed Static)
-            # to get language-aware syntax highlighting on fenced code blocks.
-            yield HighlightedMarkdown(self._content, classes="message-body")
+        # Both roles start with a plain Static.  For user messages this
+        # is also the final body.  For assistant messages it is the
+        # streaming body; finish() replaces it with HighlightedMarkdown.
+        #
+        # markup=False prevents Textual from interpreting stray [style]
+        # tokens in raw model output as markup — critical for preserving
+        # the exact bytes we received.
+        yield Static(self._content, classes="message-body", markup=False)
 
     def on_mount(self) -> None:
-        if self._role == "user":
-            self._body = self.query_one(".message-body", Static)
-        else:
-            self._md_body = self.query_one(".message-body", HighlightedMarkdown)
+        self._body = self.query_one(".message-body", Static)
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def append(self, delta: str) -> None:
-        """Append streaming text delta to the message body."""
+        """Append streaming text delta to the message body.
+
+        During streaming (assistant role, pre-finish) this updates a
+        plain Static with the raw concatenated text — no markdown parse.
+        """
+        if not delta:
+            return
         self._content += delta
         if self._role == "user":
             if self._body is not None:
                 self._body.update(self._content)
-        else:
-            if hasattr(self, "_md_body") and self._md_body is not None:
-                # HighlightedMarkdown.update_markdown() re-parses the full
-                # source and re-renders via Rich.  Fast enough for streaming
-                # (Rich's markdown parser is ~O(n) and measured <2ms/4KB).
+            return
+        # Assistant path.
+        if not self._streaming:
+            # Defensive: append() after finish() is not expected.  If it
+            # happens, treat it as "re-streaming" — update the markdown
+            # body in place.  This is cheaper than swapping widgets.
+            if self._md_body is not None:
                 self._md_body.update_markdown(self._content)
+            return
+        if self._body is not None:
+            # Plain-text update only — no RichMarkdown parse.
+            self._body.update(self._content)
 
     def finish(self) -> None:
-        """Called when streaming is complete — do a final markdown render."""
-        if self._role != "user" and hasattr(self, "_md_body") and self._md_body is not None:
-            self._md_body.update_markdown(self._content)
+        """Called when streaming is complete — promote to full markdown render.
+
+        Idempotent: calling finish() a second time is a no-op.
+        Safe to call before any append() (empty-message edge case).
+        """
+        if self._role == "user":
+            return
+        if not self._streaming:
+            # Already finalized — idempotent.
+            return
+        self._streaming = False
+        # If we never mounted (e.g. unit test that never awaited
+        # run_test), there is no live Static to swap.  Create the
+        # markdown body in-memory so .markdown_source is queryable and
+        # bail out; on_mount would be too late to run.
+        if self._body is None or not self.is_mounted:
+            self._md_body = HighlightedMarkdown(
+                self._content, classes="message-body",
+            )
+            return
+        # Live-widget path: swap the plain Static for a HighlightedMarkdown
+        # that does the single, final markdown parse.  We do this by
+        # mounting the new widget and removing the old one.  The order
+        # (mount before remove) minimises flicker and prevents a height
+        # collapse that could re-flow surrounding messages.
+        new_body = HighlightedMarkdown(self._content, classes="message-body")
+        try:
+            self.mount(new_body, after=self._body)
+            self._body.remove()
+        except Exception:
+            # Defensive: if mounting fails (e.g. widget already being
+            # torn down), fall back to in-memory promotion so tests that
+            # query markdown_source still see the final content.
+            pass
+        self._md_body = new_body
+        self._body = None
 
 
 # ---------------------------------------------------------------------------

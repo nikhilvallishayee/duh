@@ -182,6 +182,10 @@ class GeminiProvider:
         """Stream model responses, yielding D.U.H. uniform events."""
         _require_genai()
         resolved_model = model or self._default_model
+        # Gemini SDK expects bare model IDs ("gemini-2.5-pro"), not LiteLLM-prefixed
+        # ones ("gemini/gemini-2.5-pro"). The registry may hand either form; strip.
+        if resolved_model.startswith("gemini/"):
+            resolved_model = resolved_model[len("gemini/"):]
 
         # System prompt extracted from messages — Gemini uses system_instruction
         system_text = _build_system_text(system_prompt)

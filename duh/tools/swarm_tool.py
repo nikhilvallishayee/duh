@@ -4,12 +4,18 @@ Uses asyncio.gather to run N agents concurrently and collects all results.
 Each child agent gets the parent's deps and tools (minus Agent and Swarm
 to prevent recursion).
 
+Each task's ``model`` field takes a generic size tier (``small`` /
+``medium`` / ``large`` / ``inherit``). Tiers are resolved per-provider
+against the parent's current model at call time so a mixed swarm on a
+Gemini parent picks ``gemini-2.5-flash`` for ``small`` and
+``gemini-2.5-pro`` for ``large`` — no hardcoded Anthropic aliases.
+
 See ADR-063 for design rationale.
 """
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Callable
 
 from duh.kernel.tool import ToolContext, ToolResult
 from duh.security.trifecta import Capability
@@ -22,7 +28,9 @@ class SwarmTool:
     description = (
         "Spawn multiple subagents in parallel. Each gets its own conversation "
         "and can use all tools (Read, Bash, Grep, etc.) but cannot spawn "
-        "further agents or swarms. Use for parallelizable subtasks."
+        "further agents or swarms. Use for parallelizable subtasks. The per-"
+        "task 'model' field is a generic size tier (small/medium/large/"
+        "inherit) resolved per-provider against the parent's current model."
     )
     input_schema = {
         "type": "object",
@@ -47,8 +55,13 @@ class SwarmTool:
                         },
                         "model": {
                             "type": "string",
-                            "enum": ["haiku", "sonnet", "opus", "inherit"],
-                            "description": "Model for subagent. Default: inherit.",
+                            "enum": ["small", "medium", "large", "inherit"],
+                            "description": (
+                                "Size tier for the sub-agent, resolved "
+                                "per-provider. 'small' = fast/cheap, "
+                                "'medium' = default, 'large' = most capable, "
+                                "'inherit' (default) uses parent's model."
+                            ),
                             "default": "inherit",
                         },
                     },
@@ -66,9 +79,20 @@ class SwarmTool:
         *,
         parent_deps: Any = None,
         parent_tools: list[Any] | None = None,
+        parent_model: str | Callable[[], str] = "",
     ):
         self._parent_deps = parent_deps
         self._parent_tools = parent_tools
+        self._parent_model: str | Callable[[], str] = parent_model
+
+    def _resolve_parent_model(self) -> str:
+        pm = self._parent_model
+        if callable(pm):
+            try:
+                return pm() or ""
+            except Exception:
+                return ""
+        return pm or ""
 
     def _child_tools(self) -> list[Any]:
         """Return parent tools minus Agent and Swarm (prevent recursion)."""
@@ -88,6 +112,7 @@ class SwarmTool:
         from duh.agents import run_agent
 
         child_tools = self._child_tools()
+        parent_model = self._resolve_parent_model()
 
         async def _run_one(index: int, task: dict[str, Any]) -> tuple[int, Any]:
             """Run a single agent and return (index, AgentResult|Exception)."""
@@ -95,6 +120,7 @@ class SwarmTool:
                 prompt=task.get("prompt", ""),
                 agent_type=task.get("agent_type", "general"),
                 model=task.get("model", ""),
+                parent_model=parent_model,
                 deps=self._parent_deps,
                 tools=child_tools,
             )

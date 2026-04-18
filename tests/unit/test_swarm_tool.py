@@ -168,7 +168,7 @@ class TestSwarmToolCall:
 
     @pytest.mark.asyncio
     async def test_call_passes_model_and_agent_type(self):
-        """Model and agent_type are forwarded to run_agent."""
+        """Model tier and agent_type are forwarded to run_agent."""
         tool = SwarmTool(parent_deps=MagicMock())
         fake = FakeAgentResult(result_text="ok")
 
@@ -177,7 +177,7 @@ class TestSwarmToolCall:
             await tool.call(
                 {
                     "tasks": [
-                        {"prompt": "x", "agent_type": "researcher", "model": "haiku"}
+                        {"prompt": "x", "agent_type": "researcher", "model": "small"}
                     ]
                 },
                 ctx(),
@@ -185,7 +185,7 @@ class TestSwarmToolCall:
 
         _, kwargs = mock_run.call_args
         assert kwargs["agent_type"] == "researcher"
-        assert kwargs["model"] == "haiku"
+        assert kwargs["model"] == "small"
 
     @pytest.mark.asyncio
     async def test_call_defaults_agent_type_general(self):

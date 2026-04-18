@@ -423,6 +423,8 @@ class TestModelStringDetection:
 
 class TestRegistryIntegration:
     def test_build_model_backend_litellm(self):
+        """LiteLLM backend builds when the SDK is installed (opt-in extras)."""
+        pytest.importorskip("litellm", reason="LiteLLM is opt-in after ADR-075")
         from duh.providers.registry import build_model_backend
         backend = build_model_backend("litellm", "gemini/gemini-2.5-flash")
         assert backend.provider == "litellm"

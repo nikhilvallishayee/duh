@@ -359,10 +359,19 @@ class TestWebSearchProtocol:
 
 
 # ===========================================================================
-# WebSearchTool — stub behavior
+# WebSearchTool — no-key default (DuckDuckGo) behavior
 # ===========================================================================
+#
+# The zero-config default was a config-stub in the previous iteration; since
+# the 5-tier fallback landed, the tool now transparently falls back to the
+# DuckDuckGo Instant Answer API (no key required) whenever no paid provider
+# key is set. The tests below lock that in. Full coverage of the DDG path
+# (IA → HTML fallthrough, parser, taint, timeout) lives in
+# ``tests/unit/test_web_search_default.py``; here we only assert that the
+# legacy ``_STUB_MESSAGE`` symbol still exists (so old imports don't break)
+# and that the no-key path no longer short-circuits.
 
-class TestWebSearchStub:
+class TestWebSearchNoKeyDefault:
     tool = WebSearchTool()
 
     async def test_empty_query_is_error(self):
@@ -374,28 +383,40 @@ class TestWebSearchStub:
         result = await self.tool.call({}, ctx())
         assert result.is_error is True
 
-    async def test_returns_stub_without_api_keys(self):
-        """Without SERPER or TAVILY keys, returns a helpful config message."""
-        with patch.dict(os.environ, {}, clear=True):
-            # Ensure keys are absent
-            env = os.environ.copy()
-            env.pop("SERPER_API_KEY", None)
-            env.pop("TAVILY_API_KEY", None)
-            with patch.dict(os.environ, env, clear=True):
-                result = await self.tool.call({"query": "test search"}, ctx())
+    async def test_no_keys_uses_duckduckgo_default(self):
+        """Without any provider key, the tool uses the DuckDuckGo IA API."""
+        ia_payload = {
+            "AbstractText": "Hello, world.",
+            "AbstractURL": "https://en.wikipedia.org/wiki/Hello",
+            "AbstractSource": "Wikipedia",
+            "RelatedTopics": [],
+        }
+        mock_resp = AsyncMock()
+        mock_resp.status_code = 200
+        mock_resp.json = lambda: ia_payload
+        mock_resp.raise_for_status = lambda: None
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        env = os.environ.copy()
+        for key in ("SERPER_API_KEY", "TAVILY_API_KEY", "BRAVE_SEARCH_API_KEY"):
+            env.pop(key, None)
+        with patch.dict(os.environ, env, clear=True):
+            with patch("duh.tools.web_search.httpx.AsyncClient", return_value=mock_client):
+                result = await self.tool.call({"query": "hello"}, ctx())
 
         assert result.is_error is False
-        assert "requires configuration" in result.output.lower()
-        assert "SERPER_API_KEY" in result.output or "TAVILY_API_KEY" in result.output
+        assert result.metadata["provider"] == "duckduckgo_instant"
+        assert "Hello, world." in result.output
 
-    async def test_stub_message_matches_constant(self):
-        with patch.dict(os.environ, {}, clear=True):
-            env = os.environ.copy()
-            env.pop("SERPER_API_KEY", None)
-            env.pop("TAVILY_API_KEY", None)
-            with patch.dict(os.environ, env, clear=True):
-                result = await self.tool.call({"query": "hello"}, ctx())
-        assert result.output == _STUB_MESSAGE
+    def test_stub_message_symbol_still_exported(self):
+        """Legacy callers import ``_STUB_MESSAGE`` — keep it resolvable even
+        though the new code only surfaces it on total network failure."""
+        assert isinstance(_STUB_MESSAGE, str)
+        assert _STUB_MESSAGE  # non-empty
 
 
 # ===========================================================================

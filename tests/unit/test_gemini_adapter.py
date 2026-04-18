@@ -23,11 +23,11 @@ from duh.adapters.gemini import (  # noqa: E402
     _normalize_finish_reason,
     _resolve_thinking_budget,
     _scrub,
-    _supports_thinking,
     _to_api_tools,
     _to_tool_config,
 )
 from duh.kernel.messages import Message  # noqa: E402
+from duh.kernel.model_caps import get_capabilities  # noqa: E402
 from duh.kernel.untrusted import TaintSource, UntrustedStr  # noqa: E402
 
 
@@ -132,11 +132,12 @@ class TestThinkingBudget:
         assert _resolve_thinking_budget(None, None) is None
 
     def test_supports_thinking_gemini_2_5(self):
-        assert _supports_thinking("gemini-2.5-pro")
-        assert _supports_thinking("gemini-2.5-flash")
+        # Delegates to the unified capability registry (``model_caps``).
+        assert get_capabilities("gemini-2.5-pro").supports_thinking
+        assert get_capabilities("gemini-2.5-flash").supports_thinking
 
     def test_supports_thinking_false_for_1_5(self):
-        assert not _supports_thinking("gemini-1.5-pro")
+        assert not get_capabilities("gemini-1.5-pro").supports_thinking
 
 
 class TestUsageMapping:

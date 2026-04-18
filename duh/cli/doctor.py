@@ -24,13 +24,17 @@ def run_doctor() -> int:
     checks.append(("Python version", py_ok,
                     f"{py_version} {'(>= 3.12)' if py_ok else '(need >= 3.12)'}"))
 
-    # Provider API keys (presence check)
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    checks.append(("ANTHROPIC_API_KEY", bool(anthropic_key),
+    # Provider API keys (presence check) — env-var names come from the
+    # single source of truth in ``duh.providers.registry.PROVIDER_ENV_VARS``.
+    from duh.providers.registry import PROVIDER_ENV_VARS, get_api_key
+    anthropic_env = PROVIDER_ENV_VARS["anthropic"][0]
+    anthropic_key = get_api_key("anthropic")
+    checks.append((anthropic_env, bool(anthropic_key),
                     "set" if anthropic_key else "not set"))
 
-    openai_key = os.environ.get("OPENAI_API_KEY", "")
-    checks.append(("OPENAI_API_KEY", True,
+    openai_env = PROVIDER_ENV_VARS["openai"][0]
+    openai_key = get_api_key("openai")
+    checks.append((openai_env, True,
                     "set" if openai_key else "not set (optional)"))
 
     # --- Provider connectivity (actual health checks) ---

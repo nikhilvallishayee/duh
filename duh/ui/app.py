@@ -684,7 +684,16 @@ class DuhApp(App[int]):
         self._active_assistant.append(text)
         try:
             log = self.query_one("#message-log", ScrollableContainer)
-            log.scroll_end(animate=False)
+            # ``immediate=True`` is load-bearing during streaming — the
+            # default (``immediate=False``) defers the scroll until after
+            # the next screen refresh, which can lag behind the append()
+            # rate so far that the new content sits below the viewport
+            # until the user scrolls manually.  That's precisely the
+            # reported "streaming not visible / only shows up after
+            # scroll" bug.  ``force=True`` also applies the scroll even
+            # if the user previously scrolled up, so the viewport stays
+            # pinned to the growing bottom as deltas arrive.
+            log.scroll_end(animate=False, immediate=True, force=True)
         except Exception:  # pragma: no cover — no log yet during tests
             pass
 

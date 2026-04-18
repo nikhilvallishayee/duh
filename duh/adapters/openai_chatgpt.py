@@ -236,8 +236,11 @@ _EXACT_SSE_HANDLERS: dict[str, Any] = {
 class OpenAIChatGPTProvider:
     """Adapter for ChatGPT subscription-backed Codex models."""
 
-    def __init__(self, model: str = "gpt-5.2-codex"):
-        self._default_model = model
+    def __init__(self, model: str = ""):
+        # Lazy import avoids a circular dep (registry imports from
+        # ``duh.auth.openai_chatgpt`` at package load).
+        from duh.providers.registry import ModelAliases
+        self._default_model = model or ModelAliases.CHATGPT_CODEX_MODEL
 
     @classmethod
     def _parse_tool_use_block(cls, block: dict[str, Any]) -> ParsedToolUse:
@@ -276,7 +279,8 @@ class OpenAIChatGPTProvider:
             yield auth_error
             return
 
-        resolved_model = (model or self._default_model).strip() or "gpt-5.2-codex"
+        from duh.providers.registry import ModelAliases
+        resolved_model = (model or self._default_model).strip() or ModelAliases.CHATGPT_CODEX_MODEL
         access = oauth.get("access_token", "")
         account_id = oauth.get("account_id", "")
         request_body = _build_request_body(

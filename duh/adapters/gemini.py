@@ -103,12 +103,10 @@ class GeminiProvider:
         thinking_budget: int | None = None,
     ):
         _require_genai()
-        resolved_key = (
-            api_key
-            or os.environ.get("GEMINI_API_KEY")
-            or os.environ.get("GOOGLE_API_KEY")
-            or ""
-        )
+        # Env-var chain is the single source of truth in
+        # ``duh.providers.registry.PROVIDER_ENV_VARS``.
+        from duh.providers.registry import get_api_key
+        resolved_key = api_key or get_api_key("gemini")
         self._api_key = resolved_key
         self._client = _genai.Client(api_key=resolved_key)
         self._default_model = model
@@ -181,11 +179,11 @@ class GeminiProvider:
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream model responses, yielding D.U.H. uniform events."""
         _require_genai()
-        resolved_model = model or self._default_model
         # Gemini SDK expects bare model IDs ("gemini-2.5-pro"), not LiteLLM-prefixed
-        # ones ("gemini/gemini-2.5-pro"). The registry may hand either form; strip.
-        if resolved_model.startswith("gemini/"):
-            resolved_model = resolved_model[len("gemini/"):]
+        # ones ("gemini/gemini-2.5-pro"). The registry may hand either form; strip
+        # via the shared prefix registry so adding a new prefix is a one-liner.
+        from duh.providers.registry import strip_provider_prefix
+        resolved_model = strip_provider_prefix(model or self._default_model)
 
         # System prompt extracted from messages — Gemini uses system_instruction
         system_text = _build_system_text(system_prompt)
@@ -202,8 +200,9 @@ class GeminiProvider:
         if max_tokens:
             cfg_kwargs["max_output_tokens"] = max_tokens
 
-        # Thinking — only supported on gemini-2.5-*
-        if _supports_thinking(resolved_model):
+        # Thinking — delegate to the unified capability registry
+        from duh.kernel.model_caps import get_capabilities
+        if get_capabilities(resolved_model).supports_thinking:
             budget = _resolve_thinking_budget(thinking, self._thinking_budget)
             if budget is not None:
                 cfg_kwargs["thinking_config"] = _genai_types.ThinkingConfig(
@@ -375,10 +374,6 @@ def _build_system_text(system_prompt: str | list[str]) -> str:
     if isinstance(system_prompt, list):
         return "\n\n".join(p for p in system_prompt if p)
     return system_prompt or ""
-
-
-def _supports_thinking(model: str) -> bool:
-    return "gemini-2.5" in (model or "").lower()
 
 
 def _resolve_thinking_budget(

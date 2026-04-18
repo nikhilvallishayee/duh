@@ -27,6 +27,12 @@ _REDIRECT_URI_TEMPLATE = "http://localhost:{port}/auth/callback"
 SCOPE = "openid profile email offline_access"
 JWT_AUTH_CLAIM = "https://api.openai.com/auth"
 
+# Codex-family model IDs advertised to the user.  The head of the list is
+# the canonical default (matched by ``ModelAliases.CHATGPT_CODEX_MODEL`` in
+# ``duh.providers.registry``) — registry and this module have a regression
+# test that keeps the two in sync.  This module is imported by the registry
+# at package load, so it intentionally does NOT import from
+# ``duh.providers.registry`` to avoid a circular import.
 OPENAI_CHATGPT_MODELS = [
     "gpt-5.2-codex",
     "gpt-5.1-codex-max",

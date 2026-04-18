@@ -15,8 +15,11 @@ Agent types are system prompt variations:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -179,21 +182,82 @@ async def run_agent(
     )
     engine = Engine(deps=deps, config=config)
 
-    result_text = ""
+    # Accumulate text from both streaming deltas AND final assistant events.
+    # Some providers only emit `assistant` events (full reconciled message);
+    # others stream incrementally via `text_delta`. We capture both and
+    # reconcile at the end: assistant text is authoritative, deltas are
+    # the fallback. See ADR-012 and the "(no output)" hallucination bug.
+    delta_text = ""
+    assistant_text = ""
     turns = 0
     error = ""
+    saw_tool_use = False
 
     try:
         async for event in engine.run(prompt):
             event_type = event.get("type", "")
             if event_type == "text_delta":
-                result_text += event.get("text", "")
+                delta_text += event.get("text", "")
+            elif event_type == "assistant":
+                msg = event.get("message")
+                if msg is None:
+                    continue
+                # Extract text from the reconciled assistant message.
+                # Prefer Message.text property (handles TextBlock + dict forms);
+                # fall back to manual content-list walk for duck-typed inputs.
+                extracted = ""
+                text_attr = getattr(msg, "text", None)
+                if isinstance(text_attr, str):
+                    extracted = text_attr
+                else:
+                    content = getattr(msg, "content", None)
+                    if isinstance(content, str):
+                        extracted = content
+                    elif isinstance(content, list):
+                        parts: list[str] = []
+                        for block in content:
+                            if isinstance(block, dict) and block.get("type") == "text":
+                                parts.append(block.get("text", "") or "")
+                            else:
+                                btext = getattr(block, "text", None)
+                                if isinstance(btext, str):
+                                    parts.append(btext)
+                        extracted = "".join(parts)
+                # Keep the latest NON-EMPTY assistant text; intermediate
+                # tool_use-only assistant events have empty .text and must
+                # not wipe a prior populated value.
+                if extracted:
+                    assistant_text = extracted
+            elif event_type == "tool_use":
+                saw_tool_use = True
             elif event_type == "done":
                 turns = event.get("turns", 0)
             elif event_type == "error":
                 error = event.get("error", "unknown error")
     except Exception as exc:
         error = str(exc)
+
+    # Reconcile: assistant wins if present, deltas are fallback.
+    result_text = assistant_text or delta_text
+
+    # Observability: surface the empty-output case that caused the live bug.
+    if not result_text and not error:
+        logger.info(
+            "Swarm sub-agent [%s] completed %d turns with empty result_text (model=%s)",
+            agent_type,
+            turns,
+            resolved_model or "inherit",
+        )
+
+    # Defensive guard: if we got no text and no error, and no tool_use was
+    # observed, something is misconfigured. Surface it as an error so the
+    # parent model can't mistake silent emptiness for success.
+    if not result_text and not error and not saw_tool_use:
+        error = (
+            "Sub-agent completed without producing output. This is likely "
+            "a misconfiguration (empty response, 0 max_turns, or "
+            "provider-level failure)."
+        )
 
     return AgentResult(
         agent_type=agent_type,

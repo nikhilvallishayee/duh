@@ -36,11 +36,6 @@ from duh.kernel.messages import Message
 from duh.kernel.untrusted import TaintSource, UntrustedStr
 
 
-# Only the namespaced prefix the registry uses. The Groq API itself never
-# sees this — we strip it before every request.
-_GROQ_NAMESPACE_PREFIX = "groq/"
-
-
 def _wrap_model_output(text: str) -> UntrustedStr:
     """Tag Groq provider output as MODEL_OUTPUT."""
     if isinstance(text, UntrustedStr):
@@ -49,10 +44,13 @@ def _wrap_model_output(text: str) -> UntrustedStr:
 
 
 def _strip_namespace(model: str) -> str:
-    """Strip the ``groq/`` registry prefix before handing to the Groq API."""
-    if model.startswith(_GROQ_NAMESPACE_PREFIX):
-        return model[len(_GROQ_NAMESPACE_PREFIX):]
-    return model
+    """Strip the ``groq/`` registry prefix before handing to the Groq API.
+
+    Delegates to the shared provider-prefix registry so that adding a new
+    provider prefix only requires editing one table.
+    """
+    from duh.providers.registry import strip_provider_prefix
+    return strip_provider_prefix(model)
 
 
 class GroqProvider:
@@ -77,9 +75,11 @@ class GroqProvider:
                 "Install with: pip install 'groq>=0.11,<1'"
             ) from exc
 
+        # Env-var chain lives in ``duh.providers.registry.PROVIDER_ENV_VARS``.
+        from duh.providers.registry import get_api_key
         self._default_model = model
         self._client = AsyncGroq(
-            api_key=api_key or os.environ.get("GROQ_API_KEY", ""),
+            api_key=api_key or get_api_key("groq"),
             max_retries=max_retries,
             timeout=timeout,
             **({"base_url": base_url} if base_url else {}),

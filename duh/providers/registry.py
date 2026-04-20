@@ -156,6 +156,31 @@ PROVIDER_TIER_MODELS: dict[str, dict[str, str]] = {
 TIER_ALIASES: set[str] = {"small", "medium", "large", "inherit"}
 
 
+def resolve_model_alias(model: str | None) -> str | None:
+    """Resolve ``<provider>/<tier>`` CLI aliases to concrete model names.
+
+    Examples::
+
+        gemini/large       -> gemini-3.1-pro-preview
+        groq/small         -> llama-3.1-8b-instant
+        anthropic/medium   -> claude-sonnet-4-6
+
+    Plain model names (``claude-opus-4-6``, ``gemini/gemini-2.5-pro``) and
+    unknown provider/tier combinations pass through unchanged, so this is
+    safe to call unconditionally at top-level model-selection entry points.
+    """
+    if not model or "/" not in model:
+        return model
+    prefix, _, rest = model.partition("/")
+    tier = rest.lower()
+    if tier not in TIER_ALIASES or tier == "inherit":
+        return model
+    tier_map = PROVIDER_TIER_MODELS.get(prefix.lower())
+    if tier_map is None or tier not in tier_map:
+        return model
+    return tier_map[tier]
+
+
 def resolve_agent_tier(tier: str, parent_model: str) -> str:
     """Map a generic tier to a concrete model based on parent's provider.
 
@@ -602,7 +627,11 @@ def _try_native_gemini(model: str) -> Any | None:
         from duh.adapters.gemini import GeminiProvider  # type: ignore[import-not-found]
     except ImportError:
         return None
-    return GeminiProvider(model=model)
+    # -1 = dynamic thinking budget. On thinking-capable models (2.5-pro,
+    # 3.1-pro-preview, …) this makes Gemini stream thought parts, which the
+    # TUI renders in the ThinkingWidget. Without this, include_thoughts
+    # defaults off and no thinking_delta events ever fire.
+    return GeminiProvider(model=model, thinking_budget=-1)
 
 
 def _try_native_groq(model: str) -> Any | None:
@@ -622,6 +651,7 @@ def build_model_backend(
     provider_factories: ProviderFactories | None = None,
 ) -> ProviderBackend:
     provider_factories = provider_factories or {}
+    model = resolve_model_alias(model)
 
     if provider_name == "stub" or stub_provider_enabled():
         from duh.adapters.stub_provider import StubProvider

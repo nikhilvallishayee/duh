@@ -346,7 +346,9 @@ class TestClearBehaviour:
 
 @pytest.mark.asyncio
 class TestSentinelHandling:
-    async def test_plan_sentinel_rendered_as_message(self) -> None:
+    async def test_plan_sentinel_starts_plan_flow(self) -> None:
+        """``\\x00plan\\x00`` sentinel triggers the plan-mode flow —
+        logs ``Planning: <desc>`` and delegates to ``_run_plan_flow``."""
         engine = _fake_tui_engine()
         app = DuhApp(engine=engine, model="test-model", session_id="abc")
         async with app.run_test(size=(120, 40)) as pilot:
@@ -354,18 +356,15 @@ class TestSentinelHandling:
                 SlashDispatcher,
                 "async_dispatch",
                 new=AsyncMock(return_value=("", "\x00plan\x00refactor the tui")),
-            ):
-                log = app.query_one("#message-log")
-                before = len(list(log.children))
+            ), patch.object(
+                DuhApp, "_run_plan_flow", new=AsyncMock(),
+            ) as mock_flow:
                 await app._handle_slash("/plan refactor the tui")
                 await pilot.pause()
-                after = len(list(log.children))
-                assert after > before
-                last = list(log.children)[-1]
-                rendered = str(last.render()) if hasattr(last, "render") else ""
-                assert "refactor the tui" in rendered
+                mock_flow.assert_awaited_once_with("refactor the tui")
 
-    async def test_snapshot_sentinel_rendered_as_message(self) -> None:
+    async def test_snapshot_sentinel_starts_snapshot_flow(self) -> None:
+        """``\\x00snapshot\\x00`` sentinel triggers the snapshot flow."""
         engine = _fake_tui_engine()
         app = DuhApp(engine=engine, model="test-model", session_id="abc")
         async with app.run_test(size=(120, 40)) as pilot:
@@ -373,13 +372,12 @@ class TestSentinelHandling:
                 SlashDispatcher,
                 "async_dispatch",
                 new=AsyncMock(return_value=("", "\x00snapshot\x00apply")),
-            ):
-                log = app.query_one("#message-log")
-                before = len(list(log.children))
+            ), patch.object(
+                DuhApp, "_run_snapshot_flow", new=AsyncMock(),
+            ) as mock_flow:
                 await app._handle_slash("/snapshot apply")
                 await pilot.pause()
-                after = len(list(log.children))
-                assert after > before
+                mock_flow.assert_awaited_once_with("apply")
 
 
 # ===========================================================================

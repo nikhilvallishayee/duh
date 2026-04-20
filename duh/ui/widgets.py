@@ -66,7 +66,26 @@ except ImportError:  # pragma: no cover — Rich is a hard dep in practice
 # The theme is passed to `rich.markdown.Markdown(code_theme=...)`, which uses
 # it only for fenced code blocks.  Everything else (headers, bold, lists) is
 # styled by Rich's own markdown styles + the Textual CSS theme.
-DEFAULT_CODE_THEME = "monokai"
+def _detect_code_theme() -> str:
+    """Pick a Pygments theme based on terminal background (gap #15).
+
+    Uses the ``COLORFGBG`` env var exported by xterm, rxvt, iTerm2, and
+    many others: ``"fg;bg"`` where 0-6 = dark bg, 7-15 = light bg.
+    Falls back to ``"monokai"`` when the var is missing or unparseable
+    so dark-terminal users (the common case) keep the historical theme.
+    """
+    import os
+    raw = os.environ.get("COLORFGBG", "")
+    if raw:
+        parts = raw.split(";")
+        if len(parts) >= 2 and parts[-1].isdigit():
+            bg = int(parts[-1])
+            if 7 <= bg <= 15:
+                return "default"  # light background → light Pygments theme
+    return "monokai"
+
+
+DEFAULT_CODE_THEME = _detect_code_theme()
 
 
 class HighlightedMarkdown(Static):
@@ -576,15 +595,39 @@ class ToolCallWidget(Widget):
             self._result_label.remove_class("spinner-message")
             self._result_label.add_class("tool-result-ok")
 
-        # Multi-agent tool results are always content-rich — expand by
-        # default so sub-agent outputs are visible without an extra click.
-        # (Error results also benefit: users want to see which sub-task
-        # failed and why.)
-        if effective_name in ("Swarm", "Agent") and self._collapsible is not None:
+        # Post-result collapse policy:
+        #   * Swarm / Agent   → always expanded (multi-sub-agent output).
+        #   * Short success   → stay expanded (default from compose()).
+        #   * Verbose success → auto-collapse so a chain of Read/Grep calls
+        #     doesn't flood the viewport. Title still shows the one-line
+        #     summary so users get signal without visual noise.
+        #   * Errors          → stay expanded by default; the stack trace
+        #     is often what the user wants to see next.
+        if self._collapsible is not None:
             try:
-                self._collapsible.collapsed = False
+                if effective_name in ("Swarm", "Agent"):
+                    self._collapsible.collapsed = False
+                elif not is_error and _is_verbose_output(output):
+                    self._collapsible.collapsed = True
             except Exception:  # pragma: no cover — defensive
                 pass
+
+
+# Auto-collapse threshold — tool outputs beyond this are folded by default
+# so chains of Read/Grep don't fill the viewport. Tuned to keep most
+# edits/short commands visible while collapsing file reads and searches.
+_VERBOSE_OUTPUT_CHAR_THRESHOLD: int = 500
+_VERBOSE_OUTPUT_LINE_THRESHOLD: int = 10
+
+
+def _is_verbose_output(output: str) -> bool:
+    if not output:
+        return False
+    if len(output) > _VERBOSE_OUTPUT_CHAR_THRESHOLD:
+        return True
+    if output.count("\n") > _VERBOSE_OUTPUT_LINE_THRESHOLD:
+        return True
+    return False
 
 
 def _format_elapsed(elapsed_ms: float | None) -> str:
@@ -740,6 +783,17 @@ class ThinkingWidget(Widget):
     """Dim/italic block that accumulates extended-thinking tokens.
 
     Collapsed by default so it does not distract; users can expand it.
+
+    Animated spinner
+    ----------------
+    While thinking is in progress (no :meth:`finish` call yet), a Braille
+    spinner cycles in the collapsible title so the TUI visibly breathes
+    while the model reasons. Frame rate matches :class:`ToolCallWidget`
+    (80 ms = 12.5 FPS) so both widgets animate in lockstep.
+
+    Title updates (character-count) are throttled to ~8 ms to avoid
+    render churn during high-rate thinking streams — deltas accumulate
+    but the title is repainted at most every ``_TITLE_REFRESH_S``.
     """
 
     DEFAULT_CSS = """
@@ -750,6 +804,11 @@ class ThinkingWidget(Widget):
     """
 
     _content: reactive[str] = reactive("", layout=True)
+
+    # Match ToolCallWidget so the two animations tick in lockstep.
+    _SPINNER_INTERVAL_S: float = 0.08
+    # Title repaint cap — matches the text-delta coalescer's 8ms frame cap.
+    _TITLE_REFRESH_S: float = 0.008
 
     def __init__(
         self,
@@ -764,9 +823,17 @@ class ThinkingWidget(Widget):
         self._collapsed = collapsed
         self._body: Static | None = None
         self._collapsible: Collapsible | None = None
+        self._thinking_running = True
+        self._spinner_timer: Any = None
+        self._spinner_frame_idx = 0
+        self._title_dirty = False
+        self._title_timer: Any = None
 
     def compose(self) -> ComposeResult:
-        with Collapsible(title="Thinking…", collapsed=self._collapsed) as c:
+        # Start with the first spinner frame so the title has animation
+        # from the moment the widget appears (pre-first-delta).
+        initial = f"{_SPINNER_FRAMES[0]} Thinking…"
+        with Collapsible(title=initial, collapsed=self._collapsed) as c:
             self._collapsible = c
             yield Static("", classes="thinking-body", markup=False, id="thinking-body")
 
@@ -776,13 +843,106 @@ class ThinkingWidget(Widget):
             self._collapsible = self.query_one(Collapsible)
         except Exception:
             pass
+        # Race guard: if finish() already fired before on_mount (possible in
+        # very fast turns or tests), don't start the spinner.
+        if not self._thinking_running:
+            return
+        self._spinner_timer = self.set_interval(
+            self._SPINNER_INTERVAL_S, self._advance_spinner,
+        )
+        # Coalesce title repaints — append() just flips a dirty flag; this
+        # timer flushes it at _TITLE_REFRESH_S cadence so a high-rate
+        # thinking stream doesn't thrash the UI.
+        self._title_timer = self.set_interval(
+            self._TITLE_REFRESH_S, self._flush_title,
+        )
+
+    def on_unmount(self) -> None:
+        """Safety net — cancel timers if the widget is torn down early."""
+        self._stop_timers()
+
+    # ------------------------------------------------------------------
+    # Spinner + title animation
+    # ------------------------------------------------------------------
+
+    def _advance_spinner(self) -> None:
+        if not self._thinking_running or self._collapsible is None:
+            return
+        self._spinner_frame_idx = (
+            self._spinner_frame_idx + 1
+        ) % len(_SPINNER_FRAMES)
+        self._repaint_title()
+
+    def _flush_title(self) -> None:
+        """Repaint the title if a delta arrived since the last tick."""
+        if not self._title_dirty:
+            return
+        self._title_dirty = False
+        self._repaint_title()
+
+    # Chars of the latest thinking shown inline in the collapsed title —
+    # lets users peek at reasoning without expanding. 60 fits ~half a
+    # standard terminal width after the spinner glyph + char count.
+    _PREVIEW_CHARS: int = 60
+
+    def _repaint_title(self) -> None:
+        if self._collapsible is None:
+            return
+        frame = _SPINNER_FRAMES[self._spinner_frame_idx]
+        char_count = len(self._content)
+        preview = ""
+        if char_count:
+            # Show the trailing slice — "ticker-tape" preview. Strip line
+            # breaks so the title stays single-line.
+            tail = self._content[-self._PREVIEW_CHARS:].replace("\n", " ").strip()
+            if char_count > self._PREVIEW_CHARS:
+                tail = "…" + tail
+            preview = f" {tail}"
+        if self._thinking_running:
+            if char_count:
+                self._collapsible.title = (
+                    f"{frame} Thinking ({char_count:,} chars):{preview}"
+                )
+            else:
+                self._collapsible.title = f"{frame} Thinking…"
+        else:
+            # Finished — static checkmark + final preview, if any.
+            if char_count:
+                self._collapsible.title = (
+                    f"✓ Thinking ({char_count:,} chars):{preview}"
+                )
+            else:
+                self._collapsible.title = "✓ Thinking"
+
+    def _stop_timers(self) -> None:
+        """Cancel both animation timers. Idempotent."""
+        for attr in ("_spinner_timer", "_title_timer"):
+            timer = getattr(self, attr, None)
+            if timer is None:
+                continue
+            setattr(self, attr, None)
+            try:
+                timer.stop()
+            except Exception:  # pragma: no cover — defensive
+                pass
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def append(self, delta: str) -> None:
         """Append a thinking text delta."""
         self._content += delta
         if self._body is not None:
             self._body.update(self._content)
-        # Update collapsible title with character count
-        if self._collapsible is not None:
-            char_count = len(self._content)
-            self._collapsible.title = f"Thinking… ({char_count:,} chars)"
+        # Mark the title dirty so the next _flush_title tick repaints it.
+        # Direct repainting here would thrash the UI on high-rate streams.
+        self._title_dirty = True
+
+    def finish(self) -> None:
+        """Mark the thinking block complete. Stops spinner, shows checkmark."""
+        if not self._thinking_running:
+            return
+        self._thinking_running = False
+        self._stop_timers()
+        self._repaint_title()

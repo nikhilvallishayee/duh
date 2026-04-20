@@ -150,6 +150,26 @@ MarkdownBulletList, MarkdownOrderedList {
     text-style: italic;
 }
 
+/* ── Transcript search hit highlight (Ctrl+F) ────────────────── */
+MessageWidget.search-hit {
+    border: heavy $warning;
+}
+
+/* ── Slash suggestions dropdown (ADR-077 #3) ─────────────────── */
+#slash-suggestions {
+    height: auto;
+    max-height: 6;
+    background: $surface;
+    color: $text;
+    border-top: solid $primary-darken-2;
+    padding: 0 1;
+    display: none;
+}
+
+#slash-suggestions.visible {
+    display: block;
+}
+
 /* ── Input area ─────────────────────────────────────────────── */
 #input-area {
     height: auto;

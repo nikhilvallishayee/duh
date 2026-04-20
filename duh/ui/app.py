@@ -47,6 +47,7 @@ from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import ScrollableContainer, Horizontal, Vertical
+from textual.markup import escape as escape_markup
 from textual.message import Message
 from textual.widgets import Button, Footer, Header, Input, Label, Static, TextArea
 
@@ -64,8 +65,8 @@ from duh.kernel.model_caps import model_context_block, rebuild_system_prompt
 
 
 class SubmittableTextArea(TextArea):
-    """A ``TextArea`` that treats ``Enter`` as *submit* and ``Shift+Enter`` /
-    ``Ctrl+J`` as *newline*.
+    """A ``TextArea`` that treats ``Enter`` as *submit*, ``Shift+Enter`` /
+    ``Ctrl+J`` as *newline*, and provides history + readline keys.
 
     Rationale (ADR-073 Wave 1 #4):
         Textual's default ``Input`` is single-line.  Users composing code
@@ -75,9 +76,18 @@ class SubmittableTextArea(TextArea):
     Behaviour:
         * ``enter``           → posts :class:`Submitted`.  No newline inserted.
         * ``shift+enter``     → inserts ``\\n`` at the cursor.
-        * ``ctrl+j``          → inserts ``\\n`` (terminal fallback for terminals
-                                 that do not distinguish shift+enter from enter).
+        * ``ctrl+j``          → inserts ``\\n`` (terminal fallback).
+        * ``up``              → previous history entry (when cursor on row 0).
+        * ``down``            → next history entry (when cursor on last row).
+        * ``ctrl+a``          → move cursor to start of line (readline).
+        * ``ctrl+e``          → move cursor to end of line (readline).
+        * ``ctrl+k``          → delete to end of line (readline kill).
+        * ``ctrl+u``          → delete to start of line (readline kill).
         * Every other key    → default TextArea behaviour.
+
+    History is persisted via the ``history`` list passed in at construction
+    time — callers own the list so they can share it across sessions
+    (disk-backed) or keep it in-memory.
     """
 
     @dataclass
@@ -91,6 +101,77 @@ class SubmittableTextArea(TextArea):
         def control(self) -> "SubmittableTextArea":
             return self.text_area
 
+    @dataclass
+    class SlashComplete(Message):
+        """Posted when the user presses Tab on a ``/…`` prefix."""
+
+        text_area: "SubmittableTextArea"
+        prefix: str
+
+        @property
+        def control(self) -> "SubmittableTextArea":
+            return self.text_area
+
+    def __init__(
+        self,
+        *args: Any,
+        history: list[str] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        # Shared mutable list — callers can persist/load it.
+        self._history: list[str] = history if history is not None else []
+        # -1 = "past end" (current draft). Valid history indices are
+        # [0, len(_history)). Up decrements, Down increments.
+        self._history_idx: int = -1
+        # Draft stashed when the user navigates away from their in-progress
+        # input so Down-past-end restores it verbatim.
+        self._pending_draft: str = ""
+
+    def push_history(self, entry: str) -> None:
+        """Record a submitted entry; de-dupes consecutive duplicates."""
+        entry = entry.strip()
+        if not entry:
+            return
+        if self._history and self._history[-1] == entry:
+            self._history_idx = -1
+            return
+        self._history.append(entry)
+        self._history_idx = -1
+        self._pending_draft = ""
+
+    def _at_first_row(self) -> bool:
+        row, _ = self.cursor_location
+        return row == 0
+
+    def _at_last_row(self) -> bool:
+        row, _ = self.cursor_location
+        return row == self.document.line_count - 1
+
+    def _history_recall(self, delta: int) -> None:
+        """Navigate history by *delta* (-1 = older, +1 = newer)."""
+        if not self._history:
+            return
+        # Stash the in-progress draft on first Up so Down-past-end can
+        # restore it.
+        if self._history_idx == -1 and delta < 0:
+            self._pending_draft = self.text
+            self._history_idx = len(self._history) - 1
+        else:
+            new_idx = self._history_idx + delta
+            if new_idx < 0:
+                new_idx = 0
+            if new_idx >= len(self._history):
+                # Past the newest entry — restore the draft.
+                self._history_idx = -1
+                self.load_text(self._pending_draft)
+                # Place cursor at end so user can keep typing.
+                self.move_cursor(self.document.end)
+                return
+            self._history_idx = new_idx
+        self.load_text(self._history[self._history_idx])
+        self.move_cursor(self.document.end)
+
     async def _on_key(self, event: events.Key) -> None:  # type: ignore[override]
         key = event.key
         # Enter (no modifiers) → submit.
@@ -99,6 +180,17 @@ class SubmittableTextArea(TextArea):
             event.prevent_default()
             self.post_message(self.Submitted(text_area=self, value=self.text))
             return
+        # Tab on a ``/…`` prefix → ask the app to complete the slash command.
+        # Plain Tab still inserts a literal tab when the buffer is empty or
+        # the first line doesn't start with ``/`` — keeps editor-y uses
+        # working (indenting a pasted code block, etc.).
+        if key == "tab":
+            text = self.text
+            if text.startswith("/") and "\n" not in text and " " not in text:
+                event.stop()
+                event.prevent_default()
+                self.post_message(self.SlashComplete(text_area=self, prefix=text))
+                return
         # Shift+Enter or Ctrl+J → newline (treated identically by default, but
         # some terminals only emit one or the other, so both are supported).
         if key in ("shift+enter", "ctrl+j"):
@@ -109,8 +201,58 @@ class SubmittableTextArea(TextArea):
             start, end = self.selection
             self._replace_via_keyboard("\n", start, end)
             return
+        # History recall — only engage when cursor is on the boundary row
+        # so users can still navigate within a multi-line draft normally.
+        if key == "up" and self._at_first_row() and self._history:
+            event.stop()
+            event.prevent_default()
+            self._history_recall(-1)
+            return
+        if key == "down" and self._at_last_row() and self._history_idx != -1:
+            event.stop()
+            event.prevent_default()
+            self._history_recall(+1)
+            return
+        # Readline / emacs cursor + kill keys.
+        if key == "ctrl+a":
+            event.stop()
+            event.prevent_default()
+            self.action_cursor_line_start()
+            return
+        if key == "ctrl+e":
+            event.stop()
+            event.prevent_default()
+            self.action_cursor_line_end()
+            return
+        if key == "ctrl+k":
+            event.stop()
+            event.prevent_default()
+            if self.read_only:
+                return
+            row, col = self.cursor_location
+            line_end = (row, len(self.document.get_line(row)))
+            self.delete(self.cursor_location, line_end)
+            return
+        if key == "ctrl+u":
+            event.stop()
+            event.prevent_default()
+            if self.read_only:
+                return
+            row, _ = self.cursor_location
+            line_start = (row, 0)
+            self.delete(line_start, self.cursor_location)
+            return
         # All other keys: default behaviour (printable → insert, arrows, etc.)
         await super()._on_key(event)
+
+def _human_tokens(n: int) -> str:
+    """Format a token count compactly: 1234 → '1.2K', 1_048_576 → '1.0M'."""
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}K"
+    return str(n)
+
 
 # Tools whose input contains a file path we want to track.
 _FILE_TOOLS = frozenset({"Read", "Write", "Edit", "MultiEdit", "Glob", "Grep"})
@@ -248,6 +390,8 @@ class DuhApp(App[int]):
         Binding("ctrl+b", "toggle_sidebar", "Sidebar", show=True),
         Binding("ctrl+k", "command_palette", "Commands", show=True, priority=True),
         Binding("ctrl+t", "theme_selector", "Theme", show=True, priority=True),
+        Binding("alt+t", "toggle_thinking", "Thinking", show=True),
+        Binding("ctrl+f", "search_transcript", "Find", show=True),
         Binding("ctrl+q", "quit", "Quit", show=True, priority=True),
         Binding("escape", "quit", "Quit", show=False),
     ]
@@ -290,6 +434,10 @@ class DuhApp(App[int]):
 
         # Progress indicators (ADR-067 P1): elapsed time per tool call
         self._tool_start: float = 0.0
+
+        # Live status: streaming flag — true while a turn is in flight.
+        # Drives the spinner glyph in the status bar (gap #13).
+        self._streaming: bool = False
 
         # Recent files sidebar (ADR-067 P2)
         self._recent_files: list[str] = []
@@ -335,6 +483,41 @@ class DuhApp(App[int]):
         # Updated in-place when the archive count grows.
         self._archive_placeholder: Static | None = None
 
+        # Input history (gap #2) — persisted across sessions at
+        # ~/.config/duh/history.txt. Most-recent 200 entries kept.
+        self._history_max = 200
+        self._prompt_history: list[str] = self._load_history()
+
+        # Plan mode — lazily initialised on first /plan command so we don't
+        # import the kernel module at app-construct time.
+        self._plan_mode: Any = None
+
+    # ------------------------------------------------------------ history I/O
+
+    @staticmethod
+    def _history_path():
+        from pathlib import Path
+        return Path.home() / ".config" / "duh" / "history.txt"
+
+    def _load_history(self) -> list[str]:
+        try:
+            path = self._history_path()
+            if not path.exists():
+                return []
+            lines = path.read_text(encoding="utf-8").splitlines()
+            return [ln for ln in lines if ln.strip()][-self._history_max:]
+        except Exception:
+            return []
+
+    def _save_history(self) -> None:
+        try:
+            path = self._history_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            trimmed = self._prompt_history[-self._history_max:]
+            path.write_text("\n".join(trimmed) + "\n", encoding="utf-8")
+        except Exception:
+            pass
+
     # ---------------------------------------------------------------- compose
 
     def compose(self) -> ComposeResult:
@@ -342,13 +525,17 @@ class DuhApp(App[int]):
         with Horizontal(id="body"):
             yield self._make_sidebar()
             yield ScrollableContainer(id="message-log")
+        # Slash-command suggestions dropdown (hidden by default — toggled
+        # via the ``visible`` class when the user types ``/…``).
+        yield Static("", id="slash-suggestions", markup=True)
         with Horizontal(id="input-area"):
             # Multi-line input (ADR-073 Wave 1 #4). ``Enter`` submits,
             # ``Shift+Enter`` / ``Ctrl+J`` insert a newline.
             yield SubmittableTextArea(
                 id="prompt-input",
                 soft_wrap=True,
-                placeholder="Type a message… (Enter to send, Shift+Enter for newline)",
+                placeholder="Type a message… (Enter to send, Shift+Enter for newline, ↑/↓ history)",
+                history=self._prompt_history,
             )
             yield Button("Send", id="send-button", variant="primary")
         yield Static(self._status_text(), id="statusbar")
@@ -375,12 +562,40 @@ class DuhApp(App[int]):
         return f" [bold magenta]D[/].U.[bold magenta]H[/]. | {self._model}{sid}"
 
     def _status_text(self) -> str:
+        # Context-window fraction — render as "in=X/W" so users see
+        # burndown against the model's limit, not just raw counts.
+        try:
+            from duh.kernel.model_caps import get_capabilities
+            cw = get_capabilities(self._model).context_window
+        except Exception:
+            cw = 0
         tok = ""
         if self._input_tokens or self._output_tokens:
-            tok = f"  in={self._input_tokens:,} out={self._output_tokens:,}"
+            if cw:
+                tok = (
+                    f"  in={_human_tokens(self._input_tokens)}/{_human_tokens(cw)}"
+                    f" out={_human_tokens(self._output_tokens)}"
+                )
+            else:
+                tok = (
+                    f"  in={self._input_tokens:,}"
+                    f" out={self._output_tokens:,}"
+                )
         cost = f"  ${self._cost:.4f}" if self._cost else ""
         conn = "[green]connected[/]" if self._connected else "[red]disconnected[/]"
-        return f" [bold magenta]D[/].[bold magenta]U[/].[bold magenta]H[/]. [{self._model}] turn {self._turn}{tok}{cost}  {conn}"
+        # Streaming indicator — a Braille tick that rotates between redraws
+        # so the user can tell a turn is in progress without squinting at
+        # token deltas. Frame is picked from monotonic time so no timer
+        # is needed; _refresh_status is called on every usage_delta anyway.
+        stream_glyph = ""
+        if self._streaming:
+            frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+            frame = frames[int(time.monotonic() * 12) % len(frames)]
+            stream_glyph = f"  [cyan]{frame}[/]"
+        return (
+            f" [bold magenta]D[/].[bold magenta]U[/].[bold magenta]H[/]. "
+            f"[{self._model}] turn {self._turn}{tok}{cost}{stream_glyph}  {conn}"
+        )
 
     def _refresh_status(self) -> None:
         self.query_one("#header", Static).update(self._header_text())
@@ -405,6 +620,51 @@ class DuhApp(App[int]):
             sidebar.remove_class("visible")
         else:
             sidebar.add_class("visible")
+
+    def action_toggle_thinking(self) -> None:
+        """Alt+T — expand or collapse the most recent thinking widget.
+
+        Makes reasoning peekable from the keyboard without Tab-focusing
+        into the widget or reaching for the mouse.
+        """
+        thinkers = list(self.query(ThinkingWidget))
+        if not thinkers:
+            return
+        latest = thinkers[-1]
+        try:
+            from textual.widgets import Collapsible
+            c = latest.query_one(Collapsible)
+            c.collapsed = not c.collapsed
+        except Exception:
+            pass
+
+    async def action_search_transcript(self) -> None:
+        """Ctrl+F — prompt for a query, then scroll to the first MessageWidget
+        whose text contains it. Highlights all matches via the ``search-hit``
+        class so users can see secondary occurrences too.
+        """
+        from duh.ui.search_modal import SearchModal
+
+        query = await self.push_screen_wait(SearchModal())
+        if not query:
+            # Clear any prior highlights on cancel.
+            for w in self.query(MessageWidget):
+                w.remove_class("search-hit")
+            return
+        q = query.lower()
+        first_hit: MessageWidget | None = None
+        for w in self.query(MessageWidget):
+            text = (getattr(w, "_content", "") or "").lower()
+            if q in text:
+                w.add_class("search-hit")
+                if first_hit is None:
+                    first_hit = w
+            else:
+                w.remove_class("search-hit")
+        if first_hit is not None:
+            first_hit.scroll_visible(animate=True)
+        else:
+            self.notify(f"No matches for {query!r}", severity="information")
 
     # ----------------------------------------------------------------- command palette
 
@@ -713,11 +973,69 @@ class DuhApp(App[int]):
     ) -> None:
         await self._submit()
 
+    # ----------------------------------------------------------- slash autocomplete
+
+    def _slash_matches(self, prefix: str) -> list[tuple[str, str]]:
+        """Return ``(name, help)`` pairs starting with *prefix* (case-insensitive)."""
+        from duh.cli.slash_commands import SLASH_COMMANDS
+        q = prefix.lower()
+        return [(k, v) for k, v in SLASH_COMMANDS.items() if k.lower().startswith(q)]
+
+    @on(TextArea.Changed, "#prompt-input")
+    async def handle_textarea_changed(self, event: TextArea.Changed) -> None:
+        """Refresh the slash-suggestions dropdown as the user types."""
+        try:
+            panel = self.query_one("#slash-suggestions", Static)
+        except Exception:
+            return
+        text = event.text_area.text
+        # Only show when the buffer is a single-line ``/…`` prefix with no
+        # arguments — once the user types a space we stop suggesting so the
+        # dropdown doesn't cover the input while they're typing arguments.
+        if not text.startswith("/") or "\n" in text or " " in text:
+            panel.update("")
+            panel.remove_class("visible")
+            return
+        matches = self._slash_matches(text)
+        if not matches:
+            panel.update(f"[dim]no matches for[/] {escape_markup(text)}")
+            panel.add_class("visible")
+            return
+        # Render up to 5 rows — "cmd   — help".
+        rows = []
+        for name, help_text in matches[:5]:
+            rows.append(
+                f"[bold cyan]{escape_markup(name)}[/]  [dim]—[/] {escape_markup(help_text)}"
+            )
+        if len(matches) > 5:
+            rows.append(f"[dim]… {len(matches) - 5} more (Tab to complete)[/]")
+        else:
+            rows.append("[dim]Tab to complete first match[/]")
+        panel.update("\n".join(rows))
+        panel.add_class("visible")
+
+    @on(SubmittableTextArea.SlashComplete, "#prompt-input")
+    async def handle_slash_complete(
+        self, event: SubmittableTextArea.SlashComplete,
+    ) -> None:
+        """Replace the current prefix with the top SLASH_COMMANDS match."""
+        matches = self._slash_matches(event.prefix)
+        if not matches:
+            return
+        top = matches[0][0]
+        # Replace with the full name + trailing space so the user can type args.
+        event.text_area.load_text(top + " ")
+        event.text_area.move_cursor(event.text_area.document.end)
+
     async def _submit(self) -> None:
         inp = self.query_one("#prompt-input", SubmittableTextArea)
         text = inp.text.strip()
         if not text:
             return
+        # Record before clearing so history survives even if the query
+        # never dispatches (e.g. slash-command-only turns).
+        inp.push_history(text)
+        self._save_history()
         inp.clear()
 
         # Slash command dispatch — handle locally, don't send to model
@@ -759,6 +1077,12 @@ class DuhApp(App[int]):
 
     async def _add_system_message(self, text: str) -> None:
         """Render *text* (captured-stdout-style) into the message log."""
+        # Strip ANSI escape sequences — REPL handlers use Rich markup
+        # (``\x1b[1;33m``) which Textual's Static shows as raw escape
+        # garbage. Dropping them yields readable plain text; Ctrl+F on
+        # the transcript gives the user search-highlighting instead.
+        import re as _re
+        text = _re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
         # Strip the leading two-space indent that sync handlers emit for the
         # readline REPL — looks awkward inside a bordered widget.
         cleaned = "\n".join(
@@ -767,7 +1091,7 @@ class DuhApp(App[int]):
         ).rstrip()
         if not cleaned:
             return
-        await self._add_widget(Static(cleaned, classes="welcome-banner"))
+        await self._add_widget(Static(cleaned, classes="welcome-banner", markup=False))
 
     async def _handle_slash(self, text: str) -> bool:
         """Handle /commands locally. Returns True if handled.
@@ -867,26 +1191,15 @@ class DuhApp(App[int]):
                 + "/quit, /q    Exit the TUI\n"
             )
 
-        # Sentinel returns — /plan and /snapshot still need interactive UI
-        # support (tracked separately in Wave 1 task 2 notes).
+        # Sentinel returns — /plan and /snapshot use approval modals (gap #5).
         if isinstance(new_model, str) and new_model.startswith("\x00"):
             if new_model.startswith("\x00plan\x00"):
                 plan_desc = new_model[len("\x00plan\x00"):]
-                await self._add_widget(Static(
-                    f"[bold]Proposed plan:[/]\n{plan_desc}\n\n"
-                    "[dim]Plan mode approval not yet supported in TUI "
-                    "(see ADR-073 Wave 1 task 4).[/]",
-                    classes="welcome-banner",
-                ))
+                await self._run_plan_flow(plan_desc)
                 return True
             if new_model.startswith("\x00snapshot\x00"):
                 snap_arg = new_model[len("\x00snapshot\x00"):]
-                await self._add_widget(Static(
-                    f"[bold]Snapshot:[/] {snap_arg or '(none)'}\n"
-                    "[dim]Interactive snapshot apply/discard not yet "
-                    "supported in TUI (see ADR-073 Wave 1 task 2).[/]",
-                    classes="welcome-banner",
-                ))
+                await self._run_snapshot_flow(snap_arg)
                 return True
 
         # /exit from the shared dispatcher maps to quitting the TUI.
@@ -999,6 +1312,151 @@ class DuhApp(App[int]):
         else:
             await self._add_error_message(message)
 
+    # ----------------------------------------------------------- plan / snapshot flows
+
+    async def _dispatch_events(self, gen) -> None:
+        """Mount TUI widgets for each event in an async event generator.
+
+        Extracted from :meth:`_run_query` so the plan-mode ``plan()`` and
+        ``execute()`` phases can render through the same widget pipeline.
+        Caller owns the enclosing try/finally so this helper stays pure.
+        """
+        async for event in gen:
+            event_type = event.get("type", "")
+            if event_type == "text_delta":
+                text = event.get("text", "")
+                if self._active_thinking is not None:
+                    self._active_thinking.finish()
+                    self._active_thinking = None
+                if self._active_assistant is None:
+                    self._active_assistant = await self._new_assistant_message()
+                self._delta_coalescer.add(text)
+            elif event_type == "thinking_delta":
+                if self._output_style != OutputStyle.CONCISE:
+                    text = event.get("text", "")
+                    expanded = self._debug or self._output_style == OutputStyle.VERBOSE
+                    if self._active_thinking is None:
+                        self._active_thinking = await self._new_thinking_widget(
+                            collapsed=not expanded,
+                        )
+                    self._active_thinking.append(text)
+            elif event_type == "tool_use":
+                self._delta_coalescer.flush()
+                if self._active_thinking is not None:
+                    self._active_thinking.finish()
+                    self._active_thinking = None
+                self._active_assistant = None
+                name = event.get("name", "?")
+                inp = event.get("input", {})
+                self._tool_start = time.monotonic()
+                self._active_tool = await self._new_tool_widget(name, inp)
+            elif event_type == "tool_result":
+                if self._active_tool is not None:
+                    elapsed_ms = (time.monotonic() - self._tool_start) * 1000
+                    output = str(event.get("output", ""))
+                    is_error = bool(event.get("is_error"))
+                    self._active_tool.set_result(
+                        output, is_error, elapsed_ms=elapsed_ms,
+                        style=self._output_style.value,
+                    )
+                    self._active_tool = None
+            elif event_type == "error":
+                await self._add_error_message(event.get("error", "unknown error"))
+
+    async def _run_plan_flow(self, plan_desc: str) -> None:
+        """Full plan-mode flow: plan → approval modal → execute (or cancel)."""
+        from duh.kernel.plan_mode import PlanMode
+        from duh.ui.approval_modal import ApprovalModal
+
+        if self._plan_mode is None:
+            self._plan_mode = PlanMode(self._engine)
+        pm = self._plan_mode
+
+        self._streaming = True
+        self._refresh_status()
+        await self._add_widget(Static(
+            f"[bold]Planning:[/] {plan_desc}",
+            classes="session-divider",
+        ))
+        try:
+            await self._dispatch_events(pm.plan(plan_desc))
+        except Exception as exc:  # noqa: BLE001 — surface the failure
+            await self._add_error_message(f"Planning failed: {exc}")
+            self._streaming = False
+            self._refresh_status()
+            return
+        finally:
+            self._delta_coalescer.flush()
+            if self._active_thinking is not None:
+                self._active_thinking.finish()
+                self._active_thinking = None
+        self._streaming = False
+        self._refresh_status()
+
+        if not pm.steps:
+            await self._add_error_message("Could not parse a plan from the response.")
+            pm.clear()
+            return
+
+        body = pm.format_plan()
+        choice = await self.push_screen_wait(
+            ApprovalModal("Proposed plan", body),
+        )
+        if choice == "approve":
+            await self._add_widget(Static(
+                "[green]Plan approved — executing…[/]",
+                classes="session-divider",
+            ))
+            self._streaming = True
+            self._refresh_status()
+            try:
+                await self._dispatch_events(pm.execute())
+            except Exception as exc:  # noqa: BLE001
+                await self._add_error_message(f"Execution failed: {exc}")
+            finally:
+                self._delta_coalescer.flush()
+                if self._active_thinking is not None:
+                    self._active_thinking.finish()
+                    self._active_thinking = None
+                self._streaming = False
+                self._refresh_status()
+        elif choice == "modify":
+            await self._add_widget(Static(
+                "[yellow]Edit the plan with /plan show, then "
+                "/plan <new description> to re-plan.[/]",
+                classes="session-divider",
+            ))
+        else:
+            pm.clear()
+            await self._add_widget(Static(
+                "[dim]Plan rejected.[/]",
+                classes="session-divider",
+            ))
+
+    async def _run_snapshot_flow(self, snap_arg: str) -> None:
+        """Snapshot flow — apply/discard via approval modal.
+
+        The underlying snapshot command already ran via the dispatcher;
+        this flow just captures the user's disposition for follow-up
+        ``/snapshot apply`` / ``/snapshot discard`` calls.
+        """
+        from duh.ui.approval_modal import ApprovalModal
+
+        body = snap_arg or "(empty snapshot)"
+        choice = await self.push_screen_wait(
+            ApprovalModal(
+                "Snapshot proposal",
+                body,
+                show_modify=False,
+            ),
+        )
+        if choice == "approve":
+            # Re-enter /snapshot apply via the dispatcher so the same
+            # handler path runs as from the REPL.
+            await self._handle_slash("/snapshot apply")
+        else:
+            await self._handle_slash("/snapshot discard")
+
     async def _handle_compact_local(self) -> None:
         """TUI-local `/compact` — runs compaction and reports result."""
         deps = getattr(self._engine, "_deps", None)
@@ -1030,6 +1488,10 @@ class DuhApp(App[int]):
         self._active_assistant = None
         self._active_thinking = None
         self._active_tool = None
+        # Flip the streaming flag so the status bar picks up the live
+        # spinner (gap #13). Cleared in the finally block.
+        self._streaming = True
+        self._refresh_status()
 
         import logging
         _log = logging.getLogger("duh.tui.query")
@@ -1042,6 +1504,11 @@ class DuhApp(App[int]):
 
                 if event_type == "text_delta":
                     text = event.get("text", "")
+                    # Text after thinking means reasoning is done —
+                    # stop the spinner and lock in the checkmark.
+                    if self._active_thinking is not None:
+                        self._active_thinking.finish()
+                        self._active_thinking = None
                     if self._active_assistant is None:
                         # Create the widget eagerly so the coalescer's
                         # flush callback always has a target.
@@ -1083,6 +1550,10 @@ class DuhApp(App[int]):
                     # Flush any pending coalesced text first so tool
                     # output can't visually reorder ahead of prose.
                     self._delta_coalescer.flush()
+                    # A tool call ends the thinking block — stop the spinner.
+                    if self._active_thinking is not None:
+                        self._active_thinking.finish()
+                        self._active_thinking = None
                     # Finish the current assistant message first
                     self._active_assistant = None
                     name = event.get("name", "?")
@@ -1172,6 +1643,12 @@ class DuhApp(App[int]):
             # Final safety-net flush — guarantees no character is left
             # in the coalescer after the worker exits.
             self._delta_coalescer.flush()
+            # Finalize any still-running thinking widget so the spinner
+            # doesn't keep ticking after the turn ends.
+            if self._active_thinking is not None:
+                self._active_thinking.finish()
+                self._active_thinking = None
+            self._streaming = False
             # Update token counts from engine
             try:
                 from duh.kernel.tokens import estimate_cost

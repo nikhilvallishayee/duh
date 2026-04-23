@@ -1,0 +1,29 @@
+{
+  "target": "duh-gemini-3.1",
+  "scores": {
+    "adr_quality": 4,
+    "implementation_completeness": 5,
+    "correctness_happy_path": 4,
+    "adversarial_correctness": 5,
+    "concurrency_discipline": 5,
+    "design_doc": 4,
+    "api_ergonomics": 3,
+    "test_coverage": 3,
+    "code_quality": 4,
+    "protocol_adherence": 5
+  },
+  "total_out_of_50": 42,
+  "adversarial_pass_rate": 1.0,
+  "one_line_summary": "Complete and concurrency-safe implementation with perfect hidden-suite results, but docs/tests/API details are a bit rough.",
+  "strengths": [
+    "Atomic Redis Lua backend and locked in-memory backend avoid lost updates.",
+    "Implements all requested surfaces: two algorithms, two backends, decorator, and ASGI middleware.",
+    "Hidden adversarial suite passed completely."
+  ],
+  "weaknesses": [
+    "ADR/design docs contain inconsistencies from midstream algorithm changes and are not especially thorough.",
+    "Middleware headers are not fully spec-conventional and fail-open behavior is undocumented/configured loosely.",
+    "Property/integration tests are fairly shallow, and session log shows some test-run/debugging uncertainty."
+  ],
+  "judge": "j-gpt54"
+}

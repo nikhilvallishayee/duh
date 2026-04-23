@@ -1,0 +1,29 @@
+{
+  "target": "duh-gemini-3.1",
+  "scores": {
+    "adr_quality": 4,
+    "implementation_completeness": 5,
+    "correctness_happy_path": 4,
+    "adversarial_correctness": 5,
+    "concurrency_discipline": 4,
+    "design_doc": 5,
+    "api_ergonomics": 5,
+    "test_coverage": 4,
+    "code_quality": 4,
+    "protocol_adherence": 5
+  },
+  "total_out_of_50": 45,
+  "adversarial_pass_rate": 1.0,
+  "one_line_summary": "Complete, well-documented implementation with sliding-window-log, atomic Lua scripts, and perfect adversarial pass rate.",
+  "strengths": [
+    "Full adversarial suite pass (5/5) \u2014 correctness holds under chaos",
+    "Atomic Lua scripts using Redis TIME eliminate lost-updates and clock skew",
+    "Thorough ADR + design doc with mermaid diagram and explicit tradeoffs"
+  ],
+  "weaknesses": [
+    "ADR lists only 2 rejected alternatives at the minimum bar; sliding-window choice text was flipped late",
+    "Hypothesis test has a buggy token-bucket case (uses InMemoryBackend as limiter; assertion very loose)",
+    "Middleware fail-open swallows all exceptions broadly without logging/metrics hook"
+  ],
+  "judge": "j-opus"
+}

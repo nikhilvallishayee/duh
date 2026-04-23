@@ -1,0 +1,15 @@
+{
+  "agent_id": "duh-opus",
+  "cli": "duh",
+  "model": "claude-opus-4-7",
+  "baseline_commit": "1b2bb9ad523de4880a75bce14f9c079b3fe182c3",
+  "benchmark": "benchmark-2-ratelimit",
+  "start_ts": "2026-04-23T19:27:01Z",
+  "end_ts": "2026-04-23T19:35:59Z",
+  "elapsed_s": 538,
+  "exit_code": 0,
+  "worktree": "/Users/nomind/Code/duh/benchmarks/benchmark-2-ratelimit/worktrees/duh-opus",
+  "log_bytes": 99013,
+  "diff_bytes": 89559,
+  "files_changed": 19
+}

@@ -60,17 +60,59 @@ def InMemory(rl):
 
 
 def _make(limiter_cls, backend_cls, capacity, period_s):
-    # Try a few likely constructor shapes without being too clever.
-    for kwargs in (
-        dict(capacity=capacity, period=period_s, backend=backend_cls()),
-        dict(capacity=capacity, refill_rate=capacity / period_s, backend=backend_cls()),
-        dict(capacity=capacity, period_s=period_s, backend=backend_cls()),
+    """Construct the limiter by matching parameter names from its signature.
+
+    Handles the broad spread of constructor shapes observed in this
+    benchmark (capacity/refill_rate/refill_per_sec/period/period_s/
+    period_ms/window_ms/window_size_ms, with or without backend kwarg,
+    with or without keyword-only boundaries).
+    """
+    import inspect
+    try:
+        sig = inspect.signature(limiter_cls.__init__)
+    except (TypeError, ValueError):
+        _skip(f"no introspectable signature for {limiter_cls.__name__}")
+    params = {p.name: p for p in sig.parameters.values() if p.name != "self"}
+
+    rate = capacity / period_s
+    kwargs = {}
+    # Capacity aliases
+    for name in ("capacity", "limit", "max_tokens", "size"):
+        if name in params:
+            kwargs[name] = capacity
+            break
+    # Rate / period aliases
+    for name, value in (
+        ("refill_rate", rate), ("refill_per_sec", rate),
+        ("rate", rate), ("tokens_per_sec", rate),
+        ("period", period_s), ("period_s", period_s),
+        ("period_seconds", period_s),
+        ("period_ms", int(period_s * 1000)),
+        ("window_ms", int(period_s * 1000)),
+        ("window_size_ms", int(period_s * 1000)),
+        ("window", period_s), ("window_s", period_s),
     ):
-        try:
-            return limiter_cls(**kwargs)
-        except TypeError:
-            continue
-    _skip(f"could not construct {limiter_cls.__name__}")
+        if name in params:
+            kwargs[name] = value
+            break
+    # Backend
+    if "backend" in params:
+        kwargs["backend"] = backend_cls()
+
+    try:
+        return limiter_cls(**kwargs)
+    except TypeError as e:
+        # Try positional variant: (backend, capacity, rate) or (cap, rate, backend)
+        for args in (
+            (backend_cls(), capacity, rate),
+            (capacity, rate, backend_cls()),
+            (capacity, rate),
+        ):
+            try:
+                return limiter_cls(*args)
+            except TypeError:
+                continue
+        _skip(f"could not construct {limiter_cls.__name__}: {e}")
 
 
 def _enforce(lim, key):

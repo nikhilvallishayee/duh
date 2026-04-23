@@ -1,0 +1,25 @@
+All deliverables in place. Here's what I built:
+
+**Deliverables**
+- `docs/adr/ADR-001-rate-limiter-design.md` — written before any code; covers problem/scope, token-bucket vs sliding-window tradeoffs, log vs counter (chose log), Redis Lua vs WATCH/MULTI/EXEC (chose Lua), clock-skew policy (Redis server time is authoritative), and 3 rejected alternatives.
+- `docs/design.md` — ASCII component map, request flow through middleware → limiter → backend, Lua execution diagram, failure-mode table, and degradation strategy.
+- `README.md` — install, usage for each algorithm/backend/decorator/middleware, operational caveats.
+
+**Implementation** (`ratelimit/`)
+- `types.py`: `Decision`, `OnError`, errors.
+- `backends/base.py`: `Backend` protocol.
+- `backends/memory.py`: thread-safe `InMemoryBackend`.
+- `backends/redis_backend.py`: `RedisBackend` with atomic Lua scripts for both algorithms (uses Redis server `TIME`; `fail_open`/`fail_closed` degradation).
+- `limiters.py`: `RateLimiter` ABC + `TokenBucketLimiter` + `SlidingWindowLimiter`.
+- `decorator.py`: `@rate_limit(limiter, key_fn)` (sync + async).
+- `middleware.py`: `RateLimitMiddleware` emitting `X-RateLimit-*` and `Retry-After`.
+
+**Tests** (`tests/`, all 45 pass)
+- Per-class unit tests (token bucket, sliding window).
+- `test_concurrency.py`: 150–200 threads starting on a barrier; asserts exact allowed/denied counts for memory & Redis backends, for both algorithms.
+- `test_redis_backend.py`: fakeredis integration, cost>1, namespace isolation, `reset`, fail-open/fail-closed.
+- `test_decorator.py`: re-entry, async, cost callable, metadata preservation.
+- `test_middleware.py`: headers on success, 429 with `Retry-After`, per-key isolation, exempt paths.
+- `test_property.py`: Hypothesis property tests asserting the no-over-grant invariant (sliding window) and capacity+refill bound (token bucket).
+
+Also updated `pyproject.toml` to require `fakeredis[lua]` and added `httpx` (needed by Starlette's TestClient). All 45 tests pass in ~0.35s.

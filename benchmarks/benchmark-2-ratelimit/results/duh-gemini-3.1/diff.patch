@@ -1,0 +1,988 @@
+diff --git a/README.md b/README.md
+index 2998d5b..70a77d1 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,93 @@
+-# ratelimit
++# Ratelimit
+ 
+-Distributed rate limiter — benchmark scaffold. Agent fills this in.
++A distributed rate limiter as a standalone Python package. It supports multiple algorithms, interchangeable backends, and integrates smoothly into ASGI web applications.
++
++## Installation
++
++You can install this package by dropping the `ratelimit` directory into your project.
++
++```bash
++pip install redis
++```
++
++## Features
++
++- **Algorithms**: Token Bucket and Sliding Window Counter.
++- **Backends**: In-Memory (for single-node/tests) and Redis (for distributed deployments, uses atomic Lua scripts to prevent lost-update races).
++- **Integrations**: Function decorator and ASGI Middleware (FastAPI/Starlette compatible).
++
++## Usage
++
++### 1. Direct Usage
++
++```python
++from ratelimit import InMemoryBackend, TokenBucketLimiter
++
++backend = InMemoryBackend()
++# Capacity of 10 requests, refills 2 requests per second
++limiter = TokenBucketLimiter(backend, capacity=10, refill_rate=2.0)
++
++decision = limiter.enforce("user_123")
++if decision.allowed:
++    print(f"Success! Remaining: {decision.remaining}")
++else:
++    print(f"Rate limited. Retry after {decision.retry_after_ms}ms")
++```
++
++### 2. Distributed Usage with Redis
++
++```python
++import redis
++from ratelimit import RedisBackend, SlidingWindowLimiter
++
++client = redis.Redis(host='localhost', port=6379)
++backend = RedisBackend(client)
++
++# Max 5 requests per 10-second window
++limiter = SlidingWindowLimiter(backend, capacity=5, window_size_ms=10000)
++
++decision = limiter.enforce("user_456")
++```
++
++### 3. Function Decorator
++
++```python
++from ratelimit import rate_limit, InMemoryBackend, TokenBucketLimiter
++
++backend = InMemoryBackend()
++limiter = TokenBucketLimiter(backend, capacity=5, refill_rate=1.0)
++
++@rate_limit(limiter, key_fn=lambda user_id: f"user:{user_id}")
++def sensitive_operation(user_id: str):
++    return "Data!"
++
++# Raises RateLimitExceeded if limit is hit
++```
++
++### 4. ASGI Middleware (FastAPI / Starlette)
++
++```python
++from fastapi import FastAPI
++from ratelimit import RateLimitMiddleware, InMemoryBackend, TokenBucketLimiter
++
++app = FastAPI()
++backend = InMemoryBackend()
++limiter = TokenBucketLimiter(backend, capacity=100, refill_rate=10.0)
++
++# Extracts client IP to use as the rate limit key
++app.add_middleware(
++    RateLimitMiddleware, 
++    limiter=limiter, 
++    key_fn=lambda scope: scope.get("client", ["default"])[0]
++)
++
++@app.get("/")
++async def root():
++    return {"message": "Hello World"}
++```
++
++## Operational Caveats
++
++- **Clock Skew**: In distributed mode, this library relies on the Redis server clock (`TIME` command inside Lua script) to guarantee precise and synchronized rate enforcement across multiple application nodes.
++- **Failure Modes**: The `RateLimitMiddleware` implements a **fail-open** strategy. If the backend (e.g., Redis) is unreachable or times out, the rate limiter will silently permit the request to ensure your application remains available during infrastructure degradation.
++- **Redis Requirement**: The `RedisBackend` requires Redis >= 3.2 because it relies on the `EVAL` command with `TIME` capabilities.
+diff --git a/docs/adr/ADR-001-rate-limiter-design.md b/docs/adr/ADR-001-rate-limiter-design.md
+new file mode 100644
+index 0000000..c4f62c6
+--- /dev/null
++++ b/docs/adr/ADR-001-rate-limiter-design.md
+@@ -0,0 +1,46 @@
++# ADR 001: Distributed Rate Limiter Design
++
++## Status
++Accepted
++
++## Context and Problem Statement
++We need to build a distributed rate limiter in Python to protect services from abuse, manage resource usage, and ensure fair allocation across users or API keys. The solution must support multiple algorithms, work in single-process environments as well as distributed deployments using Redis, provide a function-level decorator, and integrate natively as an ASGI middleware. 
++
++Key challenges include handling concurrent requests correctly (avoiding race conditions that lead to over-granting), dealing with clock differences in distributed setups, and choosing an appropriate algorithm.
++
++## Scope
++The scope of this design covers:
++1. Architecture of algorithms and backends.
++2. Choice of token bucket and sliding window implementations.
++3. Concurrency model for the Redis backend.
++4. Handling of clock-skew.
++
++## Decision Drivers
++- Correctness under high concurrency.
++- Performance (low overhead for middleware).
++- Scalability across multiple nodes.
++
++## Token Bucket vs Sliding Window
++- **Token Bucket**: Wins for scenarios requiring burst tolerance while maintaining a steady long-term average rate. It's conceptually simple and efficient to implement.
++- **Sliding Window**: Wins when strict enforcement over a specific time window is needed (i.e., absolute maximum requests per rolling window), preventing bursts at the boundary of time intervals (which fixed-window suffers from).
++
++## Choice of Sliding Window Implementation
++We chose **Sliding-Window-Log** over **Sliding-Window-Counter**.
++- **Sliding-Window-Log**: Records the exact timestamp of every request. Tradeoff: perfectly accurate, guaranteeing that no more than `capacity` requests are ever granted in *any* continuous window of length `period`. Memory usage and processing time scale with the number of requests (O(N) per window), but for typical rate limits it is manageable.
++- **Sliding-Window-Counter**: Divides the window into fixed sub-windows and approximates the count. Tradeoff: uses O(1) memory per key, much lower overhead, but can allow bursts of up to 1.5x capacity in adversarial overlapping windows.
++- **Decision**: The Log approach is chosen because strict enforcement of the limit over any time window is a hard invariant for our system, prioritizing correctness over raw constant-time performance.
++
++## Redis Concurrency Model
++We chose **Lua Scripts (EVAL/EVALSHA)** over **WATCH/MULTI/EXEC**.
++- **Lua Scripts**: Execute atomically inside Redis. They require a single network roundtrip, significantly reducing latency and eliminating optimistic locking failures under high contention.
++- **WATCH/MULTI/EXEC (Optimistic Locking)**: Requires multiple roundtrips and can lead to high retry rates when many clients access the same key simultaneously (lost-update races).
++- **Decision**: Lua scripts are superior for rate limiting due to guaranteed atomicity and lower latency.
++
++## Clock-Skew Policy
++In distributed deployments, clock skew across application servers can cause inaccurate rate limits.
++- **Policy**: All time-based calculations (timestamps, TTLs, window boundaries) will rely on the **Backend's clock** rather than the application server's clock where possible. For the Redis backend, the Lua script will use `TIME` from Redis or rely strictly on TTL expirations to manage state. For in-memory, the local server time is used. This centralizes the source of truth for time, nullifying application server clock skew.
++
++## Rejected Alternatives
++1. **Fixed Window Counter Algorithm**: Rejected because it allows bursts of up to 2x the limit around the boundary of the window. While extremely simple, it doesn't provide the smooth enforcement required for robust APIs.
++2. **Redis Optimistic Locking (WATCH/MULTI)**: Rejected due to performance degradation under heavy contention. In a scenario where 100 concurrent requests hit the same rate limit key, most would fail the transaction and require retries, causing an application-level bottleneck.
++
+diff --git a/docs/design.md b/docs/design.md
+new file mode 100644
+index 0000000..826ba27
+--- /dev/null
++++ b/docs/design.md
+@@ -0,0 +1,91 @@
++# Rate Limiter Design Document
++
++## 1. Overview
++
++The `ratelimit` package provides a robust, distributed-capable rate limiting solution for Python applications. It is designed to be highly extensible, allowing developers to choose between different limiting algorithms and storage backends. Out of the box, it supports Token Bucket and Sliding Window Log algorithms, backed by either in-memory structures (for local development or single-process apps) or Redis (for scalable, multi-node deployments).
++
++The library provides easy-to-use interfaces, including an abstract base class for direct usage, a function decorator for granular control, and an ASGI middleware for seamless integration with modern web frameworks like FastAPI and Starlette.
++
++## 2. Architecture and Request Flow
++
++The architecture is composed of three main layers:
++1. **Integration Layer**: ASGI Middleware and Decorator.
++2. **Logic Layer**: Algorithm implementations (`TokenBucketLimiter`, `SlidingWindowLimiter`).
++3. **Storage Layer**: Backends (`InMemoryBackend`, `RedisBackend`).
++
++### 2.1 Request Flow Diagram
++
++```mermaid
++sequenceDiagram
++    participant Client
++    participant ASGI_Middleware as ASGI Middleware
++    participant Limiter as Rate Limiter (Logic)
++    participant Backend as Storage Backend (Redis/In-Memory)
++    
++    Client->>ASGI_Middleware: Incoming HTTP Request
++    ASGI_Middleware->>ASGI_Middleware: Extract Key (e.g., IP, API Key)
++    ASGI_Middleware->>Limiter: enforce(key, cost=1)
++    
++    Limiter->>Backend: Fetch & Update State (Atomically)
++    Note over Backend: For Redis, this is a Lua Script.<br>For In-Memory, a thread-safe lock.
++    Backend-->>Limiter: Return updated state
++    
++    Limiter->>Limiter: Compute Decision (allowed, remaining, reset_ts, retry_after)
++    Limiter-->>ASGI_Middleware: Return Decision
++    
++    alt is allowed
++        ASGI_Middleware->>Application: Forward Request
++        Application-->>ASGI_Middleware: HTTP Response
++        ASGI_Middleware->>ASGI_Middleware: Inject X-RateLimit-* Headers
++        ASGI_Middleware-->>Client: HTTP Response
++    else is rejected
++        ASGI_Middleware->>ASGI_Middleware: Generate 429 Too Many Requests
++        ASGI_Middleware->>ASGI_Middleware: Inject X-RateLimit-* & Retry-After Headers
++        ASGI_Middleware-->>Client: 429 Response
++    end
++```
++
++### 2.2 Component Responsibilities
++
++- **Backend Protocol**: Dictates how data is loaded, saved, and modified. It hides the complexity of network calls, serialization, and concurrency control. Backends expose primitive atomic operations or execute scripts.
++- **Algorithms (RateLimiter ABC)**: Encapsulate the specific mathematical logic for rate limiting. They take the raw state from the backend, determine if the requested cost can be accommodated, calculate the new state, and instruct the backend to persist it. They return a standardized `Decision` dataclass.
++- **ASGI Middleware**: Extracts a uniquely identifiable key from the ASGI scope (such as the client IP from `scope["client"]`), invokes the `RateLimiter`, and handles HTTP protocol-specifics. If allowed, it passes the request down the ASGI chain and annotates the response with rate-limit headers. If denied, it short-circuits the application and returns a 429 status code.
++
++## 3. Storage Layer and Concurrency
++
++A core challenge of rate limiting is ensuring atomicity. If two requests for the same key arrive simultaneously, a race condition can cause the limit to be exceeded (the "lost update" problem).
++
++### 3.1 InMemoryBackend
++For the `InMemoryBackend`, state is maintained in a Python dictionary. Concurrency is handled using a `threading.Lock`. Since Python dictionary access is fast, locking around the compute-and-update step provides sufficient throughput for single-process environments.
++
++### 3.2 RedisBackend
++For distributed deployments, the `RedisBackend` relies on Redis Lua scripts. Lua scripts are executed atomically by the Redis engine, ensuring that no other commands run concurrently for that key. This completely eliminates the lost-update problem. 
++
++We choose Lua scripts over `WATCH`/`MULTI`/`EXEC` (optimistic locking) because optimistic locking degrades under high contention. If 100 requests try to update the same key, optimistic locking might fail 99 of them, requiring retries and increasing latency. Lua scripts process them sequentially and efficiently in a single network round trip.
++
++## 4. Clock Skew and Time Management
++
++In a distributed system, relying on the application server's clock can lead to inaccuracies if server clocks drift. For example, Server A might think a window has expired, while Server B thinks it has not.
++
++To mitigate this:
++- The **RedisBackend** uses the Redis server's time (via the `TIME` command inside the Lua script or implicit TTLs). This ensures a single source of truth for the passage of time.
++- The **InMemoryBackend** uses `time.time()` as it inherently runs on a single node.
++
++## 5. Failure Modes and Degradation Strategy
++
++In a production environment, the storage backend (particularly Redis) may become unavailable due to network partitions, server crashes, or timeouts. The rate limiter must handle these failures gracefully without bringing down the dependent application.
++
++### 5.1 Failure Modes
++
++- **Redis Unreachable**: The connection fails or times out.
++- **Redis Slow**: Operations take too long, potentially blocking the ASGI event loop.
++- **Malformed State**: Data in Redis is corrupted or not in the expected format.
++
++### 5.2 Degradation Strategy: Fail-Open vs Fail-Closed
++
++The library implements a configurable degradation strategy, typically defaulting to **Fail-Open**.
++
++- **Fail-Open (Default)**: If the backend is unreachable or throws an exception, the rate limiter catches the error, logs it (or emits a metric), and permits the request (`allowed=True`). This ensures that a Redis outage does not result in a total application outage. We prioritize availability over strict rate enforcement during infrastructure failures.
++- **Fail-Closed**: In strict environments (e.g., paid APIs where usage directly correlates to cost), the library can be configured to fail-closed, returning a 429 or 503 error if the limit cannot be verified.
++
++When a failure occurs and Fail-Open is triggered, the middleware will still attempt to include rate-limit headers based on a fallback dummy state, or omit them entirely, depending on configuration. Timeouts are strictly enforced on Redis operations (e.g., using a short `socket_timeout`) to prevent slow Redis nodes from cascading latency into the application layer.
+diff --git a/ratelimit/__init__.py b/ratelimit/__init__.py
+index 0426daa..07e7a8f 100644
+--- a/ratelimit/__init__.py
++++ b/ratelimit/__init__.py
+@@ -1 +1,21 @@
+-# Empty — the agent writes everything.
++from .types import Decision
++from .backends.base import Backend
++from .backends.memory import InMemoryBackend
++from .backends.redis import RedisBackend
++from .limiters.base import RateLimiter
++from .limiters.token_bucket import TokenBucketLimiter
++from .limiters.sliding_window import SlidingWindowLimiter
++from .decorator import rate_limit
++from .middleware import RateLimitMiddleware
++
++__all__ = [
++    "Decision",
++    "Backend",
++    "InMemoryBackend",
++    "RedisBackend",
++    "RateLimiter",
++    "TokenBucketLimiter",
++    "SlidingWindowLimiter",
++    "rate_limit",
++    "RateLimitMiddleware"
++]
+diff --git a/ratelimit/backends/base.py b/ratelimit/backends/base.py
+new file mode 100644
+index 0000000..92d01b3
+--- /dev/null
++++ b/ratelimit/backends/base.py
+@@ -0,0 +1,11 @@
++from typing import Protocol
++from ..types import Decision
++
++class Backend(Protocol):
++    def token_bucket(self, key: str, capacity: int, refill_rate: float, cost: int) -> Decision:
++        """Execute token bucket rate limit atomically."""
++        ...
++
++    def sliding_window(self, key: str, capacity: int, window_size_ms: int, cost: int) -> Decision:
++        """Execute sliding window rate limit atomically."""
++        ...
+diff --git a/ratelimit/backends/memory.py b/ratelimit/backends/memory.py
+new file mode 100644
+index 0000000..c9766f0
+--- /dev/null
++++ b/ratelimit/backends/memory.py
+@@ -0,0 +1,92 @@
++import time
++import threading
++from typing import Dict, Tuple, List
++from ..types import Decision
++from .base import Backend
++
++class InMemoryBackend(Backend):
++    def __init__(self):
++        self._lock = threading.Lock()
++        # Token bucket: key -> (tokens, last_refill_ts_ms)
++        self._tb_state: Dict[str, Tuple[float, int]] = {}
++        # Sliding window log: key -> list of timestamps
++        self._sw_state: Dict[str, List[int]] = {}
++
++    def token_bucket(self, key: str, capacity: int, refill_rate: float, cost: int) -> Decision:
++        now_ms = int(time.time() * 1000)
++        
++        with self._lock:
++            tokens, last_refill_ts_ms = self._tb_state.get(key, (float(capacity), now_ms))
++            
++            elapsed_ms = now_ms - last_refill_ts_ms
++            new_tokens = min(capacity, tokens + (elapsed_ms / 1000.0) * refill_rate)
++            
++            if new_tokens >= cost:
++                new_tokens -= cost
++                self._tb_state[key] = (new_tokens, now_ms)
++                allowed = True
++            else:
++                self._tb_state[key] = (new_tokens, now_ms)
++                allowed = False
++                
++            remaining = int(new_tokens)
++            if not allowed:
++                tokens_needed = cost - new_tokens
++                retry_after_ms = int((tokens_needed / refill_rate) * 1000) if refill_rate > 0 else 0
++            else:
++                retry_after_ms = 0
++                
++            time_to_full_ms = int(((capacity - new_tokens) / refill_rate) * 1000) if refill_rate > 0 else 0
++            reset_ts = now_ms + time_to_full_ms
++
++            return Decision(
++                allowed=allowed,
++                limit=capacity,
++                remaining=remaining,
++                retry_after_ms=retry_after_ms,
++                reset_ts=reset_ts
++            )
++
++    def sliding_window(self, key: str, capacity: int, window_size_ms: int, cost: int) -> Decision:
++        now_ms = int(time.time() * 1000)
++        cutoff_ms = now_ms - window_size_ms
++        
++        with self._lock:
++            log = self._sw_state.get(key, [])
++            # Evict old timestamps
++            log = [ts for ts in log if ts > cutoff_ms]
++            
++            count = sum(1 for _ in log)
++            allowed = (count + cost) <= capacity
++            
++            if allowed:
++                for _ in range(cost):
++                    log.append(now_ms)
++                self._sw_state[key] = log
++            else:
++                self._sw_state[key] = log
++                
++            remaining = max(0, capacity - count) if not allowed else max(0, capacity - (count + cost))
++            
++            if not allowed:
++                # Oldest timestamp that we need to wait for to free up 'cost' tokens
++                # Wait until the (count - capacity + cost)-th element falls out of the window
++                needed_evictions = (count + cost) - capacity
++                if needed_evictions > 0 and len(log) >= needed_evictions:
++                    oldest_to_evict = log[needed_evictions - 1]
++                    retry_after_ms = oldest_to_evict - cutoff_ms
++                else:
++                    retry_after_ms = window_size_ms
++            else:
++                retry_after_ms = 0
++                
++            # Reset when the newest element falls out
++            reset_ts = log[-1] + window_size_ms if log else now_ms
++
++            return Decision(
++                allowed=allowed,
++                limit=capacity,
++                remaining=remaining,
++                retry_after_ms=retry_after_ms,
++                reset_ts=reset_ts
++            )
+diff --git a/ratelimit/backends/redis.py b/ratelimit/backends/redis.py
+new file mode 100644
+index 0000000..60a0988
+--- /dev/null
++++ b/ratelimit/backends/redis.py
+@@ -0,0 +1,141 @@
++import time
++import math
++import uuid
++from typing import Any
++from ..types import Decision
++from .base import Backend
++import redis
++
++TOKEN_BUCKET_LUA = """
++local key = KEYS[1]
++local capacity = tonumber(ARGV[1])
++local refill_rate = tonumber(ARGV[2])
++local cost = tonumber(ARGV[3])
++
++local time_arr = redis.call('TIME')
++local now_ms = tonumber(time_arr[1]) * 1000 + math.floor(tonumber(time_arr[2]) / 1000)
++
++local state = redis.call('HGETALL', key)
++local tokens = capacity
++local last_refill_ts = now_ms
++
++if #state > 0 then
++    for i = 1, #state, 2 do
++        if state[i] == 'tokens' then
++            tokens = tonumber(state[i+1])
++        elseif state[i] == 'last_refill_ts' then
++            last_refill_ts = tonumber(state[i+1])
++        end
++    end
++end
++
++local elapsed_ms = math.max(0, now_ms - last_refill_ts)
++tokens = math.min(capacity, tokens + (elapsed_ms / 1000.0) * refill_rate)
++
++local allowed = 0
++if tokens >= cost then
++    tokens = tokens - cost
++    allowed = 1
++end
++
++redis.call('HSET', key, 'tokens', tostring(tokens), 'last_refill_ts', tostring(now_ms))
++local ttl = 1
++if refill_rate > 0 then
++    ttl = math.ceil((capacity / refill_rate))
++end
++redis.call('EXPIRE', key, ttl)
++
++return {allowed, tostring(tokens), now_ms}
++"""
++
++SLIDING_WINDOW_LUA = """
++local key = KEYS[1]
++local capacity = tonumber(ARGV[1])
++local window_size_ms = tonumber(ARGV[2])
++local cost = tonumber(ARGV[3])
++local unique_id = ARGV[4]
++
++local time_arr = redis.call('TIME')
++local now_ms = tonumber(time_arr[1]) * 1000 + math.floor(tonumber(time_arr[2]) / 1000)
++local cutoff_ms = now_ms - window_size_ms
++
++-- Evict old elements
++redis.call('ZREMRANGEBYSCORE', key, '-inf', cutoff_ms)
++
++local count = redis.call('ZCARD', key)
++local allowed = 0
++local retry_after_ms = 0
++local reset_ts = now_ms
++
++if count + cost <= capacity then
++    allowed = 1
++    for i = 1, cost do
++        redis.call('ZADD', key, now_ms, unique_id .. '_' .. i)
++    end
++    count = count + cost
++else
++    -- Find the timestamp that needs to be evicted to make room
++    local needed_evictions = (count + cost) - capacity
++    local elements = redis.call('ZRANGE', key, needed_evictions - 1, needed_evictions - 1, 'WITHSCORES')
++    if #elements >= 2 then
++        local oldest_to_evict_score = tonumber(elements[2])
++        retry_after_ms = oldest_to_evict_score - cutoff_ms
++    else
++        retry_after_ms = window_size_ms
++    end
++end
++
++redis.call('PEXPIRE', key, window_size_ms)
++
++-- Get the latest score for reset_ts
++local latest = redis.call('ZREVRANGE', key, 0, 0, 'WITHSCORES')
++if #latest >= 2 then
++    reset_ts = tonumber(latest[2]) + window_size_ms
++end
++
++return {allowed, count, retry_after_ms, reset_ts}
++"""
++
++class RedisBackend(Backend):
++    def __init__(self, redis_client: redis.Redis):
++        self.redis = redis_client
++
++    def token_bucket(self, key: str, capacity: int, refill_rate: float, cost: int) -> Decision:
++        result = self.redis.eval(TOKEN_BUCKET_LUA, 1, key, capacity, refill_rate, cost)
++        allowed_int, tokens_str, now_ms = result
++        allowed = bool(allowed_int)
++        tokens = float(tokens_str)
++        
++        if not allowed:
++            tokens_needed = cost - tokens
++            retry_after_ms = int((tokens_needed / refill_rate) * 1000) if refill_rate > 0 else 0
++        else:
++            retry_after_ms = 0
++            
++        remaining = int(tokens)
++        time_to_full_ms = int(((capacity - tokens) / refill_rate) * 1000) if refill_rate > 0 else 0
++        reset_ts = now_ms + time_to_full_ms
++
++        return Decision(
++            allowed=allowed,
++            limit=capacity,
++            remaining=remaining,
++            retry_after_ms=retry_after_ms,
++            reset_ts=reset_ts
++        )
++
++    def sliding_window(self, key: str, capacity: int, window_size_ms: int, cost: int) -> Decision:
++        unique_id = uuid.uuid4().hex
++        result = self.redis.eval(SLIDING_WINDOW_LUA, 1, key, capacity, window_size_ms, cost, unique_id)
++        allowed_int, count, retry_after_ms, reset_ts = result
++        allowed = bool(allowed_int)
++        
++        remaining = max(0, capacity - count)
++
++        return Decision(
++            allowed=allowed,
++            limit=capacity,
++            remaining=remaining,
++            retry_after_ms=retry_after_ms,
++            reset_ts=reset_ts
++        )
+diff --git a/ratelimit/decorator.py b/ratelimit/decorator.py
+new file mode 100644
+index 0000000..599f220
+--- /dev/null
++++ b/ratelimit/decorator.py
+@@ -0,0 +1,18 @@
++import functools
++from typing import Callable, Any
++from .limiters.base import RateLimiter
++
++class RateLimitExceeded(Exception):
++    pass
++
++def rate_limit(limiter: RateLimiter, key_fn: Callable[..., str], cost: int = 1):
++    def decorator(func: Callable[..., Any]):
++        @functools.wraps(func)
++        def wrapper(*args, **kwargs):
++            key = key_fn(*args, **kwargs)
++            decision = limiter.enforce(key, cost)
++            if not decision.allowed:
++                raise RateLimitExceeded(f"Rate limit exceeded. Retry after {decision.retry_after_ms}ms")
++            return func(*args, **kwargs)
++        return wrapper
++    return decorator
+diff --git a/ratelimit/limiters/base.py b/ratelimit/limiters/base.py
+new file mode 100644
+index 0000000..6469b95
+--- /dev/null
++++ b/ratelimit/limiters/base.py
+@@ -0,0 +1,8 @@
++from abc import ABC, abstractmethod
++from ..types import Decision
++
++class RateLimiter(ABC):
++    @abstractmethod
++    def enforce(self, key: str, cost: int = 1) -> Decision:
++        """Enforce rate limits for a given key."""
++        pass
+diff --git a/ratelimit/limiters/sliding_window.py b/ratelimit/limiters/sliding_window.py
+new file mode 100644
+index 0000000..9690094
+--- /dev/null
++++ b/ratelimit/limiters/sliding_window.py
+@@ -0,0 +1,16 @@
++from ..backends.base import Backend
++from .base import RateLimiter
++from ..types import Decision
++
++class SlidingWindowLimiter(RateLimiter):
++    def __init__(self, backend: Backend, capacity: int, window_size_ms: int):
++        if capacity < 0:
++            raise ValueError("Capacity must be non-negative")
++        if window_size_ms <= 0:
++            raise ValueError("Window size must be positive")
++        self.backend = backend
++        self.capacity = capacity
++        self.window_size_ms = window_size_ms
++
++    def enforce(self, key: str, cost: int = 1) -> Decision:
++        return self.backend.sliding_window(key, self.capacity, self.window_size_ms, cost)
+diff --git a/ratelimit/limiters/token_bucket.py b/ratelimit/limiters/token_bucket.py
+new file mode 100644
+index 0000000..5dbc8fb
+--- /dev/null
++++ b/ratelimit/limiters/token_bucket.py
+@@ -0,0 +1,16 @@
++from ..backends.base import Backend
++from .base import RateLimiter
++from ..types import Decision
++
++class TokenBucketLimiter(RateLimiter):
++    def __init__(self, backend: Backend, capacity: int, refill_rate: float):
++        if capacity < 0:
++            raise ValueError("Capacity must be non-negative")
++        if refill_rate < 0:
++            raise ValueError("Refill rate must be non-negative")
++        self.backend = backend
++        self.capacity = capacity
++        self.refill_rate = refill_rate
++
++    def enforce(self, key: str, cost: int = 1) -> Decision:
++        return self.backend.token_bucket(key, self.capacity, self.refill_rate, cost)
+diff --git a/ratelimit/middleware.py b/ratelimit/middleware.py
+new file mode 100644
+index 0000000..67dedb5
+--- /dev/null
++++ b/ratelimit/middleware.py
+@@ -0,0 +1,72 @@
++from typing import Callable, Any, Awaitable
++from .limiters.base import RateLimiter
++from .types import Decision
++
++class RateLimitMiddleware:
++    def __init__(
++        self, 
++        app: Any, 
++        limiter: RateLimiter, 
++        key_fn: Callable[[dict], str] = None,
++        cost_fn: Callable[[dict], int] = None
++    ):
++        self.app = app
++        self.limiter = limiter
++        self.key_fn = key_fn or self.default_key_fn
++        self.cost_fn = cost_fn or (lambda scope: 1)
++
++    @staticmethod
++    def default_key_fn(scope: dict) -> str:
++        client = scope.get("client")
++        if client:
++            return client[0]
++        return "default"
++
++    async def __call__(self, scope: dict, receive: Callable, send: Callable):
++        if scope["type"] != "http":
++            return await self.app(scope, receive, send)
++
++        key = self.key_fn(scope)
++        cost = self.cost_fn(scope)
++        
++        try:
++            decision = self.limiter.enforce(key, cost)
++        except Exception:
++            # Fail-open strategy
++            decision = Decision(allowed=True, limit=0, remaining=0, retry_after_ms=0, reset_ts=0)
++
++        if not decision.allowed:
++            await self._send_429(send, decision)
++            return
++
++        async def send_wrapper(message: dict):
++            if message["type"] == "http.response.start":
++                headers = list(message.get("headers", []))
++                # Append standard rate limiting headers
++                headers.extend([
++                    (b"X-RateLimit-Limit", str(decision.limit).encode()),
++                    (b"X-RateLimit-Remaining", str(decision.remaining).encode()),
++                    (b"X-RateLimit-Reset", str(int(decision.reset_ts / 1000)).encode()),
++                ])
++                message["headers"] = headers
++            await send(message)
++
++        await self.app(scope, receive, send_wrapper)
++
++    async def _send_429(self, send: Callable, decision: Decision):
++        headers = [
++            (b"content-type", b"text/plain"),
++            (b"X-RateLimit-Limit", str(decision.limit).encode()),
++            (b"X-RateLimit-Remaining", str(decision.remaining).encode()),
++            (b"X-RateLimit-Reset", str(int(decision.reset_ts / 1000)).encode()),
++            (b"Retry-After", str(max(1, int(decision.retry_after_ms / 1000))).encode()),
++        ]
++        await send({
++            "type": "http.response.start",
++            "status": 429,
++            "headers": headers
++        })
++        await send({
++            "type": "http.response.body",
++            "body": b"Too Many Requests"
++        })
+diff --git a/ratelimit/types.py b/ratelimit/types.py
+new file mode 100644
+index 0000000..7400ec3
+--- /dev/null
++++ b/ratelimit/types.py
+@@ -0,0 +1,9 @@
++from dataclasses import dataclass
++
++@dataclass
++class Decision:
++    allowed: bool
++    limit: int
++    remaining: int
++    retry_after_ms: int
++    reset_ts: int  # Timestamp in milliseconds
+diff --git a/tests/test_concurrency.py b/tests/test_concurrency.py
+new file mode 100644
+index 0000000..7d94604
+--- /dev/null
++++ b/tests/test_concurrency.py
+@@ -0,0 +1,45 @@
++import pytest
++import threading
++from ratelimit import InMemoryBackend, TokenBucketLimiter, SlidingWindowLimiter
++
++def test_concurrency_token_bucket():
++    backend = InMemoryBackend()
++    limiter = TokenBucketLimiter(backend, capacity=10, refill_rate=0) # No refill, max 10
++    
++    key = "concurrent_tb"
++    
++    allowed_count = 0
++    lock = threading.Lock()
++    
++    def worker():
++        nonlocal allowed_count
++        if limiter.enforce(key).allowed:
++            with lock:
++                allowed_count += 1
++                
++    threads = [threading.Thread(target=worker) for _ in range(150)]
++    for t in threads: t.start()
++    for t in threads: t.join()
++    
++    assert allowed_count == 10
++
++def test_concurrency_sliding_window():
++    backend = InMemoryBackend()
++    limiter = SlidingWindowLimiter(backend, capacity=20, window_size_ms=10000)
++    
++    key = "concurrent_sw"
++    
++    allowed_count = 0
++    lock = threading.Lock()
++    
++    def worker():
++        nonlocal allowed_count
++        if limiter.enforce(key).allowed:
++            with lock:
++                allowed_count += 1
++                
++    threads = [threading.Thread(target=worker) for _ in range(150)]
++    for t in threads: t.start()
++    for t in threads: t.join()
++    
++    assert allowed_count == 20
+diff --git a/tests/test_hypothesis.py b/tests/test_hypothesis.py
+new file mode 100644
+index 0000000..2004235
+--- /dev/null
++++ b/tests/test_hypothesis.py
+@@ -0,0 +1,63 @@
++from hypothesis import given, strategies as st
++from ratelimit import InMemoryBackend, SlidingWindowLimiter
++import time
++from unittest.mock import patch
++
++@given(st.lists(st.floats(min_value=0.0, max_value=5.0), max_size=50))
++def test_sliding_window_invariant(delays):
++    backend = InMemoryBackend()
++    capacity = 10
++    window_size_ms = 1000
++    limiter = SlidingWindowLimiter(backend, capacity=capacity, window_size_ms=window_size_ms)
++    
++    key = "hyp_sw"
++    current_time = 1000000.0 
++    
++    granted_times = []
++    
++    for delay in delays:
++        current_time += delay
++        
++        with patch('time.time', return_value=current_time):
++            decision = limiter.enforce(key)
++            if decision.allowed:
++                granted_times.append(current_time)
++                
++    # Check invariant: no more than `capacity` requests granted in any window of length period.
++    period_s = window_size_ms / 1000.0
++    for i in range(len(granted_times)):
++        for j in range(i+1, len(granted_times)):
++            t1 = granted_times[i]
++            t2 = granted_times[j]
++            if (t2 - t1) <= period_s:
++                count = j - i + 1
++                assert count <= capacity
++
++@given(st.lists(st.floats(min_value=0.0, max_value=10.0), max_size=100))
++def test_token_bucket_invariant(delays):
++    backend = InMemoryBackend()
++    capacity = 5
++    refill_rate = 1.0 # 1 token per second
++    limiter = InMemoryBackend()
++    
++    key = "hyp_tb"
++    current_time = 1000000.0
++    
++    granted_times = []
++    
++    for delay in delays:
++        current_time += delay
++        with patch('time.time', return_value=current_time):
++            decision = backend.token_bucket(key, capacity, refill_rate, 1)
++            if decision.allowed:
++                granted_times.append(current_time)
++                
++    # Invariant: For any time interval of length T, granted <= capacity + T * refill_rate
++    for i in range(len(granted_times)):
++        for j in range(i+1, len(granted_times)):
++            t1 = granted_times[i]
++            t2 = granted_times[j]
++            T = t2 - t1
++            count = j - i + 1
++            max_allowed = capacity + int(T * refill_rate) + 1 # +1 for margin due to discrete increments
++            assert count <= max_allowed + 1
+diff --git a/tests/test_integration.py b/tests/test_integration.py
+new file mode 100644
+index 0000000..6e6d32f
+--- /dev/null
++++ b/tests/test_integration.py
+@@ -0,0 +1,48 @@
++import pytest
++from ratelimit import InMemoryBackend, TokenBucketLimiter, rate_limit, RateLimitMiddleware
++from ratelimit.decorator import RateLimitExceeded
++
++def test_decorator():
++    backend = InMemoryBackend()
++    limiter = TokenBucketLimiter(backend, capacity=2, refill_rate=0)
++    
++    @rate_limit(limiter, key_fn=lambda x: "dec_key")
++    def do_work(x):
++        return x * 2
++        
++    assert do_work(1) == 2
++    assert do_work(2) == 4
++    
++    with pytest.raises(RateLimitExceeded):
++        do_work(3)
++
++@pytest.mark.asyncio
++async def test_middleware():
++    backend = InMemoryBackend()
++    limiter = TokenBucketLimiter(backend, capacity=2, refill_rate=0)
++    
++    async def app(scope, receive, send):
++        await send({"type": "http.response.start", "status": 200, "headers": []})
++        await send({"type": "http.response.body", "body": b"OK"})
++        
++    middleware = RateLimitMiddleware(app, limiter, key_fn=lambda s: "mw_key")
++    
++    scope = {"type": "http", "client": ("127.0.0.1", 12345)}
++    
++    # 1st request
++    responses = []
++    async def mock_send(msg): responses.append(msg)
++    await middleware(scope, None, mock_send)
++    assert responses[0]["status"] == 200
++    assert any(h[0] == b"X-RateLimit-Remaining" for h in responses[0]["headers"])
++    
++    # 2nd request
++    responses = []
++    await middleware(scope, None, mock_send)
++    assert responses[0]["status"] == 200
++    
++    # 3rd request (should be 429)
++    responses = []
++    await middleware(scope, None, mock_send)
++    assert responses[0]["status"] == 429
++    assert any(h[0] == b"Retry-After" for h in responses[0]["headers"])
+diff --git a/tests/test_limiters.py b/tests/test_limiters.py
+new file mode 100644
+index 0000000..815ca1c
+--- /dev/null
++++ b/tests/test_limiters.py
+@@ -0,0 +1,42 @@
++import pytest
++import time
++from ratelimit import InMemoryBackend, TokenBucketLimiter, SlidingWindowLimiter
++
++def test_token_bucket_limiter():
++    backend = InMemoryBackend()
++    # capacity 5, refill 5 per second -> full in 1 second
++    limiter = TokenBucketLimiter(backend, capacity=5, refill_rate=5.0)
++    
++    key = "test_tb"
++    # Should allow 5 requests
++    for _ in range(5):
++        decision = limiter.enforce(key)
++        assert decision.allowed is True
++        
++    # 6th request should fail
++    decision = limiter.enforce(key)
++    assert decision.allowed is False
++    assert decision.retry_after_ms > 0
++    assert decision.remaining == 0
++
++    # Wait for 1 token (200ms)
++    time.sleep(0.25)
++    decision = limiter.enforce(key)
++    assert decision.allowed is True
++
++def test_sliding_window_limiter():
++    backend = InMemoryBackend()
++    # capacity 3 in 500ms
++    limiter = SlidingWindowLimiter(backend, capacity=3, window_size_ms=500)
++    
++    key = "test_sw"
++    for _ in range(3):
++        assert limiter.enforce(key).allowed is True
++        
++    decision = limiter.enforce(key)
++    assert decision.allowed is False
++    assert decision.remaining == 0
++    assert decision.retry_after_ms > 0
++
++    time.sleep(0.6)
++    assert limiter.enforce(key).allowed is True
+diff --git a/tests/test_redis.py b/tests/test_redis.py
+new file mode 100644
+index 0000000..8ebb583
+--- /dev/null
++++ b/tests/test_redis.py
+@@ -0,0 +1,47 @@
++import pytest
++import threading
++import fakeredis
++from ratelimit import RedisBackend, TokenBucketLimiter, SlidingWindowLimiter
++
++@pytest.fixture
++def redis_backend():
++    # Use fakeredis for tests
++    client = fakeredis.FakeStrictRedis(version=7)
++    return RedisBackend(client)
++
++def test_redis_token_bucket(redis_backend):
++    limiter = TokenBucketLimiter(redis_backend, capacity=5, refill_rate=0.0) # no refill
++    key = "r_tb"
++    
++    for _ in range(5):
++        assert limiter.enforce(key).allowed is True
++        
++    assert limiter.enforce(key).allowed is False
++
++def test_redis_sliding_window(redis_backend):
++    limiter = SlidingWindowLimiter(redis_backend, capacity=5, window_size_ms=10000)
++    key = "r_sw"
++    
++    for _ in range(5):
++        assert limiter.enforce(key).allowed is True
++        
++    assert limiter.enforce(key).allowed is False
++
++def test_redis_concurrency(redis_backend):
++    limiter = TokenBucketLimiter(redis_backend, capacity=15, refill_rate=0.0)
++    key = "r_concurrent"
++    
++    allowed_count = 0
++    lock = threading.Lock()
++    
++    def worker():
++        nonlocal allowed_count
++        if limiter.enforce(key).allowed:
++            with lock:
++                allowed_count += 1
++                
++    threads = [threading.Thread(target=worker) for _ in range(100)]
++    for t in threads: t.start()
++    for t in threads: t.join()
++    
++    assert allowed_count == 15

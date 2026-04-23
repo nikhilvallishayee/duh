@@ -9,7 +9,7 @@ set -euo pipefail
 AGENT_ID="${1:?usage: run.sh <agent-id>}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BASELINE_REPO="$HERE/baseline"
-BASELINE_COMMIT="1b2bb9ad523de4880a75bce14f9c079b3fe182c3"
+BASELINE_COMMIT="59ad8cfaaefd8c976d7d9a4e224a3af2823989c4"
 WORKTREE="$HERE/worktrees/$AGENT_ID"
 OUT="$HERE/results/$AGENT_ID"
 TASK_FILE="$HERE/TASK.md"

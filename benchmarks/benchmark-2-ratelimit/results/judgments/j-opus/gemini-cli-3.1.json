@@ -1,0 +1,29 @@
+{
+  "target": "gemini-cli-3.1",
+  "scores": {
+    "adr_quality": 4,
+    "implementation_completeness": 5,
+    "correctness_happy_path": 4,
+    "adversarial_correctness": 5,
+    "concurrency_discipline": 5,
+    "design_doc": 4,
+    "api_ergonomics": 4,
+    "test_coverage": 4,
+    "code_quality": 4,
+    "protocol_adherence": 5
+  },
+  "total_out_of_50": 44,
+  "adversarial_pass_rate": 1.0,
+  "one_line_summary": "Solid, complete implementation with atomic Lua scripts, property tests, and full adversarial suite pass; ADR and design doc are competent if not exhaustive.",
+  "strengths": [
+    "Atomic Lua scripts for both algorithms; no TOCTOU; 100% adversarial pass",
+    "All components wired: 2 algorithms, 2 backends, decorator, ASGI middleware with spec headers",
+    "Real concurrency + hypothesis property tests asserting no over-grant"
+  ],
+  "weaknesses": [
+    "ADR is brief; only 2 rejected alternatives and clock-skew policy is somewhat hand-wavy",
+    "Middleware fail-open swallows all exceptions broadly; remaining=-1 header is non-standard",
+    "SW reset_ts/retry_after math uses last element rather than oldest-in-window in some paths"
+  ],
+  "judge": "j-opus"
+}

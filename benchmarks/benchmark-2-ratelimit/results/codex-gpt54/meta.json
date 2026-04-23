@@ -1,0 +1,15 @@
+{
+  "agent_id": "codex-gpt54",
+  "cli": "codex",
+  "model": "gpt-5.4",
+  "baseline_commit": "1b2bb9ad523de4880a75bce14f9c079b3fe182c3",
+  "benchmark": "benchmark-2-ratelimit",
+  "start_ts": "2026-04-23T19:16:55Z",
+  "end_ts": "2026-04-23T19:24:06Z",
+  "elapsed_s": 431,
+  "exit_code": 0,
+  "worktree": "/Users/nomind/Code/duh/benchmarks/benchmark-2-ratelimit/worktrees/codex-gpt54",
+  "log_bytes": 1342223,
+  "diff_bytes": 50894,
+  "files_changed": 16
+}

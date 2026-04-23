@@ -1,0 +1,10 @@
+ M README.md
+ A docs/adrs/ADR-076-double-agent-tdd.md
+ M docs/wiki/Multi-Agent.md
+ M duh/cli/main.py
+ M duh/cli/parser.py
+ M duh/cli/repl.py
+ M duh/cli/slash_commands.py
+ A duh/cli/tdd.py
+ A duh/kernel/double_agent_tdd.py
+ A tests/unit/test_double_agent_tdd.py

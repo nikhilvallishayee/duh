@@ -1,0 +1,2138 @@
+diff --git a/README.md b/README.md
+index 41bede0..f8d3ea5 100644
+--- a/README.md
++++ b/README.md
+@@ -106,7 +106,7 @@ Provider and model auto-detect: give `--model gpt-5.2-codex` and D.U.H. will rou
+ 
+ ## Slash commands (REPL)
+ 
+-`/help` `/model` `/connect` `/models` `/cost` `/status` `/context` `/changes` `/git` `/tasks` `/brief` `/search` `/template` `/plan` `/pr` `/undo` `/jobs` `/health` `/errors` `/theme` `/mode` `/clear` `/compact` `/snapshot` `/exit`
++`/help` `/model` `/connect` `/models` `/cost` `/status` `/context` `/changes` `/git` `/tasks` `/brief` `/search` `/template` `/plan` `/tdd` `/pr` `/undo` `/jobs` `/health` `/errors` `/theme` `/mode` `/clear` `/compact` `/snapshot` `/exit`
+ 
+ Plus `Ctrl+K` for the **command palette** (fuzzy search across every slash command, model, provider, and recent file) and `Ctrl+T` to cycle **themes** (dark / light / high-contrast).
+ 
+@@ -136,6 +136,32 @@ Both accept `agent_type` (`general` / `coder` / `researcher` / `planner` / `revi
+ 
+ This means a Gemini-parent → `"small"` child never 404s asking for `"haiku"`. Literal model names (`claude-haiku-4-5`, `gemini-2.5-flash`, …) are still accepted for backwards compatibility. See [docs/wiki/Multi-Agent.md](docs/wiki/Multi-Agent.md) and [ADR-012](docs/adrs/ADR-012-multi-agent.md). Coordinator mode (`duh --coordinator`) turns the main agent into a pure orchestrator that delegates everything to subagents.
+ 
++## Double-agent TDD (`duh tdd`)
++
++D.U.H. can drive a strict red-green-refactor flow as a pair of cooperating agents — a **Driver** (writes tests + code) and a **Navigator** (reviews the spec and proposes refactors). The test command is a hard gate between phases, so the RED step actually has to fail before the flow can advance to GREEN. See [ADR-076](docs/adrs/ADR-076-double-agent-tdd-flow.md) for the contract between the two agents.
++
++```bash
++# One-shot run (CI-friendly): full six-phase flow, non-interactive
++duh tdd "LRU cache drops the oldest entry when full"
++
++# Custom test command (defaults to: pytest -x --no-header)
++duh tdd --test "pytest tests/unit/test_cache.py -x" "LRU eviction"
++
++# Split cheap Navigator + careful Driver across tiers
++duh tdd --navigator-model small --driver-model medium "LRU eviction"
++```
++
++The six phases, each with its hard gate:
++
++1. `SPEC` — Navigator drafts a tight test specification (no tools).
++2. `RED` — Driver writes the failing test. **Gate: test must exit non-zero.** If the test passes, the spec was too loose and the Navigator is re-invited to tighten it.
++3. `GREEN` — Driver writes the *minimum* code to pass. **Gate: test exits zero.**
++4. `REFACTOR_PLAN` — Navigator reads the code and proposes a concrete refactor (no tools).
++5. `REFACTOR_APPLY` — Driver applies the Navigator's refactor verbatim.
++6. `VALIDATE` — Navigator confirms each bullet landed and tests still pass. **Gate: test exits zero.**
++
++In the REPL, `/tdd <feature>` triggers the same flow; `/tdd status` shows the wiring; `/tdd help` prints the full syntax. Internally the feature reuses `Engine`, `Deps`, and the `AGENT_OVERLAYS` ("coder" + "reviewer") — no new provider, tool layer, or runtime.
++
+ ## Security
+ 
+ D.U.H. ships a three-layer pluggable security module (ADR-053 + ADR-054) that addresses every published agent RCE in the 2024-2026 CVE corpus:
+diff --git a/docs/adrs/ADR-076-double-agent-tdd-flow.md b/docs/adrs/ADR-076-double-agent-tdd-flow.md
+new file mode 100644
+index 0000000..3acc26f
+--- /dev/null
++++ b/docs/adrs/ADR-076-double-agent-tdd-flow.md
+@@ -0,0 +1,207 @@
++# ADR-076: Double-Agent TDD Flow — Driver / Navigator Pair Programming
++
++**Status:** Proposed — 2026-04-24
++**Date:** 2026-04-24
++**Related:** ADR-012 (multi-agent), ADR-063 (coordinator mode), PlanMode (`duh/kernel/plan_mode.py`)
++
++## Context
++
++Users routinely ask D.U.H. to "write a test first, then the code." Today the
++single-agent loop can technically do that, but nothing enforces the
++discipline: the same model writes the test and the code in one continuous
++assistant turn, so the "RED" step frequently collapses into "wrote
++already-passing test + implementation in the same message." The failing
++test — the whole reason TDD works — never actually fails.
++
++We already have two abstractions that get us 80% of the way there:
++
++- **`PlanMode`** (`duh/kernel/plan_mode.py`) — a state-machine wrapper
++  around an `Engine` that strictly sequences phases, forces
++  `tool_choice="none"` when the phase is deliberative, and yields the
++  same event shape as `Engine.run()`.
++- **Agents** (`duh/agents.py`, ADR-012) — each "agent" is just another
++  `Engine` with a system-prompt overlay and its own conversation.
++
++What is missing is an orchestrator that sequences **two** agents against
++the same working tree, with **test execution as a hard gate** between
++phases. A single-model implementation cannot reliably gate on a real
++process exit code, because the model that wrote the test is also the one
++deciding whether the test "counts as failing."
++
++## Decision
++
++Add a **Double-Agent TDD Mode** — a new kernel-level orchestrator,
++modelled on `PlanMode`, that drives two cooperating `Engine` instances
++through the six phases of red-green-refactor:
++
++| # | Phase | Actor      | Tool access | Hard gate on exit |
++|---|-------|------------|-------------|-------------------|
++| 1 | `SPEC`           | Navigator | `tool_choice="none"` | spec is non-empty |
++| 2 | `RED`            | Driver    | full tools           | **test command exits non-zero** |
++| 3 | `GREEN`          | Driver    | full tools           | **test command exits zero** |
++| 4 | `REFACTOR_PLAN`  | Navigator | `tool_choice="none"` | plan is non-empty |
++| 5 | `REFACTOR_APPLY` | Driver    | full tools           | at least one file changed since GREEN |
++| 6 | `VALIDATE`       | Navigator | full tools           | **test command exits zero** AND refactor plan items mentioned in the navigator's summary |
++
++The flow is **strict**: a phase cannot start until the previous phase's
++gate has passed. If the RED phase's test unexpectedly passes, the
++Navigator is re-invoked to tighten the spec — this is the
++"spec-was-not-tight-enough" loop from the task brief.
++
++### Contract between Driver and Navigator
++
++The two agents never talk to the model directly — they talk through
++`TddMode`. The contract is:
++
++- **Shared state** (owned by `TddMode`, not either engine):
++  - `description: str` — the user's feature request
++  - `spec: str` — the Navigator's test spec (set in phase 1)
++  - `test_command: list[str]` — argv for the test runner; defaults to
++    `["pytest", "-x", "--no-header"]`
++  - `refactor_plan: str` — the Navigator's refactor suggestion (set in
++    phase 4)
++  - `history: list[PhaseResult]` — one entry per phase transition,
++    including the agent that ran, the resulting text, and (for test
++    phases) the captured stdout/stderr/exit code
++
++- **Per-phase prompt templates** (module-level constants on
++  `duh/kernel/tdd_mode.py`, mirroring `PLAN_PROMPT_PREFIX`):
++  - `SPEC_PROMPT` — Navigator drafts a tight, minimal test spec
++  - `RED_PROMPT` — Driver writes a failing test implementing `spec`
++  - `GREEN_PROMPT` — Driver writes the **minimum** code to pass the
++    test; refactoring is explicitly forbidden at this phase
++  - `REFACTOR_PROPOSE_PROMPT` — Navigator proposes a refactor, referring
++    to concrete files/lines
++  - `REFACTOR_APPLY_PROMPT` — Driver applies the Navigator's refactor
++    verbatim; no scope creep
++  - `VALIDATE_PROMPT` — Navigator confirms the refactor landed and tests
++    still pass
++
++- **Agent overlays**: Driver and Navigator are built from the existing
++  `AGENT_OVERLAYS` dict — Driver uses `coder`, Navigator uses `reviewer`.
++  Both inherit the parent's model by default (ADR-012 tier rules).
++
++- **Events**: `TddMode` yields the same event dicts as `Engine.run()`,
++  plus two new event types:
++  - `{"type": "tdd_phase", "phase": "RED", "actor": "driver"}` — emitted
++    on every phase entry
++  - `{"type": "tdd_gate", "phase": "RED", "passed": bool,
++      "exit_code": int, "stdout": str, "stderr": str}` — emitted after
++    each gate check
++
++- **Observability**: the RED-phase gate surfaces the assertion failure
++  distinctly from GREEN by tagging the event with the phase name; the
++  REPL/TUI renderer colorises RED-gate passes green (because a failing
++  test at RED is *success*) and GREEN-gate passes green (because a
++  passing test at GREEN is *success*). Failures at either phase are
++  surfaced with the raw pytest output attached.
++
++### User-facing triggers
++
++Three entry points — mirroring how `PlanMode` is wired today:
++
++1. **Slash command `/tdd`** in the REPL/TUI:
++   ```
++   /tdd <feature description>       # propose a spec, stop for approval
++   /tdd approve                     # Navigator spec is accepted; run RED → GREEN
++   /tdd refactor                    # run REFACTOR_PLAN → REFACTOR_APPLY → VALIDATE
++   /tdd show                        # print the current phase + spec + history
++   /tdd clear                       # reset state
++   /tdd --test "pytest tests/foo"   # override the test command
++   ```
++2. **CLI subcommand `duh tdd`** — one-shot run, intended for CI:
++   ```
++   duh tdd "cache LRU eviction should drop oldest"
++   duh tdd --test "pytest tests/unit/test_cache.py" "LRU eviction"
++   duh tdd --auto "feature"     # no interactive approval, run all 6 phases
++   ```
++3. **Public Python API** — `TddMode(driver_engine, navigator_engine)`
++   mirrors `PlanMode(engine)` for SDK users and tests.
++
++### Why two Engines, not two prompts on one Engine
++
++Three reasons:
++
++1. **Context separation** — the Navigator's reviewer-mode system prompt
++   actively discourages writing code, while the Driver's coder-mode
++   prompt discourages hedging. Mixing them in one conversation dilutes
++   both.
++2. **Honest hand-off** — when the Navigator sees the Driver's test, it
++   is re-reading the file via Read/Grep tools, not recalling what it
++   "wrote." This is what makes the pair review valuable.
++3. **Cost tuning** — the Navigator can run on `small` (cheap review) and
++   the Driver on `medium` (careful implementation), configurable via
++   `--navigator-model` / `--driver-model` without touching the harness.
++
++## Alternatives considered
++
++### A. Single Engine with a system-prompt switch per phase
++
++Reject. Tried informally — the model conflates phases because the
++conversation history contains the previous phase's work. The refactor
++phase in particular degenerates into "keep the code the same" because
++the model has already committed to it.
++
++### B. Reuse `PlanMode` with a 6-step plan
++
++Reject. `PlanMode` models a single agent executing its own plan. The
++critical property of TDD — that the *reviewer* is a distinct voice —
++cannot be expressed as a plan. The plan-execution step has no concept
++of "wait, re-run the tests and block if they pass."
++
++### C. Drive via `SwarmTool`
++
++Reject. `SwarmTool` is for **parallel** agent fan-out. TDD is strictly
++sequential, and each phase gates the next. Using `asyncio.gather` here
++would hide the sequencing bug this feature exists to solve.
++
++### D. Let the model call a hypothetical `run_tdd_phase` tool
++
++Reject. The single biggest failure mode in the status-quo "just ask for
++TDD" flow is the model skipping the RED-must-fail gate. Delegating the
++gate to a tool the model chooses when to call re-creates that failure
++mode. The gate **must** live outside the model's decision loop.
++
++## Consequences
++
++### Positive
++
++- Real TDD discipline: the RED phase is now gated on a real non-zero
++  exit code. If the Driver writes a test that already passes, the
++  harness refuses to advance and asks the Navigator to tighten the spec.
++- Reuses every existing abstraction: `Engine`, `Deps`, `PlanMode`-style
++  state machine, `AGENT_OVERLAYS`, `get_all_tools`. No new providers,
++  no new tool-execution layer.
++- Works with every provider D.U.H. supports, including the deterministic
++  `stub` provider — so the end-to-end test in the unit suite runs
++  offline.
++- Transparent CLI: `duh tdd <feature>` is a single command for CI use;
++  the REPL `/tdd` flow is for interactive pair-programming.
++
++### Negative
++
++- Two model calls per phase => higher cost than single-agent mode for
++  small tasks. Mitigated by the per-agent tier knobs.
++- Relies on `subprocess.run(test_command)` for the gate. If a user's
++  test harness is not command-line runnable, this flow does not apply.
++
++## Acceptance criteria
++
++1. `duh/kernel/tdd_mode.py` exposes a `TddMode` class with states
++   `EMPTY, SPEC, RED, GREEN, REFACTOR_PLAN, REFACTOR_APPLY, VALIDATE,
++   DONE` as an `Enum`, mirroring `PlanState`.
++2. The state machine refuses out-of-order transitions (e.g. cannot enter
++   GREEN until the RED gate has fired and failed, i.e. the test
++   actually failed).
++3. The RED phase emits a `tdd_gate` event with `passed=True` when the
++   test's exit code is **non-zero** (the "failing test is the success
++   signal" inversion), and re-invokes the Navigator's SPEC phase if the
++   test passes.
++4. The Navigator's refactor suggestion is captured as `refactor_plan`
++   and prepended to the Driver's REFACTOR_APPLY prompt; the apply-phase
++   prompt template includes the literal text of `refactor_plan`.
++5. A CLI flag `--test <cmd>` is honoured on the `duh tdd` subcommand and
++   defaults to `pytest -x --no-header`.
++6. Tests cover phase-transition ordering, RED-vs-GREEN event tagging,
++   the refactor-actually-applied contract, and a full end-to-end run
++   against the `stub` provider.
+diff --git a/docs/wiki/Double-Agent-TDD.md b/docs/wiki/Double-Agent-TDD.md
+new file mode 100644
+index 0000000..444837a
+--- /dev/null
++++ b/docs/wiki/Double-Agent-TDD.md
+@@ -0,0 +1,157 @@
++# Double-Agent TDD
++
++## Overview
++
++D.U.H. supports a strict **red-green-refactor** flow driven by *two* cooperating agents — a **Driver** and a **Navigator** — pair-programming through the classic TDD cycle. The authoritative design document is [ADR-076](../adrs/ADR-076-double-agent-tdd-flow.md).
++
++The feature exists because the single-agent "just ask for TDD" pattern reliably fails: the same model writes the test *and* the implementation in one assistant turn, so the RED step — the whole reason TDD works — never actually fails. The double-agent flow fixes this by gating every phase on a **real subprocess test-run**. The model cannot decide what "failing" means; the harness does.
++
++## Roles
++
++| Role          | Agent overlay | Tool access per phase             | Responsibility                               |
++|---------------|--------------|-----------------------------------|-----------------------------------------------|
++| **Driver**    | `coder`       | Full tools (Read / Edit / Write / Bash)  | Writes the failing test, writes the minimum code to pass it, applies the Navigator's refactor. |
++| **Navigator** | `reviewer`    | `tool_choice="none"` during SPEC and REFACTOR_PLAN; full tools during VALIDATE | Drafts the test spec, proposes refactors, validates the final state. |
++
++Both agents are just `Engine` instances with different system prompts (ADR-012). There is no new provider, no new tool layer, no new runtime — everything reuses the existing kernel abstractions. That means every capability you already have (MCP servers, hooks, permissions, plan mode, etc.) works inside `/tdd` and `duh tdd` without modification.
++
++## The six phases
++
++The flow is a strict state machine. Every transition is guarded; out-of-order calls raise `ValueError`.
++
++```
++EMPTY  ─▶ SPEC  ─▶ RED  ─▶ GREEN  ─▶ REFACTOR_PLAN  ─▶ REFACTOR_APPLY  ─▶ DONE
++   ▲                │
++   └─ RED unexpectedly passes (spec too loose → Navigator re-drafts)
++```
++
++| # | Phase            | Actor     | Gate                                               |
++|---|------------------|-----------|----------------------------------------------------|
++| 1 | `SPEC`           | Navigator | Spec text non-empty.                               |
++| 2 | `RED`            | Driver    | Test command exits **non-zero** (failing test is success). |
++| 3 | `GREEN`          | Driver    | Test command exits **zero**.                       |
++| 4 | `REFACTOR_PLAN`  | Navigator | Plan text non-empty.                               |
++| 5 | `REFACTOR_APPLY` | Driver    | Refactor plan was present (can't apply nothing).   |
++| 6 | `VALIDATE`       | Navigator | Test command exits **zero**.                       |
++
++The RED/GREEN asymmetry is the heart of TDD: a test that passes at RED means the spec doesn't actually discriminate the feature. The harness short-circuits back to `EMPTY` and the Navigator is invited to tighten the spec. The `spec_revisions` counter is observable via `/tdd status` or `TddMode.spec_revisions` for telemetry.
++
++## CLI — `duh tdd`
++
++One-shot, non-interactive, intended for CI or "I have 10 minutes, ship it" sessions:
++
++```bash
++duh tdd "<feature description>"
++```
++
++### Flags
++
++| Flag | Default | Purpose |
++|---|---|---|
++| `--test "<cmd>"` | `pytest -x --no-header` | Test command run at each gate. Shell-split with `shlex`. |
++| `--driver-model <name>` | same as `--model` | Override the Driver's model (tier alias OK). |
++| `--navigator-model <name>` | same as `--model` | Override the Navigator's model. |
++| `--model`, `--provider`, `--max-turns`, `--debug`, … | inherited from global `duh` flags | standard plumbing |
++
++### Example
++
++```bash
++duh tdd --test "pytest tests/unit/test_cache.py -x" \
++        --driver-model medium --navigator-model small \
++        "LRU cache drops the oldest entry when full"
++```
++
++Sample output (abbreviated):
++
++```
++duh tdd — provider=anthropic driver=claude-sonnet-4-6 navigator=claude-haiku-4-5
++  test command: pytest tests/unit/test_cache.py -x
++  feature     : LRU cache drops the oldest entry when full
++
++== SPEC (navigator) ==
++== RED (driver) ==
++  [RED gate ✓] exit=1 gate_passed=True
++== GREEN (driver) ==
++  [GREEN gate ✓] exit=0 gate_passed=True
++== REFACTOR_PLAN (navigator) ==
++== REFACTOR_APPLY (driver) ==
++== VALIDATE (navigator) ==
++  [VALIDATE gate ✓] exit=0 gate_passed=True
++
++TDD state: DONE
++  feature: LRU cache drops the oldest entry when full
++  ...
++```
++
++### Exit codes
++
++| Exit | Meaning |
++|---|---|
++| 0 | `TddState.DONE` — all six phases passed. |
++| 1 | Flow did not reach DONE (gate failure, or spec was revised and the run ended before re-approval). |
++| 4 | `PROVIDER_ERROR` — no API key / auth available. |
++
++## REPL — `/tdd`
++
++Inside `duh` (interactive REPL or TUI):
++
++```text
++/tdd <feature>            # run the full six-phase flow inline
++/tdd status               # show the flow wiring + default test command
++/tdd help                 # full syntax
++```
++
++`/tdd <feature>` is implemented as a REPL lifecycle signal (same mechanism `/plan` uses). The REPL builds a Driver + Navigator as lightweight sibling Engines of the active session and streams phase / gate events inline. Tool calls made by the Driver (Edit, Write, Bash, …) go through the same approval + audit plumbing as normal REPL turns.
++
++## Python API
++
++```python
++from duh.kernel.deps import Deps
++from duh.kernel.engine import Engine, EngineConfig
++from duh.kernel.tdd_mode import TddMode
++
++driver = Engine(
++    deps=Deps(call_model=my_provider.stream, run_tool=executor.run, approve=approver.check),
++    config=EngineConfig(model="claude-sonnet-4-6", system_prompt=coder_prompt, tools=tools),
++)
++navigator = Engine(
++    deps=Deps(call_model=my_provider.stream, run_tool=executor.run, approve=approver.check),
++    config=EngineConfig(model="claude-haiku-4-5", system_prompt=reviewer_prompt, tools=tools),
++)
++
++tdd = TddMode(
++    driver=driver,
++    navigator=navigator,
++    test_command=["pytest", "-x", "tests/unit/test_cache.py"],
++)
++
++async for event in tdd.run_all("LRU cache drops oldest entry"):
++    print(event)
++
++assert tdd.state.name == "DONE"
++```
++
++`TddMode` exposes one coroutine per phase (`draft_spec`, `red`, `green`, `propose_refactor`, `refactor_apply`, `validate`) and two convenience drivers (`refactor`, `run_all`). Every coroutine is an async generator yielding the same event dicts the `Engine` yields, plus two new types:
++
++| Event type    | Keys                                                          | Fires                  |
++|---------------|---------------------------------------------------------------|------------------------|
++| `tdd_phase`   | `phase`, `actor`                                              | Entry to each phase.   |
++| `tdd_gate`    | `phase`, `passed`, `test_passed`, `exit_code`, `stdout`, `stderr` | After the gate runs.   |
++
++For tests, you can swap in a `test_runner` callable (signature `(cmd, cwd) -> GateResult`) so unit tests don't shell out. See `tests/unit/test_tdd_mode.py` for the pattern.
++
++## Design decisions
++
++See [ADR-076](../adrs/ADR-076-double-agent-tdd-flow.md) for the full context, alternatives considered, and acceptance criteria. In brief:
++
++- **Two Engines, not one** — a single Engine with a system-prompt switch per phase conflates roles; the Navigator has to re-read what the Driver wrote from disk, not recall it from shared context, and that's where the review value comes from.
++- **Gate is external to the model** — the single biggest failure mode of the "just ask for TDD" flow is the model skipping the RED-must-fail check. Putting the check in a subprocess call the harness controls (not a tool the model can choose to skip) is the only reliable fix.
++- **Reuse existing abstractions** — Driver = `Engine` with `coder` overlay; Navigator = `Engine` with `reviewer` overlay; state machine = same shape as `PlanMode`. Zero new infrastructure.
++
++## See also
++
++- [ADR-076: Double-Agent TDD Flow](../adrs/ADR-076-double-agent-tdd-flow.md) — the contract between Driver and Navigator.
++- [Multi-Agent Guide](Multi-Agent.md) — how agent overlays work in general.
++- [ADR-012: Multi-Agent](../adrs/ADR-012-multi-agent.md) — why agents are just Engines.
++- `duh/kernel/tdd_mode.py` — the implementation.
++- `tests/unit/test_tdd_mode.py` — the six-phase contract test suite.
+diff --git a/docs/wiki/Home.md b/docs/wiki/Home.md
+index 6d36d1a..8b62775 100644
+--- a/docs/wiki/Home.md
++++ b/docs/wiki/Home.md
+@@ -74,6 +74,7 @@ duh security scan
+ - **[Configuration](Configuration)** — Settings precedence, DUH.md, environment variables
+ - **[Tools Reference](Tools)** — All 25+ built-in tools
+ - **[Multi-Agent Guide](Multi-Agent)** — AgentTool, SwarmTool, worktree isolation
++- **[Double-Agent TDD](Double-Agent-TDD)** — `/tdd` and `duh tdd`: driver/navigator red-green-refactor flow (ADR-076)
+ - **[Context Management](Context-Management)** — Compaction, token estimation, auto-compact
+ - **[Security](Security)** — Vulnerability monitoring, runtime hardening, sandboxing
+ - **[Provider Setup](Provider-Setup)** — Anthropic, OpenAI, Ollama, LiteLLM configuration
+diff --git a/docs/wiki/_Sidebar.md b/docs/wiki/_Sidebar.md
+index 88df340..685c25f 100644
+--- a/docs/wiki/_Sidebar.md
++++ b/docs/wiki/_Sidebar.md
+@@ -6,6 +6,7 @@
+ * [Configuration](Configuration)
+ * [Tools Reference](Tools)
+ * [Multi-Agent Guide](Multi-Agent)
++* [Double-Agent TDD](Double-Agent-TDD)
+ * [Context Management](Context-Management)
+ * [Security](Security)
+ * [Provider Setup](Provider-Setup)
+diff --git a/duh/cli/main.py b/duh/cli/main.py
+index 95b29b9..7443db6 100644
+--- a/duh/cli/main.py
++++ b/duh/cli/main.py
+@@ -93,6 +93,14 @@ def main(argv: list[str] | None = None) -> int:
+             sys.stderr.write("\nInterrupted.\n")
+             return 130
+ 
++    if args.command == "tdd":
++        from duh.cli.tdd import run_tdd
++        try:
++            return asyncio.run(run_tdd(args))
++        except KeyboardInterrupt:
++            sys.stderr.write("\nInterrupted.\n")
++            return 130
++
+     if args.command == "bridge":
+         from duh.bridge.server import BridgeServer
+ 
+diff --git a/duh/cli/parser.py b/duh/cli/parser.py
+index d1b2955..3234254 100644
+--- a/duh/cli/parser.py
++++ b/duh/cli/parser.py
+@@ -141,6 +141,34 @@ def build_parser() -> argparse.ArgumentParser:
+     batch_parser.add_argument("--output-dir", type=str, default=None,
+                               help="Write results to files in this directory")
+ 
++    tdd_parser = subparsers.add_parser(
++        "tdd",
++        help="Double-agent TDD flow: red-green-refactor via driver/navigator pair (ADR-076).",
++    )
++    tdd_parser.add_argument(
++        "feature",
++        type=str,
++        help="Feature description (one sentence). Example: 'LRU cache drops oldest entry when full'.",
++    )
++    tdd_parser.add_argument(
++        "--test",
++        type=str,
++        default=None,
++        help="Test command to run as the RED/GREEN gate (default: 'pytest -x --no-header').",
++    )
++    tdd_parser.add_argument(
++        "--driver-model",
++        type=str,
++        default=None,
++        help="Model for the Driver agent (default: same as --model).",
++    )
++    tdd_parser.add_argument(
++        "--navigator-model",
++        type=str,
++        default=None,
++        help="Model for the Navigator agent (default: same as --model).",
++    )
++
+     bridge_parser = subparsers.add_parser("bridge", help="Start the remote bridge server.")
+     bridge_sub = bridge_parser.add_subparsers(dest="bridge_command", required=True)
+     start_parser = bridge_sub.add_parser("start", help="Start the WebSocket bridge server.")
+diff --git a/duh/cli/repl.py b/duh/cli/repl.py
+index 9963263..51b0a1f 100644
+--- a/duh/cli/repl.py
++++ b/duh/cli/repl.py
+@@ -722,6 +722,82 @@ async def run_repl(args: argparse.Namespace) -> int:
+                     )
+                     _plan_mode.clear()
+ 
++            # Check for TDD request signal from _handle_slash (ADR-076).
++            # The /tdd slash command returns "\x00tdd\x00<feature>" which we
++            # interpret here by spinning up the double-agent flow against
++            # the current Engine's provider + tools.
++            if model.startswith("\x00tdd\x00"):
++                tdd_desc = model[len("\x00tdd\x00"):]
++                model = engine.model or model  # restore actual model
++
++                from duh.agents import AgentDef
++                from duh.kernel.engine import Engine as _Engine, EngineConfig as _EngineConfig
++                from duh.kernel.tdd_mode import TddMode, TddState
++
++                sys.stdout.write(f"  Double-agent TDD: {tdd_desc}\n")
++
++                # Build Driver + Navigator as lightweight siblings of the
++                # current engine — same deps (tools, approver, call_model),
++                # just different system prompts.
++                driver_cfg = _EngineConfig(
++                    model=model,
++                    system_prompt=AgentDef.from_type("coder").system_prompt,
++                    tools=list(engine._config.tools),
++                    max_turns=engine._config.max_turns,
++                    cwd=engine._config.cwd,
++                )
++                navigator_cfg = _EngineConfig(
++                    model=model,
++                    system_prompt=AgentDef.from_type("reviewer").system_prompt,
++                    tools=list(engine._config.tools),
++                    max_turns=engine._config.max_turns,
++                    cwd=engine._config.cwd,
++                )
++                driver_engine = _Engine(deps=deps, config=driver_cfg)
++                navigator_engine = _Engine(deps=deps, config=navigator_cfg)
++
++                tdd = TddMode(
++                    driver=driver_engine,
++                    navigator=navigator_engine,
++                    cwd=engine._config.cwd,
++                )
++
++                try:
++                    async for event in tdd.run_all(tdd_desc):
++                        etype = event.get("type", "")
++                        if etype == "tdd_phase":
++                            sys.stdout.write(
++                                f"  == {event['phase']} ({event['actor']}) ==\n"
++                            )
++                            sys.stdout.flush()
++                        elif etype == "tdd_gate":
++                            marker = "✓" if event.get("passed") else "✗"
++                            sys.stdout.write(
++                                f"    [{event['phase']} gate {marker}] "
++                                f"exit={event.get('exit_code')} "
++                                f"passed={event.get('passed')}\n"
++                            )
++                            sys.stdout.flush()
++                        elif etype == "text_delta":
++                            renderer.text_delta(event.get("text", ""))
++                        elif etype == "tool_use":
++                            renderer.tool_use(
++                                event.get("name", "?"), event.get("input", {})
++                            )
++                        elif etype == "error":
++                            hint = _interpret_error(event.get("error", "unknown"))
++                            renderer.error(hint)
++                    renderer.flush_response()
++                    renderer.turn_end()
++                    sys.stdout.write("\n" + tdd.format_status() + "\n")
++                    if tdd.state != TddState.DONE:
++                        sys.stdout.write(
++                            f"\n  TDD did not reach DONE (state={tdd.state.name}).\n"
++                        )
++                except Exception as exc:
++                    sys.stdout.write(f"  TDD flow error: {exc}\n")
++                continue
++
+             # Check for compact request signal from _handle_slash
+             if model == "\x00compact\x00":
+                 model = engine.model or model  # restore actual model
+diff --git a/duh/cli/slash_commands.py b/duh/cli/slash_commands.py
+index 6fd3e62..fc396b1 100644
+--- a/duh/cli/slash_commands.py
++++ b/duh/cli/slash_commands.py
+@@ -618,6 +618,46 @@ class SlashDispatcher:
+         _handle_pr_command(arg)
+         return True, self.ctx.model
+ 
++    def _handle_tdd(self, arg: str) -> _HandlerResult:
++        """/tdd — double-agent TDD flow (ADR-076).
++
++        In the REPL the TDD flow is driven as a non-interactive one-shot:
++        the slash command surfaces help, status, and a subprocess-style
++        launcher that mirrors ``duh tdd``.  The stateful driver/navigator
++        lifecycle lives in :mod:`duh.kernel.tdd_mode`; interactive
++        six-phase pair-programming in a running REPL is tracked for a
++        follow-up (see ADR-076 "Consequences").
++        """
++        model = self.ctx.model
++        arg_stripped = arg.strip()
++        if not arg_stripped or arg_stripped.lower() in ("help", "?"):
++            sys.stdout.write(
++                "  Usage:\n"
++                "    /tdd <feature description>   — run the full six-phase flow\n"
++                "    /tdd --test '<cmd>' <desc>   — custom test command\n"
++                "    /tdd status                  — describe the flow and wiring\n"
++                "    /tdd help                    — this help\n"
++                "\n"
++                "  The double-agent TDD flow (ADR-076) pairs a Driver (coder)\n"
++                "  and Navigator (reviewer) through: SPEC → RED → GREEN →\n"
++                "  REFACTOR_PLAN → REFACTOR_APPLY → VALIDATE. The RED phase's\n"
++                "  gate PASSES when your test command FAILS (the whole point\n"
++                "  of TDD). For CI use: `duh tdd <feature>` at the shell.\n"
++            )
++            return True, model
++        if arg_stripped.lower() == "status":
++            from duh.kernel.tdd_mode import DEFAULT_TEST_COMMAND, PHASE_ORDER, TddState
++            sys.stdout.write(
++                f"  Double-agent TDD (ADR-076) — default test: "
++                f"{' '.join(DEFAULT_TEST_COMMAND)}\n"
++                f"  Phases: {' → '.join(p.name for p in PHASE_ORDER)}\n"
++                f"  Run: `duh tdd \"<feature>\"` or `/tdd <feature>`\n"
++            )
++            return True, model
++        # /tdd <description> — signal handled by REPL loop (see run_repl).
++        # The REPL spawns run_tdd() with args built from this description.
++        return True, f"\x00tdd\x00{arg_stripped}"
++
+     def _handle_undo(self, arg: str) -> _HandlerResult:
+         executor = self.ctx.executor
+         model = self.ctx.model
+@@ -993,6 +1033,7 @@ SlashDispatcher._HANDLERS = {
+     "/template": SlashDispatcher._handle_template,
+     "/plan": SlashDispatcher._handle_plan,
+     "/pr": SlashDispatcher._handle_pr,
++    "/tdd": SlashDispatcher._handle_tdd,
+     "/undo": SlashDispatcher._handle_undo,
+     "/health": SlashDispatcher._handle_health,
+     "/errors": SlashDispatcher._handle_errors,
+@@ -1038,6 +1079,7 @@ SLASH_COMMANDS: dict[str, str] = {
+     "/template": "Prompt templates (/template list | use <name> | <name> <prompt>)",
+     "/plan": "Plan mode (/plan <desc>, /plan show, /plan clear)",
+     "/pr": "GitHub PRs (/pr list, /pr view <n>, /pr diff <n>, /pr checks <n>)",
++    "/tdd": "Double-agent TDD (/tdd <feature>, /tdd status, /tdd help) — ADR-076",
+     "/undo": "Undo the last file modification (Write or Edit)",
+     "/jobs": "Background jobs (/jobs to list, /jobs <id> for result)",
+     "/health": "Run provider and MCP health checks",
+diff --git a/duh/cli/tdd.py b/duh/cli/tdd.py
+new file mode 100644
+index 0000000..e766ac5
+--- /dev/null
++++ b/duh/cli/tdd.py
+@@ -0,0 +1,209 @@
++"""``duh tdd`` subcommand — one-shot double-agent TDD run (ADR-076).
++
++Builds a Driver engine and a Navigator engine from the current provider
+++ tool set, then drives them through the six-phase red-green-refactor
++flow defined in :mod:`duh.kernel.tdd_mode`.  Designed for CI use: no
++interactive approval, prints a concise phase-by-phase log to stdout,
++exits non-zero if any gate fails.
++
++For the interactive REPL flow, see the ``/tdd`` slash command in
++``duh.cli.slash_commands``.
++"""
++
++from __future__ import annotations
++
++import argparse
++import logging
++import os
++import shlex
++import sys
++from typing import Any
++
++from duh.adapters.approvers import AutoApprover
++from duh.adapters.file_store import FileStore
++from duh.adapters.native_executor import NativeExecutor
++from duh.adapters.simple_compactor import SimpleCompactor
++from duh.agents import AgentDef
++from duh.cli import exit_codes
++from duh.kernel.deps import Deps
++from duh.kernel.engine import Engine, EngineConfig
++from duh.kernel.tdd_mode import DEFAULT_TEST_COMMAND, TddMode, TddState
++from duh.providers.registry import build_model_backend, resolve_provider_name
++from duh.tools.registry import get_all_tools
++
++logger = logging.getLogger("duh")
++
++
++def _resolve_provider_and_model(args: argparse.Namespace) -> tuple[str, str, Any]:
++    """Shared provider-resolution plumbing for the tdd subcommand.
++
++    Returns ``(provider_name, model, call_model)`` on success.  Writes an
++    error to stderr and raises :class:`SystemExit` on failure.
++    """
++
++    def _check_ollama() -> bool:
++        try:
++            import httpx
++            r = httpx.get("http://localhost:11434/api/tags", timeout=2)
++            return r.status_code == 200
++        except Exception:
++            return False
++
++    provider_name = resolve_provider_name(
++        explicit_provider=getattr(args, "provider", None),
++        model=getattr(args, "model", None),
++        check_ollama=_check_ollama,
++    )
++    if not provider_name:
++        sys.stderr.write(
++            "Error: No provider available for `duh tdd`.\n"
++            "  Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or DUH_STUB_PROVIDER=1.\n"
++        )
++        raise SystemExit(exit_codes.PROVIDER_ERROR)
++
++    backend = build_model_backend(provider_name, getattr(args, "model", None))
++    if not backend.ok:
++        sys.stderr.write(f"Error: {backend.error}\n")
++        raise SystemExit(exit_codes.PROVIDER_ERROR)
++    return provider_name, backend.model, backend.call_model
++
++
++def _build_engine(
++    *,
++    agent_type: str,
++    model: str,
++    call_model: Any,
++    tools: list[Any],
++    cwd: str,
++    max_turns: int,
++) -> Engine:
++    """Build a single Engine with the given agent overlay, sharing the
++    caller's tool set + approver.  Driver and Navigator differ only in
++    the system prompt (``agent_type``) and — optionally — the model.
++    """
++    agent_def = AgentDef.from_type(agent_type)
++    executor = NativeExecutor(tools=tools, cwd=cwd)
++    compactor = SimpleCompactor()
++    store = FileStore(cwd=cwd)
++    approver = AutoApprover()  # non-interactive — see ADR-076
++
++    deps = Deps(
++        call_model=call_model,
++        run_tool=executor.run,
++        approve=approver.check,
++        compact=compactor.compact,
++    )
++    config = EngineConfig(
++        model=model,
++        system_prompt=agent_def.system_prompt,
++        tools=tools,
++        max_turns=max_turns,
++        cwd=cwd,
++    )
++    # Same lambda as batch.py — let tools ask which model is running.
++    executor.get_current_model = lambda: config.model
++    return Engine(deps=deps, config=config, session_store=store)
++
++
++def _format_gate(event: dict[str, Any]) -> str:
++    """Render a ``tdd_gate`` event as a single readable line."""
++    phase = event.get("phase", "?")
++    passed = event.get("passed", False)
++    exit_code = event.get("exit_code", "?")
++    marker = "✓" if passed else "✗"
++    return f"  [{phase} gate {marker}] exit={exit_code} gate_passed={passed}"
++
++
++async def run_tdd(args: argparse.Namespace) -> int:
++    """Drive the full six-phase double-agent TDD flow end-to-end.
++
++    Returns 0 on success (``TddState.DONE``), non-zero on any gate
++    failure or phase that didn't advance.
++    """
++    debug = getattr(args, "debug", False)
++    if debug:
++        logging.basicConfig(
++            level=logging.DEBUG, stream=sys.stderr,
++            format="[%(levelname)s] %(name)s: %(message)s",
++        )
++
++    provider_name, model, call_model = _resolve_provider_and_model(args)
++    driver_model = getattr(args, "driver_model", None) or model
++    navigator_model = getattr(args, "navigator_model", None) or model
++
++    cwd = os.getcwd()
++    tools = list(get_all_tools())
++    max_turns = getattr(args, "max_turns", 50) or 50
++
++    # Two Engines, same provider, distinct system prompts (ADR-076).
++    driver = _build_engine(
++        agent_type="coder",
++        model=driver_model,
++        call_model=call_model,
++        tools=tools,
++        cwd=cwd,
++        max_turns=max_turns,
++    )
++    navigator = _build_engine(
++        agent_type="reviewer",
++        model=navigator_model,
++        call_model=call_model,
++        tools=tools,
++        cwd=cwd,
++        max_turns=max_turns,
++    )
++
++    # Parse --test
++    test_cmd_str = getattr(args, "test", None)
++    if test_cmd_str:
++        test_command = shlex.split(test_cmd_str)
++    else:
++        test_command = list(DEFAULT_TEST_COMMAND)
++
++    tdd = TddMode(
++        driver=driver,
++        navigator=navigator,
++        test_command=test_command,
++        cwd=cwd,
++    )
++
++    sys.stdout.write(
++        f"duh tdd — provider={provider_name} "
++        f"driver={driver_model} navigator={navigator_model}\n"
++        f"  test command: {' '.join(test_command)}\n"
++        f"  feature     : {args.feature}\n\n"
++    )
++    sys.stdout.flush()
++
++    async for event in tdd.run_all(args.feature):
++        etype = event.get("type", "")
++        if etype == "tdd_phase":
++            phase = event.get("phase", "?")
++            actor = event.get("actor", "?")
++            sys.stdout.write(f"== {phase} ({actor}) ==\n")
++            sys.stdout.flush()
++        elif etype == "tdd_gate":
++            sys.stdout.write(_format_gate(event) + "\n")
++            if not event.get("passed", False):
++                # Surface stdout/stderr so the user can see why.
++                err_tail = (event.get("stdout", "") + event.get("stderr", ""))[-500:]
++                if err_tail:
++                    sys.stdout.write("    " + err_tail.replace("\n", "\n    ") + "\n")
++            sys.stdout.flush()
++        elif etype == "text_delta" and debug:
++            sys.stderr.write(event.get("text", ""))
++            sys.stderr.flush()
++        elif etype == "error":
++            sys.stderr.write(f"  ! error: {event.get('error', 'unknown')}\n")
++
++    sys.stdout.write("\n" + tdd.format_status() + "\n")
++
++    if tdd.state == TddState.DONE:
++        return exit_codes.SUCCESS
++    # Spec revised but never re-approved, or a gate failed — signal
++    # non-zero but preserve the session state for the user to inspect.
++    sys.stderr.write(
++        f"\nTDD run did not reach DONE (final state: {tdd.state.name}, "
++        f"spec revisions: {tdd.spec_revisions})\n"
++    )
++    return exit_codes.ERROR
+diff --git a/duh/kernel/tdd_mode.py b/duh/kernel/tdd_mode.py
+new file mode 100644
+index 0000000..9a495dd
+--- /dev/null
++++ b/duh/kernel/tdd_mode.py
+@@ -0,0 +1,673 @@
++"""Double-Agent TDD mode — Driver / Navigator pair-programming harness.
++
++Implements the red-green-refactor flow specified in ADR-076 on top of the
++existing ``Engine`` / ``Deps`` / agent-overlay abstractions.  Two
++``Engine`` instances — the **Driver** (``coder`` overlay) and the
++**Navigator** (``reviewer`` overlay) — are sequenced through six strict
++phases, with a real subprocess test-run acting as the gate between
++phases.
++
++The shape mirrors :class:`duh.kernel.plan_mode.PlanMode`:
++
++    driver = Engine(...)        # coder system prompt
++    navigator = Engine(...)     # reviewer system prompt
++    tdd = TddMode(driver=driver, navigator=navigator)
++
++    # Phase 1 — Navigator drafts the test spec
++    async for event in tdd.spec("cache LRU eviction drops oldest entry"):
++        handle(event)
++
++    # Phase 2 — Driver writes the failing test, runs it, RED-gate fires
++    async for event in tdd.red():
++        handle(event)
++
++    # Phase 3 — Driver writes minimum code, GREEN-gate fires
++    async for event in tdd.green():
++        handle(event)
++
++    # Phases 4–6 — Navigator proposes refactor, Driver applies, Navigator validates
++    async for event in tdd.refactor():
++        handle(event)
++
++A convenience ``run_all()`` coroutine drives every phase end-to-end for
++CLI / CI use.  See ADR-076 for the rationale.
++"""
++
++from __future__ import annotations
++
++import os
++import subprocess
++from dataclasses import dataclass, field
++from enum import Enum, auto
++from typing import Any, AsyncGenerator, Callable
++
++from duh.kernel.engine import Engine
++from duh.kernel.messages import Message
++
++
++# ---------------------------------------------------------------------------
++# State machine
++# ---------------------------------------------------------------------------
++
++
++class TddState(Enum):
++    """Current state of a double-agent TDD session."""
++
++    EMPTY = auto()               # No spec yet
++    SPEC = auto()                # Navigator drafted spec, awaiting approval
++    RED = auto()                 # Driver wrote test, it failed — ready for GREEN
++    GREEN = auto()               # Driver wrote code, test passes — ready for REFACTOR
++    REFACTOR_PLAN = auto()       # Navigator proposed refactor — ready for APPLY
++    REFACTOR_APPLY = auto()      # Driver applied refactor — ready for VALIDATE
++    DONE = auto()                # Navigator validated — full cycle complete
++
++
++# Ordered list of phases for history / renderer consumption.
++PHASE_ORDER = [
++    TddState.SPEC,
++    TddState.RED,
++    TddState.GREEN,
++    TddState.REFACTOR_PLAN,
++    TddState.REFACTOR_APPLY,
++    TddState.DONE,
++]
++
++
++# ---------------------------------------------------------------------------
++# Prompt templates (single source of truth — referenced in unit tests)
++# ---------------------------------------------------------------------------
++
++SPEC_PROMPT = (
++    "You are the NAVIGATOR in a TDD pair. Draft a tight, minimal test "
++    "specification for the feature below. Output ONLY:\n"
++    "  - one sentence describing the behaviour under test\n"
++    "  - a bullet list of the concrete assertions the test must make\n"
++    "  - the file path where the test should live\n"
++    "Do NOT write any code or call any tools yet.\n\n"
++    "Feature: "
++)
++
++RED_PROMPT = (
++    "You are the DRIVER in a TDD pair. The Navigator has approved this "
++    "test specification:\n\n"
++    "---\n{spec}\n---\n\n"
++    "Write the FAILING test now. Use the Write / Edit tool to create the "
++    "test file. Do NOT write any production code — the test MUST fail "
++    "because the behaviour is not yet implemented. A test that passes on "
++    "the first run means the spec was too loose and we will start over."
++)
++
++GREEN_PROMPT = (
++    "You are the DRIVER. The test you just wrote is failing as expected "
++    "(the RED phase passed). Now write the MINIMUM production code "
++    "needed to make the test pass. Constraints:\n"
++    "  - Do NOT refactor existing code — that is the next phase\n"
++    "  - Do NOT add features the test does not exercise\n"
++    "  - Do NOT rename, reorganise, or re-style code outside the diff\n"
++    "When you think the test will pass, stop. The harness re-runs the "
++    "test automatically."
++)
++
++REFACTOR_PROPOSE_PROMPT = (
++    "You are the NAVIGATOR. The Driver's test is now GREEN. Read the "
++    "code the Driver just wrote and propose ONE concrete refactor that "
++    "improves clarity or removes duplication without changing behaviour. "
++    "Output ONLY:\n"
++    "  - the file(s) to modify\n"
++    "  - a bullet list of the exact changes\n"
++    "  - a one-line justification\n"
++    "Do NOT apply the refactor — the Driver will do that in the next phase."
++)
++
++REFACTOR_APPLY_PROMPT = (
++    "You are the DRIVER. Apply the Navigator's refactor VERBATIM — no "
++    "scope creep, no additional 'while I'm here' edits. Here is the "
++    "Navigator's refactor plan:\n\n"
++    "---\n{refactor_plan}\n---\n\n"
++    "Apply every bullet. Do not skip items. When done, stop — the "
++    "harness re-runs the test suite."
++)
++
++VALIDATE_PROMPT = (
++    "You are the NAVIGATOR. The Driver has applied the refactor and the "
++    "test suite passed. Your job is to VALIDATE: confirm that each "
++    "bullet in your refactor plan was applied, and that nothing extra "
++    "was changed. Output a short structured summary:\n"
++    "  - plan item → 'applied' | 'missing' | 'partially applied'\n"
++    "  - any unexpected changes you spotted\n"
++    "  - final verdict: APPROVED or NEEDS REWORK"
++)
++
++
++# Default test command — overridable via TddMode(test_command=...).
++DEFAULT_TEST_COMMAND: list[str] = ["pytest", "-x", "--no-header"]
++
++
++# ---------------------------------------------------------------------------
++# History entries + gate result
++# ---------------------------------------------------------------------------
++
++
++@dataclass
++class GateResult:
++    """Outcome of running the test command at a RED/GREEN/VALIDATE gate."""
++
++    phase: str                   # "RED" | "GREEN" | "VALIDATE"
++    exit_code: int
++    stdout: str
++    stderr: str
++
++    @property
++    def test_passed(self) -> bool:
++        """True if the test command exited with code 0."""
++        return self.exit_code == 0
++
++    @property
++    def gate_passed(self) -> bool:
++        """True if the gate's expected outcome held.
++
++        RED expects the test to FAIL (non-zero exit).
++        GREEN and VALIDATE expect the test to PASS (zero exit).
++        """
++        if self.phase == "RED":
++            return not self.test_passed
++        return self.test_passed
++
++
++@dataclass
++class PhaseResult:
++    """One entry per phase transition, in ``TddMode.history`` order."""
++
++    phase: str                   # e.g. "SPEC", "RED", "GREEN", ...
++    actor: str                   # "navigator" | "driver"
++    text: str                    # the agent's final assistant text
++    gate: GateResult | None = None
++
++
++# ---------------------------------------------------------------------------
++# Test runner — pluggable for tests
++# ---------------------------------------------------------------------------
++
++
++TestRunnerFn = Callable[[list[str], str], GateResult]
++
++
++def _default_test_runner(cmd: list[str], cwd: str) -> GateResult:
++    """Run ``cmd`` in ``cwd`` and capture stdout/stderr/exit code.
++
++    Returns a :class:`GateResult` with ``phase`` left blank — the caller
++    fills it in with the current phase name.
++    """
++    proc = subprocess.run(
++        cmd,
++        cwd=cwd,
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    return GateResult(
++        phase="",
++        exit_code=proc.returncode,
++        stdout=proc.stdout,
++        stderr=proc.stderr,
++    )
++
++
++# ---------------------------------------------------------------------------
++# TddMode — the orchestrator
++# ---------------------------------------------------------------------------
++
++
++class TddMode:
++    """Double-agent driver/navigator TDD state machine.
++
++    Owns nothing the two Engines already own (messages, tools, model
++    choice).  Owns only the TDD-specific state: which phase we are in,
++    the Navigator's spec, the refactor plan, and the per-phase history.
++
++    Raises ``ValueError`` on every out-of-order transition.  The tests in
++    ``tests/unit/test_tdd_mode.py`` cover each guard explicitly.
++    """
++
++    def __init__(
++        self,
++        *,
++        driver: Engine,
++        navigator: Engine,
++        test_command: list[str] | None = None,
++        test_runner: TestRunnerFn | None = None,
++        cwd: str | None = None,
++    ) -> None:
++        self._driver = driver
++        self._navigator = navigator
++        self._test_command = list(test_command) if test_command else list(DEFAULT_TEST_COMMAND)
++        self._test_runner: TestRunnerFn = test_runner or _default_test_runner
++        self._cwd = cwd or os.getcwd()
++
++        self._state: TddState = TddState.EMPTY
++        self._description: str = ""
++        self._spec: str = ""
++        self._refactor_plan: str = ""
++        self._history: list[PhaseResult] = []
++        self._spec_revisions: int = 0
++
++    # -------------------------------------------------------- read-only props
++
++    @property
++    def state(self) -> TddState:
++        return self._state
++
++    @property
++    def description(self) -> str:
++        return self._description
++
++    @property
++    def spec(self) -> str:
++        return self._spec
++
++    @property
++    def refactor_plan(self) -> str:
++        return self._refactor_plan
++
++    @property
++    def history(self) -> list[PhaseResult]:
++        return list(self._history)
++
++    @property
++    def test_command(self) -> list[str]:
++        return list(self._test_command)
++
++    @property
++    def spec_revisions(self) -> int:
++        """Number of times the Navigator re-drafted the spec because RED
++        unexpectedly passed.  Observable for tests / UX.
++        """
++        return self._spec_revisions
++
++    def clear(self) -> None:
++        """Reset to the initial empty state."""
++        self._state = TddState.EMPTY
++        self._description = ""
++        self._spec = ""
++        self._refactor_plan = ""
++        self._history = []
++        self._spec_revisions = 0
++
++    # --------------------------------------------------------------- helpers
++
++    @staticmethod
++    def _extract_assistant_text(event: dict[str, Any]) -> str:
++        """Pull clean text off an ``assistant`` event, tolerating the
++        several Message-shape variants the kernel emits.
++        """
++        msg = event.get("message")
++        if msg is None:
++            return ""
++        text_attr = getattr(msg, "text", None)
++        if isinstance(text_attr, str):
++            return text_attr
++        content = getattr(msg, "content", None)
++        if isinstance(content, str):
++            return content
++        if isinstance(content, list):
++            parts: list[str] = []
++            for block in content:
++                if isinstance(block, dict) and block.get("type") == "text":
++                    parts.append(block.get("text", "") or "")
++                else:
++                    btext = getattr(block, "text", None)
++                    if isinstance(btext, str):
++                        parts.append(btext)
++            return "".join(parts)
++        return ""
++
++    async def _run_engine(
++        self,
++        engine: Engine,
++        prompt: str,
++        *,
++        tool_choice: str | None,
++    ) -> AsyncGenerator[dict[str, Any], None]:
++        """Run a single phase on the given engine, yielding its events
++        plus capturing the final assistant text into ``self._last_text``.
++
++        ``tool_choice`` is restored on the engine's config even if the
++        caller breaks out early.
++        """
++        config = engine._config  # intentional — same seam PlanMode uses
++        original = config.tool_choice
++        config.tool_choice = tool_choice
++
++        delta_text: list[str] = []
++        assistant_text = ""
++
++        try:
++            async for event in engine.run(prompt):
++                etype = event.get("type", "")
++                if etype == "text_delta":
++                    delta_text.append(event.get("text", ""))
++                elif etype == "assistant":
++                    extracted = self._extract_assistant_text(event)
++                    if extracted:
++                        assistant_text = extracted
++                yield event
++        finally:
++            config.tool_choice = original
++
++        self._last_text = assistant_text or "".join(delta_text)
++
++    def _run_gate(self, phase_name: str) -> GateResult:
++        """Execute the test command and return a :class:`GateResult`
++        tagged with ``phase_name``.
++        """
++        result = self._test_runner(list(self._test_command), self._cwd)
++        return GateResult(
++            phase=phase_name,
++            exit_code=result.exit_code,
++            stdout=result.stdout,
++            stderr=result.stderr,
++        )
++
++    # ----------------------------------------------------------------- phases
++
++    async def draft_spec(
++        self,
++        description: str,
++    ) -> AsyncGenerator[dict[str, Any], None]:
++        """**Phase 1** — Navigator drafts the test spec.
++
++        Runs the Navigator engine with ``tool_choice="none"`` (no writes),
++        captures the assistant text as ``self.spec``, and advances to
++        :attr:`TddState.SPEC`.  Callable only from ``EMPTY``.
++        """
++        if self._state not in (TddState.EMPTY,):
++            raise ValueError(
++                f"Cannot draft spec: state is {self._state.name}, expected EMPTY"
++            )
++        self._description = description
++
++        yield {"type": "tdd_phase", "phase": "SPEC", "actor": "navigator"}
++
++        async for event in self._run_engine(
++            self._navigator,
++            SPEC_PROMPT + description,
++            tool_choice="none",
++        ):
++            yield event
++
++        self._spec = self._last_text.strip()
++        self._history.append(
++            PhaseResult(phase="SPEC", actor="navigator", text=self._spec)
++        )
++        self._state = TddState.SPEC
++
++    async def red(self) -> AsyncGenerator[dict[str, Any], None]:
++        """**Phase 2** — Driver writes the failing test, we run it.
++
++        Must be called from :attr:`TddState.SPEC`.  Runs the test command
++        as a hard gate: if the test unexpectedly passes, the Navigator
++        is invited to revise the spec (``state`` reverts to ``EMPTY`` so
++        the caller can call :meth:`spec` again) and ``spec_revisions``
++        is incremented.  Otherwise advances to :attr:`TddState.RED`.
++        """
++        if self._state != TddState.SPEC:
++            raise ValueError(
++                f"Cannot run RED: state is {self._state.name}, expected SPEC"
++            )
++
++        yield {"type": "tdd_phase", "phase": "RED", "actor": "driver"}
++
++        prompt = RED_PROMPT.format(spec=self._spec)
++        async for event in self._run_engine(
++            self._driver,
++            prompt,
++            tool_choice=None,
++        ):
++            yield event
++        driver_text = self._last_text
++
++        gate = self._run_gate("RED")
++        yield {
++            "type": "tdd_gate",
++            "phase": "RED",
++            "passed": gate.gate_passed,
++            "test_passed": gate.test_passed,
++            "exit_code": gate.exit_code,
++            "stdout": gate.stdout,
++            "stderr": gate.stderr,
++        }
++        self._history.append(
++            PhaseResult(phase="RED", actor="driver", text=driver_text, gate=gate)
++        )
++
++        if gate.gate_passed:
++            self._state = TddState.RED
++        else:
++            # Test passed at RED — spec was too loose. Send the Navigator
++            # back to re-draft. State reverts so the caller can call
++            # .spec() again with a tightened description.
++            self._spec_revisions += 1
++            self._state = TddState.EMPTY
++            self._spec = ""
++
++    async def green(self) -> AsyncGenerator[dict[str, Any], None]:
++        """**Phase 3** — Driver writes the minimum code; we re-run.
++
++        Must be called from :attr:`TddState.RED`.
++        """
++        if self._state != TddState.RED:
++            raise ValueError(
++                f"Cannot run GREEN: state is {self._state.name}, expected RED"
++            )
++
++        yield {"type": "tdd_phase", "phase": "GREEN", "actor": "driver"}
++
++        async for event in self._run_engine(
++            self._driver,
++            GREEN_PROMPT,
++            tool_choice=None,
++        ):
++            yield event
++        driver_text = self._last_text
++
++        gate = self._run_gate("GREEN")
++        yield {
++            "type": "tdd_gate",
++            "phase": "GREEN",
++            "passed": gate.gate_passed,
++            "test_passed": gate.test_passed,
++            "exit_code": gate.exit_code,
++            "stdout": gate.stdout,
++            "stderr": gate.stderr,
++        }
++        self._history.append(
++            PhaseResult(phase="GREEN", actor="driver", text=driver_text, gate=gate)
++        )
++
++        if gate.gate_passed:
++            self._state = TddState.GREEN
++        # On failure we stay in RED — caller can retry green() after
++        # investigating. We do NOT silently advance.
++
++    async def propose_refactor(self) -> AsyncGenerator[dict[str, Any], None]:
++        """**Phase 4** — Navigator proposes a refactor (read-only).
++
++        Must be called from :attr:`TddState.GREEN`.
++        """
++        if self._state != TddState.GREEN:
++            raise ValueError(
++                f"Cannot propose refactor: state is {self._state.name}, expected GREEN"
++            )
++
++        yield {"type": "tdd_phase", "phase": "REFACTOR_PLAN", "actor": "navigator"}
++
++        async for event in self._run_engine(
++            self._navigator,
++            REFACTOR_PROPOSE_PROMPT,
++            tool_choice="none",
++        ):
++            yield event
++
++        self._refactor_plan = self._last_text.strip()
++        self._history.append(
++            PhaseResult(
++                phase="REFACTOR_PLAN",
++                actor="navigator",
++                text=self._refactor_plan,
++            )
++        )
++        self._state = TddState.REFACTOR_PLAN
++
++    async def refactor_apply(self) -> AsyncGenerator[dict[str, Any], None]:
++        """**Phase 5** — Driver applies the Navigator's refactor.
++
++        Must be called from :attr:`TddState.REFACTOR_PLAN`.  The prompt
++        literally includes :attr:`refactor_plan`, and we assert that it
++        is non-empty — a Driver cannot apply a refactor that was never
++        proposed.
++        """
++        if self._state != TddState.REFACTOR_PLAN:
++            raise ValueError(
++                f"Cannot apply refactor: state is {self._state.name}, "
++                f"expected REFACTOR_PLAN"
++            )
++        if not self._refactor_plan:
++            raise ValueError(
++                "Cannot apply refactor: Navigator's refactor_plan is empty"
++            )
++
++        yield {"type": "tdd_phase", "phase": "REFACTOR_APPLY", "actor": "driver"}
++
++        prompt = REFACTOR_APPLY_PROMPT.format(refactor_plan=self._refactor_plan)
++        async for event in self._run_engine(
++            self._driver,
++            prompt,
++            tool_choice=None,
++        ):
++            yield event
++        driver_text = self._last_text
++
++        self._history.append(
++            PhaseResult(
++                phase="REFACTOR_APPLY",
++                actor="driver",
++                text=driver_text,
++            )
++        )
++        self._state = TddState.REFACTOR_APPLY
++
++    async def validate(self) -> AsyncGenerator[dict[str, Any], None]:
++        """**Phase 6** — Navigator validates refactor landed + tests pass.
++
++        Must be called from :attr:`TddState.REFACTOR_APPLY`.  Re-runs
++        the test command; only on a passing test does state advance to
++        :attr:`TddState.DONE`.
++        """
++        if self._state != TddState.REFACTOR_APPLY:
++            raise ValueError(
++                f"Cannot validate: state is {self._state.name}, "
++                f"expected REFACTOR_APPLY"
++            )
++
++        yield {"type": "tdd_phase", "phase": "VALIDATE", "actor": "navigator"}
++
++        async for event in self._run_engine(
++            self._navigator,
++            VALIDATE_PROMPT,
++            tool_choice=None,
++        ):
++            yield event
++        navigator_text = self._last_text
++
++        gate = self._run_gate("VALIDATE")
++        yield {
++            "type": "tdd_gate",
++            "phase": "VALIDATE",
++            "passed": gate.gate_passed,
++            "test_passed": gate.test_passed,
++            "exit_code": gate.exit_code,
++            "stdout": gate.stdout,
++            "stderr": gate.stderr,
++        }
++        self._history.append(
++            PhaseResult(
++                phase="VALIDATE",
++                actor="navigator",
++                text=navigator_text,
++                gate=gate,
++            )
++        )
++
++        if gate.gate_passed:
++            self._state = TddState.DONE
++        # If the refactor broke the tests we stay at REFACTOR_APPLY so
++        # the caller can fix it. Again: no silent advancement.
++
++    # --------------------------------------------------------------- refactor
++
++    async def refactor(self) -> AsyncGenerator[dict[str, Any], None]:
++        """Convenience: run phases 4 → 5 → 6 in sequence from GREEN."""
++        async for event in self.propose_refactor():
++            yield event
++        if self._state != TddState.REFACTOR_PLAN:
++            return
++        async for event in self.refactor_apply():
++            yield event
++        if self._state != TddState.REFACTOR_APPLY:
++            return
++        async for event in self.validate():
++            yield event
++
++    async def run_all(
++        self,
++        description: str,
++    ) -> AsyncGenerator[dict[str, Any], None]:
++        """Drive every phase end-to-end for CLI / CI use.
++
++        Equivalent to ``spec() → red() → green() → refactor()`` but short-
++        circuits on any gate failure (state stops advancing).
++        """
++        async for event in self.draft_spec(description):
++            yield event
++        if self._state != TddState.SPEC:
++            return
++        async for event in self.red():
++            yield event
++        if self._state != TddState.RED:
++            # RED gate failed (test passed) — caller may loop back to spec.
++            return
++        async for event in self.green():
++            yield event
++        if self._state != TddState.GREEN:
++            return
++        async for event in self.refactor():
++            yield event
++
++    # --------------------------------------------------------- pretty-printer
++
++    def format_status(self) -> str:
++        """Human-readable one-screen summary of the session."""
++        lines = [f"TDD state: {self._state.name}"]
++        if self._description:
++            lines.append(f"  feature: {self._description}")
++        if self._spec:
++            lines.append("  spec:")
++            for ln in self._spec.splitlines():
++                lines.append(f"    {ln}")
++        if self._spec_revisions:
++            lines.append(f"  spec revisions: {self._spec_revisions}")
++        if self._refactor_plan:
++            lines.append("  refactor plan:")
++            for ln in self._refactor_plan.splitlines():
++                lines.append(f"    {ln}")
++        if self._history:
++            lines.append("  history:")
++            for entry in self._history:
++                suffix = ""
++                if entry.gate is not None:
++                    suffix = (
++                        f"  [gate: exit={entry.gate.exit_code} "
++                        f"{'PASSED' if entry.gate.gate_passed else 'FAILED'}]"
++                    )
++                lines.append(f"    - {entry.phase} ({entry.actor}){suffix}")
++        return "\n".join(lines)
+diff --git a/tests/unit/test_tdd_mode.py b/tests/unit/test_tdd_mode.py
+new file mode 100644
+index 0000000..08063c9
+--- /dev/null
++++ b/tests/unit/test_tdd_mode.py
+@@ -0,0 +1,580 @@
++"""Tests for :mod:`duh.kernel.tdd_mode` — the double-agent TDD flow.
++
++Covers the six-phase contract defined in ADR-076:
++
++  1. Phase transitions happen in order; out-of-order calls raise.
++  2. The RED-phase gate surfaces the assertion failure distinctly from
++     GREEN (different event ``phase`` tag, different pass condition).
++  3. The Navigator's refactor suggestion is actually reproduced verbatim
++     in the prompt the Driver receives for REFACTOR_APPLY, and the apply
++     phase refuses to run if no refactor has been proposed.
++  4. A full end-to-end run completes against the deterministic stub
++     provider and advances to :attr:`TddState.DONE`.
++"""
++
++from __future__ import annotations
++
++import os
++from typing import Any, AsyncGenerator
++from unittest.mock import patch
++
++import pytest
++
++from duh.kernel.deps import Deps
++from duh.kernel.engine import Engine, EngineConfig
++from duh.kernel.messages import Message
++from duh.kernel.tdd_mode import (
++    DEFAULT_TEST_COMMAND,
++    GateResult,
++    REFACTOR_APPLY_PROMPT,
++    RED_PROMPT,
++    SPEC_PROMPT,
++    TddMode,
++    TddState,
++)
++
++
++# ---------------------------------------------------------------------------
++# Test doubles
++# ---------------------------------------------------------------------------
++
++
++def _scripted_model(responses: list[str]):
++    """Factory: build an async call_model that replies with the next
++    scripted response on each call.  Allows each Engine to produce a
++    different answer per phase.
++    """
++    iterator = iter(responses)
++
++    async def call_model(**kwargs) -> AsyncGenerator[dict[str, Any], None]:
++        try:
++            text = next(iterator)
++        except StopIteration:
++            text = ""
++        msg = Message(
++            role="assistant",
++            content=[{"type": "text", "text": text}],
++        )
++        yield {"type": "text_delta", "text": text}
++        yield {"type": "assistant", "message": msg}
++        yield {"type": "done", "stop_reason": "end_turn", "turns": 1}
++
++    return call_model
++
++
++def _make_engine(responses: list[str]) -> Engine:
++    """Build a minimal Engine backed by a scripted call_model.  Tools
++    are empty — the Driver/Navigator cannot actually touch the disk in
++    unit tests, which is exactly what we want.
++    """
++    deps = Deps(call_model=_scripted_model(responses))
++    return Engine(deps=deps, config=EngineConfig(model="test-model"))
++
++
++class FakeRunner:
++    """Pluggable test runner that returns scripted :class:`GateResult`
++    outcomes in order.  Every call also records the command + cwd it was
++    given so the tests can assert against them.
++    """
++
++    def __init__(self, results: list[GateResult]) -> None:
++        self._queue = list(results)
++        self.calls: list[tuple[list[str], str]] = []
++
++    def __call__(self, cmd: list[str], cwd: str) -> GateResult:
++        self.calls.append((list(cmd), cwd))
++        if not self._queue:
++            # Default to a passing test if the test forgot to queue one.
++            return GateResult(phase="", exit_code=0, stdout="", stderr="")
++        return self._queue.pop(0)
++
++
++def _collect(gen):
++    """Drain an async generator into a list."""
++
++    async def _run():
++        out: list[dict[str, Any]] = []
++        async for event in gen:
++            out.append(event)
++        return out
++
++    return _run()
++
++
++# ---------------------------------------------------------------------------
++# 1. Phase transitions in strict order
++# ---------------------------------------------------------------------------
++
++
++class TestPhaseOrdering:
++    """Each phase must be entered only from the immediately prior state."""
++
++    def test_initial_state_is_empty(self):
++        tdd = TddMode(
++            driver=_make_engine([""]),
++            navigator=_make_engine([""]),
++            test_runner=FakeRunner([]),
++        )
++        assert tdd.state == TddState.EMPTY
++        assert tdd.spec == ""
++        assert tdd.history == []
++
++    async def test_spec_advances_empty_to_spec(self):
++        tdd = TddMode(
++            driver=_make_engine([""]),
++            navigator=_make_engine(["spec: write a failing test for X"]),
++            test_runner=FakeRunner([]),
++        )
++        await _collect(tdd.draft_spec("feature X"))
++        assert tdd.state == TddState.SPEC
++        assert "failing test" in tdd.spec
++        assert tdd.description == "feature X"
++        assert len(tdd.history) == 1
++        assert tdd.history[0].phase == "SPEC"
++        assert tdd.history[0].actor == "navigator"
++
++    async def test_cannot_run_red_from_empty(self):
++        tdd = TddMode(
++            driver=_make_engine([""]),
++            navigator=_make_engine([""]),
++            test_runner=FakeRunner([]),
++        )
++        with pytest.raises(ValueError, match="expected SPEC"):
++            await _collect(tdd.red())
++
++    async def test_cannot_run_green_from_spec(self):
++        """GREEN requires the RED gate to have fired (failing test)."""
++        tdd = TddMode(
++            driver=_make_engine([""]),
++            navigator=_make_engine(["spec"]),
++            test_runner=FakeRunner([]),
++        )
++        await _collect(tdd.draft_spec("feature"))
++        with pytest.raises(ValueError, match="expected RED"):
++            await _collect(tdd.green())
++
++    async def test_cannot_propose_refactor_before_green(self):
++        tdd = TddMode(
++            driver=_make_engine(["wrote test"]),
++            navigator=_make_engine(["spec"]),
++            test_runner=FakeRunner(
++                [GateResult(phase="", exit_code=1, stdout="AssertionError", stderr="")],
++            ),
++        )
++        await _collect(tdd.draft_spec("feature"))
++        await _collect(tdd.red())
++        with pytest.raises(ValueError, match="expected GREEN"):
++            await _collect(tdd.propose_refactor())
++
++    async def test_cannot_apply_refactor_before_plan(self):
++        tdd = TddMode(
++            driver=_make_engine(["wrote test", "wrote code"]),
++            navigator=_make_engine(["spec"]),
++            test_runner=FakeRunner(
++                [
++                    GateResult(phase="", exit_code=1, stdout="AssertionError", stderr=""),
++                    GateResult(phase="", exit_code=0, stdout="1 passed", stderr=""),
++                ],
++            ),
++        )
++        await _collect(tdd.draft_spec("feature"))
++        await _collect(tdd.red())
++        await _collect(tdd.green())
++        with pytest.raises(ValueError, match="expected REFACTOR_PLAN"):
++            await _collect(tdd.refactor_apply())
++
++    async def test_apply_refuses_when_plan_is_empty(self):
++        """Edge case: if the Navigator returned an empty refactor, apply
++        must not proceed — we never send a Driver to "apply nothing.""" ""
++        tdd = TddMode(
++            driver=_make_engine(["wrote test", "wrote code"]),
++            navigator=_make_engine(["spec", "   "]),  # whitespace-only refactor
++            test_runner=FakeRunner(
++                [
++                    GateResult(phase="", exit_code=1, stdout="fail", stderr=""),
++                    GateResult(phase="", exit_code=0, stdout="pass", stderr=""),
++                ],
++            ),
++        )
++        await _collect(tdd.draft_spec("feature"))
++        await _collect(tdd.red())
++        await _collect(tdd.green())
++        await _collect(tdd.propose_refactor())
++        assert tdd.refactor_plan == ""  # whitespace stripped
++        with pytest.raises(ValueError, match="refactor_plan is empty"):
++            await _collect(tdd.refactor_apply())
++
++    async def test_phase_events_fire_in_order(self):
++        """Every phase emits a ``tdd_phase`` event before yielding model
++        events — renderers depend on this ordering.
++        """
++        runner = FakeRunner(
++            [
++                GateResult(phase="", exit_code=1, stdout="fail", stderr=""),  # RED
++                GateResult(phase="", exit_code=0, stdout="pass", stderr=""),  # GREEN
++                GateResult(phase="", exit_code=0, stdout="pass", stderr=""),  # VALIDATE
++            ],
++        )
++        tdd = TddMode(
++            driver=_make_engine(["wrote test", "wrote code", "applied refactor"]),
++            navigator=_make_engine(["spec body", "refactor: rename foo→bar", "approved"]),
++            test_runner=runner,
++        )
++
++        phase_events: list[tuple[str, str]] = []
++        async for event in tdd.run_all("feature"):
++            if event.get("type") == "tdd_phase":
++                phase_events.append((event["phase"], event["actor"]))
++
++        assert phase_events == [
++            ("SPEC", "navigator"),
++            ("RED", "driver"),
++            ("GREEN", "driver"),
++            ("REFACTOR_PLAN", "navigator"),
++            ("REFACTOR_APPLY", "driver"),
++            ("VALIDATE", "navigator"),
++        ]
++        assert tdd.state == TddState.DONE
++
++
++# ---------------------------------------------------------------------------
++# 2. RED phase gate — assertion failure tagged distinctly
++# ---------------------------------------------------------------------------
++
++
++class TestRedGreenGateTagging:
++    """The RED and GREEN gates are inverse: at RED, a failing test is
++    success; at GREEN, a passing test is success.  Consumers rely on
++    the ``phase`` tag on ``tdd_gate`` events to disambiguate.
++    """
++
++    async def test_red_gate_tags_event_with_red_phase(self):
++        tdd = TddMode(
++            driver=_make_engine(["wrote test"]),
++            navigator=_make_engine(["spec"]),
++            test_runner=FakeRunner(
++                [GateResult(phase="", exit_code=1, stdout="AssertionError: x != y", stderr="")],
++            ),
++        )
++        await _collect(tdd.draft_spec("feature"))
++
++        events = []
++        async for event in tdd.red():
++            events.append(event)
++
++        gate_events = [e for e in events if e.get("type") == "tdd_gate"]
++        assert len(gate_events) == 1
++        gate = gate_events[0]
++        assert gate["phase"] == "RED"
++        assert gate["passed"] is True        # RED-gate passes on failure
++        assert gate["test_passed"] is False  # but the test itself failed
++        assert gate["exit_code"] == 1
++        assert "AssertionError" in gate["stdout"]
++
++    async def test_green_gate_tags_event_with_green_phase(self):
++        runner = FakeRunner(
++            [
++                GateResult(phase="", exit_code=1, stdout="fail", stderr=""),
++                GateResult(phase="", exit_code=0, stdout="1 passed", stderr=""),
++            ],
++        )
++        tdd = TddMode(
++            driver=_make_engine(["wrote test", "wrote code"]),
++            navigator=_make_engine(["spec"]),
++            test_runner=runner,
++        )
++        await _collect(tdd.draft_spec("feature"))
++        await _collect(tdd.red())
++
++        events = []
++        async for event in tdd.green():
++            events.append(event)
++
++        gate_events = [e for e in events if e.get("type") == "tdd_gate"]
++        assert len(gate_events) == 1
++        assert gate_events[0]["phase"] == "GREEN"
++        assert gate_events[0]["passed"] is True
++        assert gate_events[0]["test_passed"] is True
++        assert gate_events[0]["exit_code"] == 0
++
++    async def test_red_passing_test_reverts_to_empty_and_counts_revision(self):
++        """If the RED test passes, the spec was too loose — revert to
++        EMPTY so the Navigator can re-draft a tighter spec.
++        """
++        tdd = TddMode(
++            driver=_make_engine(["wrote vacuous test"]),
++            navigator=_make_engine(["loose spec"]),
++            test_runner=FakeRunner(
++                [GateResult(phase="", exit_code=0, stdout="1 passed", stderr="")],
++            ),
++        )
++        await _collect(tdd.draft_spec("feature"))
++        assert tdd.state == TddState.SPEC
++
++        events = []
++        async for event in tdd.red():
++            events.append(event)
++
++        # Gate event present and indicates failure
++        gate_events = [e for e in events if e.get("type") == "tdd_gate"]
++        assert gate_events[0]["phase"] == "RED"
++        assert gate_events[0]["passed"] is False
++        # State reverted so the caller can call .spec() again
++        assert tdd.state == TddState.EMPTY
++        assert tdd.spec_revisions == 1
++        assert tdd.spec == ""
++
++    async def test_green_failing_test_stays_in_red_state(self):
++        """If GREEN's test still fails, we do NOT silently advance."""
++        runner = FakeRunner(
++            [
++                GateResult(phase="", exit_code=1, stdout="fail", stderr=""),  # RED
++                GateResult(phase="", exit_code=1, stdout="still failing", stderr=""),  # GREEN
++            ],
++        )
++        tdd = TddMode(
++            driver=_make_engine(["wrote test", "wrote wrong code"]),
++            navigator=_make_engine(["spec"]),
++            test_runner=runner,
++        )
++        await _collect(tdd.draft_spec("feature"))
++        await _collect(tdd.red())
++        assert tdd.state == TddState.RED
++        await _collect(tdd.green())
++        # GREEN gate failed, so we remain in RED.
++        assert tdd.state == TddState.RED
++
++
++# ---------------------------------------------------------------------------
++# 3. Refactor prompt must contain the Navigator's proposal verbatim
++# ---------------------------------------------------------------------------
++
++
++class TestRefactorContract:
++    """The Navigator's refactor suggestion is actually applied before
++    validation — i.e. the prompt the Driver sees for REFACTOR_APPLY must
++    literally include the Navigator's words.
++    """
++
++    async def test_refactor_plan_text_flows_into_apply_prompt(self):
++        """Record every prompt the Driver engine sees and assert that
++        the REFACTOR_APPLY prompt contains the Navigator's refactor text.
++        """
++        driver_prompts: list[str] = []
++
++        async def capturing_driver_model(**kwargs) -> AsyncGenerator[dict[str, Any], None]:
++            # The user message is the last one with role="user" in the list.
++            messages = kwargs.get("messages", [])
++            for m in reversed(messages):
++                content = getattr(m, "content", m.get("content") if isinstance(m, dict) else None)
++                if isinstance(content, str):
++                    driver_prompts.append(content)
++                    break
++                if isinstance(content, list):
++                    for block in content:
++                        if isinstance(block, dict) and block.get("type") == "text":
++                            driver_prompts.append(block.get("text", ""))
++                            break
++                    else:
++                        continue
++                    break
++            text = "ok"
++            msg = Message(role="assistant", content=[{"type": "text", "text": text}])
++            yield {"type": "text_delta", "text": text}
++            yield {"type": "assistant", "message": msg}
++            yield {"type": "done", "stop_reason": "end_turn", "turns": 1}
++
++        driver = Engine(
++            deps=Deps(call_model=capturing_driver_model),
++            config=EngineConfig(model="test-model"),
++        )
++        navigator = _make_engine(
++            [
++                "spec body",
++                "Refactor: extract compute_total() helper from the if-ladder in cache.py",
++            ],
++        )
++
++        runner = FakeRunner(
++            [
++                GateResult(phase="", exit_code=1, stdout="fail", stderr=""),  # RED
++                GateResult(phase="", exit_code=0, stdout="pass", stderr=""),  # GREEN
++            ],
++        )
++        tdd = TddMode(driver=driver, navigator=navigator, test_runner=runner)
++
++        await _collect(tdd.draft_spec("feature"))
++        await _collect(tdd.red())
++        await _collect(tdd.green())
++        await _collect(tdd.propose_refactor())
++        await _collect(tdd.refactor_apply())
++
++        assert tdd.state == TddState.REFACTOR_APPLY
++        # The Driver received THREE prompts: RED, GREEN, REFACTOR_APPLY.
++        assert len(driver_prompts) == 3
++        apply_prompt = driver_prompts[2]
++        # The Navigator's literal refactor text is spliced in.
++        assert "compute_total()" in apply_prompt
++        assert "cache.py" in apply_prompt
++        # And the APPLY template's leading sentence is present.
++        assert "Apply the Navigator's refactor VERBATIM" in apply_prompt
++
++    async def test_refactor_plan_stored_on_mode(self):
++        """``tdd.refactor_plan`` exposes the Navigator's text so the
++        REPL / renderer can display it."""
++        runner = FakeRunner(
++            [
++                GateResult(phase="", exit_code=1, stdout="fail", stderr=""),
++                GateResult(phase="", exit_code=0, stdout="pass", stderr=""),
++            ],
++        )
++        tdd = TddMode(
++            driver=_make_engine(["wrote test", "wrote code"]),
++            navigator=_make_engine(["spec body", "rename foo to bar"]),
++            test_runner=runner,
++        )
++        await _collect(tdd.draft_spec("feature"))
++        await _collect(tdd.red())
++        await _collect(tdd.green())
++        await _collect(tdd.propose_refactor())
++
++        assert tdd.refactor_plan == "rename foo to bar"
++        assert tdd.state == TddState.REFACTOR_PLAN
++        # History entry for REFACTOR_PLAN captured the same text
++        plan_entries = [h for h in tdd.history if h.phase == "REFACTOR_PLAN"]
++        assert len(plan_entries) == 1
++        assert plan_entries[0].text == "rename foo to bar"
++        assert plan_entries[0].actor == "navigator"
++
++
++# ---------------------------------------------------------------------------
++# 4. Full end-to-end run against the stub provider
++# ---------------------------------------------------------------------------
++
++
++class TestEndToEndStubProvider:
++    """Exercise every phase against the real :class:`StubProvider` — the
++    same deterministic provider the CI smoke tests use.  This proves the
++    wiring (Engine + Deps + phase sequencing + gate) all compose.
++    """
++
++    async def test_full_run_completes_against_stub(self, monkeypatch):
++        from duh.adapters.stub_provider import StubProvider
++
++        # Build two engines, each with its own StubProvider.  The stub
++        # always replies with "stub-ok" — we don't care about the text,
++        # we care that the phases run and the state advances.
++        stub = StubProvider(model="stub-model")
++        driver = Engine(
++            deps=Deps(call_model=stub.stream),
++            config=EngineConfig(model="stub-model"),
++        )
++        navigator = Engine(
++            deps=Deps(call_model=stub.stream),
++            config=EngineConfig(model="stub-model"),
++        )
++
++        # Scripted test runner: RED fails, GREEN passes, VALIDATE passes.
++        runner = FakeRunner(
++            [
++                GateResult(phase="", exit_code=1, stdout="E  AssertionError", stderr=""),
++                GateResult(phase="", exit_code=0, stdout="1 passed", stderr=""),
++                GateResult(phase="", exit_code=0, stdout="1 passed", stderr=""),
++            ],
++        )
++        tdd = TddMode(
++            driver=driver,
++            navigator=navigator,
++            test_runner=runner,
++            test_command=["pytest", "-x"],
++        )
++
++        events = []
++        async for event in tdd.run_all("LRU cache drops oldest entry"):
++            events.append(event)
++
++        # Final state reached
++        assert tdd.state == TddState.DONE
++        # All six phases ran
++        phase_names = [e["phase"] for e in events if e.get("type") == "tdd_phase"]
++        assert phase_names == [
++            "SPEC",
++            "RED",
++            "GREEN",
++            "REFACTOR_PLAN",
++            "REFACTOR_APPLY",
++            "VALIDATE",
++        ]
++        # Three gate events: RED (passed=True because test failed),
++        # GREEN (passed=True because test passed), VALIDATE (same).
++        gate_events = [e for e in events if e.get("type") == "tdd_gate"]
++        assert [g["phase"] for g in gate_events] == ["RED", "GREEN", "VALIDATE"]
++        assert all(g["passed"] for g in gate_events)
++        # History has one entry per phase (6 total).
++        assert [h.phase for h in tdd.history] == [
++            "SPEC",
++            "RED",
++            "GREEN",
++            "REFACTOR_PLAN",
++            "REFACTOR_APPLY",
++            "VALIDATE",
++        ]
++        # Spec + refactor_plan populated from the stub's canned response.
++        assert tdd.spec != ""
++        assert tdd.refactor_plan != ""
++        # The runner was called three times (once per gate), each time
++        # with the custom test command we passed in.
++        assert len(runner.calls) == 3
++        for cmd, _cwd in runner.calls:
++            assert cmd == ["pytest", "-x"]
++
++
++# ---------------------------------------------------------------------------
++# 5. Misc — defaults, clear(), format_status()
++# ---------------------------------------------------------------------------
++
++
++class TestMisc:
++    def test_default_test_command_is_pytest(self):
++        tdd = TddMode(
++            driver=_make_engine([""]),
++            navigator=_make_engine([""]),
++        )
++        assert tdd.test_command[0] == "pytest"
++        assert tdd.test_command == DEFAULT_TEST_COMMAND
++
++    async def test_clear_resets_state(self):
++        tdd = TddMode(
++            driver=_make_engine([""]),
++            navigator=_make_engine(["spec body"]),
++            test_runner=FakeRunner([]),
++        )
++        await _collect(tdd.draft_spec("feature"))
++        assert tdd.state == TddState.SPEC
++        tdd.clear()
++        assert tdd.state == TddState.EMPTY
++        assert tdd.spec == ""
++        assert tdd.description == ""
++        assert tdd.history == []
++
++    def test_prompt_templates_contain_role_markers(self):
++        """Loose safety-net: if someone rewrites a template and drops the
++        role marker, the other agent might try to play both parts."""
++        assert "NAVIGATOR" in SPEC_PROMPT
++        assert "DRIVER" in RED_PROMPT
++        assert "{spec}" in RED_PROMPT
++        assert "{refactor_plan}" in REFACTOR_APPLY_PROMPT
++
++    async def test_gate_result_gate_passed_inversion(self):
++        """Unit test for the RED-is-inverted property on GateResult."""
++        red_fail = GateResult(phase="RED", exit_code=1, stdout="", stderr="")
++        red_pass = GateResult(phase="RED", exit_code=0, stdout="", stderr="")
++        green_fail = GateResult(phase="GREEN", exit_code=1, stdout="", stderr="")
++        green_pass = GateResult(phase="GREEN", exit_code=0, stdout="", stderr="")
++
++        # RED: failing test is gate-pass; passing test is gate-fail
++        assert red_fail.gate_passed is True
++        assert red_pass.gate_passed is False
++        # GREEN / VALIDATE: passing test is gate-pass
++        assert green_fail.gate_passed is False
++        assert green_pass.gate_passed is True

@@ -1,0 +1,11 @@
+YOLO mode is enabled. All tool calls will be automatically approved.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+YOLO mode is enabled. All tool calls will be automatically approved.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+I have completed the requested deliverables for the double-agent TDD flow:
+
+1. **Architecture Decision Record (ADR):** Wrote `docs/adrs/ADR-076-double-agent-tdd.md` detailing the 6-phase red-green-refactor contract and the decision to reuse the existing `Engine` and `SessionBuilder` abstractions.
+2. **Implementation:** Added the new subcommand `duh tdd` in `duh/cli/parser.py` and handled it in `duh/cli/main.py`. The controller logic is implemented in `duh/cli/tdd.py`, securely spinning up two `Engine` instances (one configured as `planner` for the Navigator, and one as `coder` for the Driver) to sequentially orchestrate the strict 6 phases.
+3. **Unit Tests:** Created `tests/unit/test_tdd.py` to cover the controller behavior. The tests mock `Engine.run` to verify that all 6 phases execute sequentially and that the expected prompts are dispatched correctly, including error handling constraints.
+4. **Documentation:** Updated the `README.md` file with a new section demonstrating the `duh tdd` command flow. Added a detailed section to the `docs/wiki/Multi-Agent.md` page outlining the phase breakdown, the agents' roles (Driver/Navigator), and the strict ordering validation. All changes remain staged in the working tree as instructed.

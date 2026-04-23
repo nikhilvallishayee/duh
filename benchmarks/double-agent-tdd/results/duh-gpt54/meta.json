@@ -1,0 +1,14 @@
+{
+  "agent_id": "duh-gpt54",
+  "cli": "duh",
+  "model": "gpt-5.4",
+  "baseline_commit": "645d91ad10ad83b5778bcd14f2c53b8e3366497c",
+  "start_ts": "2026-04-23T15:56:31Z",
+  "end_ts": "2026-04-23T16:00:21Z",
+  "elapsed_s": 230,
+  "exit_code": 0,
+  "worktree": "/Users/nomind/Code/Tengu/tengu-cockpit/benchmarks/double-agent-tdd/worktrees/duh-gpt54",
+  "log_bytes": 44863,
+  "diff_bytes": 36421,
+  "files_changed": 11
+}

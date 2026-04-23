@@ -1,0 +1,24 @@
+{
+  "target": "duh-llama4-scout",
+  "scores": {
+    "adr_quality": 3,
+    "implementation_completeness": 1,
+    "use_of_abstractions": 1,
+    "test_coverage": 0,
+    "documentation": 1,
+    "code_quality": 2,
+    "protocol_adherence": 4
+  },
+  "total_out_of_35": 12,
+  "one_line_summary": "The agent produced an empty skeleton, destructively overwrote the project README, and hallucinated the actual implementation in stdout.",
+  "strengths": [
+    "Wrote an ADR detailing the contract before writing code.",
+    "Followed the negative constraints regarding git operations."
+  ],
+  "weaknesses": [
+    "Implementation is entirely skeletal and non-functional.",
+    "Destructively overwrote the entire README.md instead of adding a section.",
+    "Hallucinated the actual implementation and tests in stdout rather than writing them to the files."
+  ],
+  "judge": "j-g31"
+}

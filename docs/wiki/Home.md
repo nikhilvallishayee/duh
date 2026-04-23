@@ -4,6 +4,15 @@
 
 D.U.H. is an open-source, provider-agnostic AI coding agent. It connects any LLM provider to your codebase through a single, clean interface — no vendor lock-in, no 500K-line codebases, no proprietary extensions. It speaks the Claude Agent SDK NDJSON protocol, so it can serve as a drop-in replacement wherever the `claude` binary is expected.
 
+## New: head-to-head benchmark vs first-party CLIs
+
+D.U.H. v0.8.0 was benchmarked against Claude Code, Codex CLI, and
+Gemini CLI on the same task, same baseline commit, same 3-judge
+rubric. Matched-model deltas: **Opus −0.3, GPT-5.4 −0.6, Gemini +2.0**
+(/35). At parity on two frontier models, ahead on the third. Full
+methodology + raw artifacts reproducible via `./run_all.sh`. See
+**[Benchmarks](Benchmarks)** for the scoreboard, rubric, and caveats.
+
 ## What's new in v0.8.0
 
 - **Native Gemini + Groq adapters** — LiteLLM is now an opt-in fallback ([ADR-075](../adrs/ADR-075-drop-litellm-native-adapters.md)). Supply-chain hardened (no LiteLLM in default install path after the March 2026 compromise); native SDKs unlock Anthropic `cache_control`, Gemini `thinking_budget` + explicit caches, and Groq rate-limit headers.

@@ -1,0 +1,13 @@
+{
+  "agent": "duh-qwen3-32b",
+  "lines_added": 0,
+  "lines_removed": 0,
+  "files_changed": 0
+0,
+  "new_test_files_tried": "",
+  "new_tests_passed": 0,
+  "new_tests_failed": 0,
+  "new_tests_errored": 0,
+  "ruff_issues": 0,
+  "pytest_tail": ""
+}

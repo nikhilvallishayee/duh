@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>D.U.H. Benchmarks — Head-to-head vs Claude Code, Codex CLI, Gemini CLI</title>
+  <meta name="description" content="Same model, same task, three LLM judges. Pre-registered, falsifiable, reproducible benchmark of D.U.H. against first-party vendor coding CLIs.">
+  <meta name="keywords" content="AI coding agent benchmark, Claude Code vs D.U.H., Codex CLI benchmark, Gemini CLI benchmark, universal harness benchmark, pre-registered benchmark">
+  <meta name="author" content="Nikhil Vallishayee">
+  <meta name="theme-color" content="#0a0a0a">
+
+  <meta property="og:title" content="D.U.H. Benchmarks — Head-to-head vs Claude Code, Codex CLI, Gemini CLI">
+  <meta property="og:description" content="Same model, same task, three LLM judges. At parity on Opus 4.7 and GPT-5.4; ahead on Gemini 3.1. Pre-registered and reproducible.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://nikhilvallishayee.github.io/duh/site/benchmarks.html">
+  <meta property="og:image" content="https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png">
+  <meta property="og:site_name" content="D.U.H.">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="D.U.H. Benchmarks — head-to-head vs vendor CLIs">
+  <meta name="twitter:description" content="Pre-registered, falsifiable, reproducible benchmark of D.U.H. against Claude Code, Codex CLI, and Gemini CLI.">
+  <meta name="twitter:image" content="https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png">
+
+  <link rel="canonical" href="https://nikhilvallishayee.github.io/duh/site/benchmarks.html">
+
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🔧</text></svg>">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "D.U.H. vs first-party coding CLIs — head-to-head benchmark",
+    "description": "Pre-registered, falsifiable, reproducible benchmark. Six agents, three LLM judges, seven-dimension rubric. D.U.H. is at parity with vendor CLIs at matched models; ahead on Gemini 3.1.",
+    "author": { "@type": "Person", "name": "Nikhil Vallishayee" },
+    "publisher": { "@type": "Organization", "name": "D.U.H.", "logo": { "@type": "ImageObject", "url": "https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png" } },
+    "mainEntityOfPage": "https://nikhilvallishayee.github.io/duh/site/benchmarks.html",
+    "datePublished": "2026-04-23",
+    "about": ["AI coding agent benchmark", "Claude Code", "Codex CLI", "Gemini CLI", "D.U.H."]
+  }
+  </script>
+</head>
+<body class="page-body">
+
+<a href="#main-content" class="visually-hidden" style="position:absolute;left:-9999px;">Skip to main content</a>
+
+<nav class="nav" role="navigation" aria-label="Main navigation">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo"><span>D.U.H.</span></a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="getting-started.html">Get Started</a></li>
+      <li><a href="security.html">Security</a></li>
+      <li><a href="comparisons.html">Compare</a></li>
+      <li><a href="benchmarks.html">Benchmarks</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="https://github.com/nikhilvallishayee/duh" class="nav-github" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <button class="nav-hamburger" aria-label="Toggle menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<main id="main-content">
+<section class="container" style="max-width: 920px; padding: 48px 24px 96px;">
+
+<h1>Does a universal harness move the needle?</h1>
+<p><em>A pre-registered, falsifiable, reproducible benchmark.</em></p>
+
+<p><strong>TL;DR —</strong> Six agents, one non-trivial task, three LLM
+judges. At matched models the score difference between each vendor's own
+CLI and D.U.H. sits well inside judge noise on two of three pairs
+(Opus 4.7 Δ = −0.3, GPT-5.4 Δ = −0.6) and favours D.U.H. on the third
+(Gemini 3.1 Δ = +2.0). Model capability dominates harness choice by
+over 10×. The full method, the rubric, every diff, every session log,
+and the 27 judge outputs are in the repo so you can re-run and see for
+yourself.</p>
+
+<h2>Scoreboard</h2>
+
+<table>
+<thead>
+<tr><th>Rank</th><th>Agent</th><th>j-opus</th><th>j-gpt54</th><th>j-g31</th><th>Mean /35</th><th>Elapsed</th></tr>
+</thead>
+<tbody>
+<tr><td>1=</td><td><code>claude-code-opus</code></td><td>35</td><td>30</td><td>35</td><td><strong>33.3</strong></td><td>742 s</td></tr>
+<tr><td>1=</td><td><code>codex-gpt54</code></td><td>35</td><td>30</td><td>35</td><td><strong>33.3</strong></td><td>510 s</td></tr>
+<tr><td>3</td><td><code>duh-opus</code></td><td>35</td><td>29</td><td>35</td><td><strong>33.0</strong></td><td>915 s</td></tr>
+<tr><td>4</td><td><code>duh-gpt54</code></td><td>33</td><td>30</td><td>35</td><td><strong>32.7</strong></td><td>230 s</td></tr>
+<tr><td>5</td><td><code>duh-gemini-3.1</code></td><td>25</td><td>23</td><td>33</td><td><strong>27.0</strong></td><td>305 s</td></tr>
+<tr><td>6</td><td><code>gemini-cli-3.1</code></td><td>25</td><td>22</td><td>28</td><td><strong>25.0</strong></td><td>358 s</td></tr>
+</tbody>
+</table>
+
+<h2>Same-model deltas</h2>
+
+<table>
+<thead><tr><th>Model</th><th>First-party CLI</th><th>D.U.H.</th><th>Δ</th></tr></thead>
+<tbody>
+<tr><td>Opus 4.7</td><td>33.3</td><td>33.0</td><td>−0.3</td></tr>
+<tr><td>GPT-5.4</td><td>33.3</td><td>32.7</td><td>−0.6</td></tr>
+<tr><td>Gemini 3.1 Pro</td><td>25.0</td><td>27.0</td><td><strong>+2.0</strong></td></tr>
+</tbody>
+</table>
+
+<p>Two of three deltas fall cleanly inside the ±2-point pre-registered
+parity band. The Gemini pair sits at the edge of the band and points in
+D.U.H.'s direction — driven almost entirely by test coverage
+(3.0 vs 1.3 /5) and implementation completeness (3.7 vs 3.3 /5).</p>
+
+<h2>Method, in one page</h2>
+
+<ul>
+<li><strong>Task:</strong> add a double-agent TDD flow (Driver writes tests,
+  Navigator reviews; six strict phases) to the D.U.H. codebase itself.
+  An ADR must predate the first code change. Real wiring, not a skeleton.
+  Unit tests that exercise the phase contract. README + wiki + help-text
+  updates. No git commits; the working tree <em>is</em> the submission.</li>
+<li><strong>Baseline:</strong> every agent starts in a fresh
+  <code>git worktree</code> of the same pinned commit
+  (<code>645d91a</code>, D.U.H. v0.8.0 release-prep).</li>
+<li><strong>Agents:</strong> Claude Code @ Opus 4.7 · D.U.H. @ Opus 4.7 ·
+  Codex CLI @ GPT-5.4 · D.U.H. @ GPT-5.4 · Gemini CLI @ Gemini 3.1 Pro ·
+  D.U.H. @ Gemini 3.1 Pro.</li>
+<li><strong>Judges:</strong> Opus 4.7, GPT-5.4, Gemini 3.1 Pro, each via
+  D.U.H.. Each judge scores every submission — including runs produced
+  by its own model family — so single-provider bias cancels on the
+  average.</li>
+<li><strong>Rubric:</strong> seven dimensions, each 0–5, summed to /35.
+  ADR quality · Implementation completeness · Use of existing
+  abstractions · Test coverage of the six-phase contract · Documentation
+  · Code quality · Protocol adherence.</li>
+</ul>
+
+<h2>Pre-registered hypotheses</h2>
+
+<p>Three hypotheses, each with a numeric falsification threshold. All
+three were declared before any run.</p>
+
+<ul>
+<li><strong>H1 — Harness parity at matched model.</strong> Score delta
+  between first-party CLI and D.U.H. at the same model is ≤ 2 points /35.
+  <em>Result:</em> supported (−0.3, −0.6, +2.0). Gemini pair sits at the
+  edge — a one-point judge swing would cross the threshold.</li>
+<li><strong>H2 — Measurable same-family judge bias.</strong> Judges
+  score own-family submissions ≥ 2 points higher than cross-family
+  judges do. <em>Result:</em> supported strongly for Gemini (same-family
+  bias +9.0 on one target), weakly for Anthropic (+2.5 to +3.0), and
+  <em>inverted</em> for OpenAI (−5.0 to −4.0; the GPT judge was harsher
+  on GPT submissions). Three-judge averaging substantially — but not
+  fully — cancels the bias.</li>
+<li><strong>H3 — Model capability dominates CLI choice.</strong> Model
+  score range strictly greater than CLI score range. <em>Result:</em>
+  supported decisively. Model range = 23.3 (33.0 → 9.7 across D.U.H.
+  runs). Max CLI range at any matched model = 2.0.</li>
+</ul>
+
+<h2>Why didn't the harness help on Opus and GPT-5.4?</h2>
+
+<p>The honest answer: this task doesn't exercise the axes where a
+harness is supposed to differentiate. It's a single-session, sub-hour
+feature. All three vendor CLIs give their model a context, a tool
+schema, and an edit loop; D.U.H. does the same. On short tasks inside
+native context, the model does the work and the harness is a courier.</p>
+
+<p>Where a harness <em>should</em> matter — long-context behaviour,
+context compaction, cross-session memory, multi-agent orchestration,
+cross-provider model hopping — this benchmark doesn't test at all. Two
+follow-on benchmarks are specced to stress those axes: a multi-file
+distributed-systems task with adversarial tests, and a
+documentation-generation task over a real codebase.</p>
+
+<h2>What D.U.H. unlocks that the vendor CLIs cannot</h2>
+
+<p>There is one structural result the scoreboard above understates.
+Claude Code drives Claude. Codex drives OpenAI. Gemini CLI drives
+Gemini. That's it.</p>
+
+<p>D.U.H. in this benchmark also ran <code>llama-4-scout</code>,
+<code>gpt-oss-120b</code>, and <code>qwen3-32b</code> — strong open
+models served via Groq, none of which has a first-party coding CLI of
+any kind. Two of those three runs were rate-limited out by Groq's
+free-tier TPM cap (recorded in the results as failures, not silently
+dropped); the third ran cleanly and scored below the frontier agents.
+The scores are one signal; the <em>bench inclusion</em> is another.
+Vendor CLIs can't even line up at the start.</p>
+
+<h2>Reproducing this run</h2>
+
+<pre><code># From the D.U.H. repo
+cd benchmarks/double-agent-tdd
+
+export ANTHROPIC_API_KEY=…  OPENAI_API_KEY=…
+export GEMINI_API_KEY=…     GROQ_API_KEY=…
+
+./preflight.sh        # verifies CLIs, keys, baseline commit
+./run_all.sh          # six vendor runs + three open-model runs
+./judge_all.sh        # 27 judgments
+python3 aggregate.py  # writes results/scoreboard.md
+</code></pre>
+
+<p>Every artefact — diff, session log, meta.json, judge JSON — persists
+under <code>results/</code>. If you run this on a different machine
+with different keys and your numbers come out more than 3 points off
+ours on any agent, file an issue. That is the path to invalidating any
+of H1/H2/H3.</p>
+
+<h2>Caveats</h2>
+
+<ul>
+<li><strong>N = 1</strong> per (agent, task). Absolute means carry ±3
+  points of judge-sampling uncertainty; ordinal ranking is stable
+  across judges.</li>
+<li><strong>Single task.</strong> Generalising H1 to all coding tasks is
+  not warranted. Benchmarks 2 and 3 exist to stress different axes.</li>
+<li><strong>Rubric is document-grounded, not execution-grounded.</strong>
+  <code>codex-gpt54</code> had two actually-failing unit tests that
+  every judge missed. A future rubric iteration should run pytest.</li>
+<li><strong>Protocol-honesty note.</strong> The first Claude Code run
+  interpreted the task's reference to the D.U.H. source path literally
+  and wrote files to the upstream repo instead of its benchmark
+  worktree. The prompt was rewritten to remove the absolute path and
+  the Claude Code invocation was hardened with
+  <code>--add-dir=$WORKTREE</code>. All reported numbers use the
+  hardened prompt.</li>
+</ul>
+
+<p style="margin-top: 48px;">
+  <a href="https://github.com/nikhilvallishayee/duh/tree/main/benchmarks/double-agent-tdd" class="btn btn-primary">See the benchmark</a>
+  &nbsp;
+  <a href="getting-started.html" class="btn btn-secondary">Try D.U.H.</a>
+</p>
+
+</section>
+</main>
+
+<footer style="border-top:1px solid var(--border-subtle);padding:24px;text-align:center;color:var(--fg-3);font-size:0.875rem;">
+  <p>Apache 2.0 · <a href="https://github.com/nikhilvallishayee/duh">GitHub</a></p>
+</footer>
+
+<script src="nav.js"></script>
+</body>
+</html>

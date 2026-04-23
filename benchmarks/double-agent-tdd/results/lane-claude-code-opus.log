@@ -1,0 +1,4 @@
+[claude-code-opus] removing existing worktree
+Preparing worktree (detached HEAD 645d91a)
+[claude-code-opus] worktree ready at /Users/nomind/Code/Tengu/tengu-cockpit/benchmarks/double-agent-tdd/worktrees/claude-code-opus
+[claude-code-opus] done  exit=0  elapsed=742s  diff=87144B

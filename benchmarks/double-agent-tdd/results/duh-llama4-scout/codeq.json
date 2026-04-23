@@ -1,0 +1,12 @@
+{
+  "agent": "duh-llama4-scout",
+  "lines_added": 123,
+  "lines_removed": 215,
+  "files_changed": 5,
+  "new_test_files_tried": "tests/test_double_agent_tdd.py",
+  "new_tests_passed": 0,
+  "new_tests_failed": 0,
+  "new_tests_errored": 1,
+  "ruff_issues": 0,
+  "pytest_tail": "\n=========================== short test summary info ============================\nERROR tests/test_double_agent_tdd.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.10s\n"
+}

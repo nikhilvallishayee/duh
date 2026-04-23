@@ -1,0 +1,14 @@
+{
+  "agent_id": "gemini-cli-3.1",
+  "cli": "gemini",
+  "model": "gemini-3.1-pro-preview",
+  "baseline_commit": "645d91ad10ad83b5778bcd14f2c53b8e3366497c",
+  "start_ts": "2026-04-23T15:42:54Z",
+  "end_ts": "2026-04-23T15:48:52Z",
+  "elapsed_s": 358,
+  "exit_code": 0,
+  "worktree": "/Users/nomind/Code/Tengu/tengu-cockpit/benchmarks/double-agent-tdd/worktrees/gemini-cli-3.1",
+  "log_bytes": 1596,
+  "diff_bytes": 17331,
+  "files_changed": 7
+}

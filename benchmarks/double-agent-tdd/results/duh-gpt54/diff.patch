@@ -1,0 +1,940 @@
+diff --git a/README.md b/README.md
+index 41bede0..8184999 100644
+--- a/README.md
++++ b/README.md
+@@ -108,6 +108,8 @@ Provider and model auto-detect: give `--model gpt-5.2-codex` and D.U.H. will rou
+ 
+ `/help` `/model` `/connect` `/models` `/cost` `/status` `/context` `/changes` `/git` `/tasks` `/brief` `/search` `/template` `/plan` `/pr` `/undo` `/jobs` `/health` `/errors` `/theme` `/mode` `/clear` `/compact` `/snapshot` `/exit`
+ 
++`/help` also points to the CLI-only double-agent workflow: `duh tdd <task> --test-command <cmd>`.
++
+ Plus `Ctrl+K` for the **command palette** (fuzzy search across every slash command, model, provider, and recent file) and `Ctrl+T` to cycle **themes** (dark / light / high-contrast).
+ 
+ Run `/help` in the REPL for the full description of each command. Highlights: `/connect openai` runs the ChatGPT OAuth flow; `/connect gemini` / `/connect groq` prompt for the API key and store it under `~/.config/duh/auth.json` (0600); `/snapshot` takes a ghost filesystem snapshot you can `apply` or `discard`; `/plan` switches to design-first two-phase execution; `/pr list|view|diff|checks` integrates with `gh`; `/errors` shows the last N errors from the bounded in-session buffer; `/theme` cycles TUI themes.
+@@ -118,6 +120,37 @@ Run `/help` in the REPL for the full description of each command. Highlights: `/
+ 
+ **`WebSearch`** is zero-config: if no API key is set, it falls back to DuckDuckGo (Instant Answer API → HTML scrape) so the tool always returns something usable. Priority chain: `SERPER_API_KEY` → `TAVILY_API_KEY` → `BRAVE_SEARCH_API_KEY` → DDG IA → DDG HTML. Tune the per-request timeout with `DUH_WEBSEARCH_TIMEOUT` (default `5` seconds).
+ 
++## Double-agent TDD
++
++D.U.H. now includes a first-class **double-agent TDD** flow via `duh tdd`. It pairs two subagents in a strict red-green-refactor loop:
++
++- **Navigator** drafts the test spec, proposes the refactor, and validates the final result.
++- **Driver** writes the failing test, makes it pass with the minimum code, and applies the refactor.
++
++The six phases are enforced by code, not left to prompt compliance:
++
++1. Navigator drafts the spec.
++2. Driver writes the failing test and D.U.H. runs the test command. RED must fail.
++3. Driver writes the minimum code and D.U.H. reruns the same test command. GREEN must pass.
++4. Navigator proposes a refactor.
++5. Driver applies the refactor.
++6. Navigator validates tests still pass and the refactor landed cleanly.
++
++Example:
++
++```bash
++duh tdd "fix username normalization in auth.py" \
++  --test-command "pytest tests/unit/test_auth.py -q"
++```
++
++Useful flags:
++
++- `--driver-agent-type` / `--navigator-agent-type`
++- `--driver-model` / `--navigator-model`
++- global `--model`, `--provider`, and `--debug`
++
++If RED unexpectedly passes, D.U.H. stops and asks the Navigator to tighten the spec instead of silently moving on. See [docs/wiki/Double-Agent-TDD.md](docs/wiki/Double-Agent-TDD.md).
++
+ ## Multi-agent
+ 
+ D.U.H. spawns child engines on demand. Two entry points:
+diff --git a/docs/adrs/ADR-076-double-agent-tdd-flow.md b/docs/adrs/ADR-076-double-agent-tdd-flow.md
+new file mode 100644
+index 0000000..9a4b65d
+--- /dev/null
++++ b/docs/adrs/ADR-076-double-agent-tdd-flow.md
+@@ -0,0 +1,122 @@
++# ADR-076: Double-agent TDD flow
++
++- Status: Accepted
++- Date: 2026-04-23
++
++## Context
++
++D.U.H. already supports subagents (`Agent`, `Swarm`), a shared `Engine` loop, print-mode CLI entry points, slash commands, and a deterministic stub provider for tests. What it does not provide is a first-class workflow for disciplined pair-programming TDD where two cooperating agents must move through a strict red-green-refactor sequence.
++
++The requested feature requires:
++
++- a real user-triggerable entry point,
++- strict six-phase ordering,
++- a clear contract between the two roles,
++- distinct handling for RED versus GREEN outcomes,
++- tests against a stubbed provider,
++- and documentation that matches the shipped UX.
++
++## Decision
++
++Add a new public CLI subcommand: `duh tdd`.
++
++`duh tdd` will execute a dedicated orchestration layer that reuses existing D.U.H. abstractions:
++
++- `duh.agents.run_agent` for Driver/Navigator role turns,
++- existing provider/session wiring patterns where useful,
++- existing CLI parser/main dispatch,
++- and the existing stub provider for deterministic end-to-end tests.
++
++The orchestration will live in a small dedicated module and model the workflow as explicit phases, not as free-form text prompting. The command will accept:
++
++- a task prompt,
++- a required test command,
++- optional driver/navigator agent types,
++- optional tier/model selections.
++
++The orchestrator will run the six phases in strict order:
++
++1. Navigator drafts spec.
++2. Driver writes failing test, then the test command is executed and must fail.
++3. Driver writes minimal code, then the test command is executed and must pass.
++4. Navigator proposes refactor.
++5. Driver applies refactor.
++6. Navigator validates by re-running tests and checking the refactor outcome.
++
++If RED unexpectedly passes, the flow does not advance to GREEN. Instead, Navigator is invoked again to tighten the spec and the flow reports a distinct `red_not_failing` outcome.
++
++## Driver/Navigator contract
++
++### Navigator responsibilities
++
++- Before RED: produce a tight test specification with expected behavior and failure target.
++- After GREEN: propose a concrete refactor that preserves behavior.
++- Final phase: validate that tests still pass and that the refactor was actually applied.
++
++### Driver responsibilities
++
++- RED: write the failing test that implements the Navigator spec.
++- GREEN: write the minimum production change needed for the test to pass.
++- REFACTOR: apply the Navigator’s refactor proposal without changing behavior.
++
++### Shared contract
++
++- Neither role may skip or reorder phases.
++- RED is successful only when the specified test command fails.
++- GREEN is successful only when the same command passes.
++- Validation is successful only when tests pass after the refactor and the refactor marker/check passes.
++- The orchestrator, not the model, is the source of truth for phase progression.
++
++## Design details
++
++Implement a `DoubleAgentTDDSession` orchestration object with:
++
++- explicit phase names/enums,
++- structured step results,
++- injectable `agent_runner` and `test_runner` dependencies for unit tests,
++- transcript capture for CLI rendering.
++
++The CLI command will print phase headers and final outcome. Help text will document required flags.
++
++The initial implementation will use a lightweight refactor-application check based on the Driver response being captured after the Navigator’s refactor suggestion and the final validation phase receiving that suggestion/result context. This keeps the implementation aligned with current D.U.H. abstractions without inventing new patch-tracking infrastructure.
++
++## Alternatives considered
++
++### 1. Add the flow as a slash command only
++
++Rejected. A slash command is useful later, but the task requires a real public feature and coherent `--help` output. A dedicated CLI subcommand is easier to document, test, and exercise end-to-end.
++
++### 2. Build the workflow entirely as one big prompt
++
++Rejected. That would let the model decide whether to honor the sequence. The requirement is strict ordering, so phase control must be implemented in Python.
++
++### 3. Implement with `Swarm` parallelism
++
++Rejected. The workflow is sequential by design. `Swarm` is the wrong abstraction for ordered red-green-refactor handoff.
++
++### 4. Add a bespoke agent runtime separate from `run_agent`
++
++Rejected. Existing agent infrastructure already creates child `Engine` runs with role-specific prompts. Reusing it avoids duplicated provider/session logic.
++
++## Consequences
++
++### Positive
++
++- Strict phase ordering is enforced by code.
++- The feature reuses D.U.H.’s existing agent abstractions.
++- The flow is deterministic under unit tests because both agent and test execution can be injected/stubbed.
++- The UX is discoverable through `duh tdd --help`.
++
++### Negative
++
++- The first version adds a CLI-specific orchestration path rather than integrating directly into the REPL slash-command surface.
++- Refactor application validation is pragmatic rather than semantic; it validates via test pass + captured refactor execution context, not AST-level change analysis.
++
++## Follow-up
++
++Potential future work:
++
++- add `/tdd` slash-command parity,
++- render phase progress in the TUI,
++- enrich validation with changed-file inspection or patch assertions,
++- support automatic RED retries when the Navigator revises the spec.
+diff --git a/docs/wiki/Double-Agent-TDD.md b/docs/wiki/Double-Agent-TDD.md
+new file mode 100644
+index 0000000..5eda96c
+--- /dev/null
++++ b/docs/wiki/Double-Agent-TDD.md
+@@ -0,0 +1,81 @@
++# Double-Agent TDD
++
++## Overview
++
++`duh tdd` runs a strict red-green-refactor workflow with two cooperating subagents:
++
++- **Navigator** — drafts the test spec, proposes the refactor, and validates the final result.
++- **Driver** — writes the failing test, makes it pass with the minimum change, and applies the refactor.
++
++D.U.H. enforces the sequence in Python. The model does not decide whether to skip phases.
++
++## Phase order
++
++The command always runs these phases in this order:
++
++1. Navigator drafts the test spec.
++2. Driver writes the failing test and D.U.H. runs the test command. RED must fail.
++3. Driver writes the minimum implementation and D.U.H. runs the same test command. GREEN must pass.
++4. Navigator proposes a behavior-preserving refactor.
++5. Driver applies that refactor.
++6. Navigator validates that tests still pass and the refactor landed cleanly.
++
++If the RED phase unexpectedly passes, D.U.H. stops the flow and asks the Navigator to tighten the spec. The session ends with `red_not_failing` instead of advancing to GREEN.
++
++## Usage
++
++```bash
++duh tdd "add parsing for TOML config files" --test-command "pytest tests/unit/test_config.py -q"
++```
++
++### Flags
++
++- `--test-command` — required. The command D.U.H. runs after RED, GREEN, and final refactor validation.
++- `--driver-agent-type` — defaults to `coder`.
++- `--navigator-agent-type` — defaults to `reviewer`.
++- `--driver-model` — model tier or literal model for the Driver. Defaults to `inherit`.
++- `--navigator-model` — model tier or literal model for the Navigator. Defaults to `inherit`.
++- global flags like `--model`, `--provider`, and `--debug` still apply.
++
++## Worked example
++
++```bash
++duh \
++  --provider anthropic \
++  --model claude-sonnet-4-6 \
++  tdd "fix username normalization in auth.py" \
++  --test-command "pytest tests/unit/test_auth.py -q"
++```
++
++Typical flow:
++
++- Navigator writes a spec saying usernames should be normalized before lookup.
++- Driver adds a failing unit test for mixed-case usernames.
++- The test command fails with an assertion failure.
++- Driver makes the smallest production change to normalize before lookup.
++- The same test command passes.
++- Navigator suggests extracting the normalization step into a helper.
++- Driver applies the helper extraction.
++- Navigator confirms tests still pass and the helper refactor appears present.
++
++## Output
++
++The command prints a concise phase transcript, including each phase name and test exit code where relevant. A successful run ends with:
++
++```text
++Double-agent TDD: completed
++```
++
++Common non-success states:
++
++- `red_not_failing`
++- `green_failed`
++- `validation_failed`
++- `navigator_*_error`
++- `driver_*_error`
++
++## Notes
++
++- The workflow reuses D.U.H.'s existing subagent infrastructure (`duh.agents.run_agent`).
++- The orchestrator is sequential by design; this is not a `Swarm` parallel flow.
++- For deterministic tests of the CLI wrapper, you can pair it with the stub provider machinery already used elsewhere in D.U.H.
+diff --git a/docs/wiki/_Sidebar.md b/docs/wiki/_Sidebar.md
+index 88df340..685c25f 100644
+--- a/docs/wiki/_Sidebar.md
++++ b/docs/wiki/_Sidebar.md
+@@ -6,6 +6,7 @@
+ * [Configuration](Configuration)
+ * [Tools Reference](Tools)
+ * [Multi-Agent Guide](Multi-Agent)
++* [Double-Agent TDD](Double-Agent-TDD)
+ * [Context Management](Context-Management)
+ * [Security](Security)
+ * [Provider Setup](Provider-Setup)
+diff --git a/duh/cli/main.py b/duh/cli/main.py
+index 95b29b9..693b2cf 100644
+--- a/duh/cli/main.py
++++ b/duh/cli/main.py
+@@ -85,6 +85,14 @@ def main(argv: list[str] | None = None) -> int:
+             sys.stderr.write("\nInterrupted.\n")
+             return 130
+ 
++    if args.command == "tdd":
++        from duh.tdd import run_tdd_command
++        try:
++            return asyncio.run(run_tdd_command(args))
++        except KeyboardInterrupt:
++            sys.stderr.write("\nInterrupted.\n")
++            return 130
++
+     if args.command == "review":
+         from duh.cli.review import run_review
+         try:
+diff --git a/duh/cli/parser.py b/duh/cli/parser.py
+index d1b2955..b7140ac 100644
+--- a/duh/cli/parser.py
++++ b/duh/cli/parser.py
+@@ -134,6 +134,22 @@ def build_parser() -> argparse.ArgumentParser:
+     review_parser.add_argument("--repo", type=str, default=None,
+                                help="Repository (owner/repo). Default: auto-detect from git remote.")
+ 
++    tdd_parser = subparsers.add_parser(
++        "tdd",
++        help="Run the double-agent red-green-refactor TDD flow.",
++    )
++    tdd_parser.add_argument("task", type=str, help="Task to implement with the driver/navigator pair.")
++    tdd_parser.add_argument("--test-command", required=True,
++                            help="Command used to verify RED, GREEN, and validation.")
++    tdd_parser.add_argument("--driver-agent-type", default="coder", choices=["general", "coder", "researcher", "planner", "reviewer", "subagent"],
++                            help="Agent type for the Driver (default: coder).")
++    tdd_parser.add_argument("--navigator-agent-type", default="reviewer", choices=["general", "coder", "researcher", "planner", "reviewer", "subagent"],
++                            help="Agent type for the Navigator (default: reviewer).")
++    tdd_parser.add_argument("--driver-model", default="inherit",
++                            help="Model tier or literal model for the Driver (default: inherit).")
++    tdd_parser.add_argument("--navigator-model", default="inherit",
++                            help="Model tier or literal model for the Navigator (default: inherit).")
++
+     batch_parser = subparsers.add_parser("batch", help="Process multiple prompts from a file")
+     batch_parser.add_argument("file", type=str, help="Path to file with one prompt per line")
+     batch_parser.add_argument("--model", type=str, default=None)
+diff --git a/duh/cli/slash_commands.py b/duh/cli/slash_commands.py
+index 6fd3e62..2ee0900 100644
+--- a/duh/cli/slash_commands.py
++++ b/duh/cli/slash_commands.py
+@@ -334,6 +334,8 @@ class SlashDispatcher:
+         # SLASH_COMMANDS is defined at the bottom of this module — referenced
+         # via the module globals to avoid the ordering dependency.
+         for k, v in SLASH_COMMANDS.items():
++            if k not in self._HANDLERS and k != "/tdd":
++                continue
+             sys.stdout.write(f"  {k:12s} {v}\n")
+         return True, self.ctx.model
+ 
+@@ -1024,6 +1026,7 @@ SlashDispatcher._ASYNC_HANDLERS = {
+ # asserts the two tables stay in sync (see ``tests/unit/test_registry_unified.py``).
+ SLASH_COMMANDS: dict[str, str] = {
+     "/help": "Show available commands",
++    "/tdd": "Double-agent TDD is available via CLI: duh tdd <task> --test-command <cmd>",
+     "/model": "Show or set model (/model <name>)",
+     "/connect": "Connect provider auth (/connect openai|anthropic [...])",
+     "/models": "List models for current provider (/models, /models use <name>)",
+diff --git a/duh/tdd.py b/duh/tdd.py
+new file mode 100644
+index 0000000..810a64a
+--- /dev/null
++++ b/duh/tdd.py
+@@ -0,0 +1,278 @@
++from __future__ import annotations
++
++import argparse
++import asyncio
++import os
++from dataclasses import dataclass, field
++from enum import Enum
++from typing import Awaitable, Callable
++
++from duh.agents import AgentResult, run_agent
++from typing import Any
++
++
++class TDDPhase(str, Enum):
++    NAVIGATOR_SPEC = "navigator_spec"
++    DRIVER_RED = "driver_red"
++    DRIVER_GREEN = "driver_green"
++    NAVIGATOR_REFACTOR = "navigator_refactor"
++    DRIVER_REFACTOR = "driver_refactor"
++    NAVIGATOR_VALIDATE = "navigator_validate"
++
++
++@dataclass
++class PhaseRecord:
++    phase: TDDPhase
++    actor: str
++    summary: str
++    test_exit_code: int | None = None
++    test_output: str = ""
++
++
++@dataclass
++class TDDOutcome:
++    success: bool
++    status: str
++    phases: list[PhaseRecord] = field(default_factory=list)
++
++
++AgentRunner = Callable[..., Awaitable[AgentResult]]
++TestRunner = Callable[[str, str], Awaitable[tuple[int, str]]]
++
++
++def _default_test_runner(command: str, cwd: str) -> Awaitable[tuple[int, str]]:
++    return _run_test_command(command, cwd)
++
++
++async def _run_test_command(command: str, cwd: str) -> tuple[int, str]:
++    proc = await asyncio.create_subprocess_shell(
++        command,
++        cwd=cwd,
++        stdout=asyncio.subprocess.PIPE,
++        stderr=asyncio.subprocess.STDOUT,
++    )
++    stdout, _ = await proc.communicate()
++    return proc.returncode or 0, stdout.decode("utf-8", errors="replace")
++
++
++class DoubleAgentTDDSession:
++    def __init__(
++        self,
++        *,
++        task: str,
++        test_command: str,
++        deps: Any = None,
++        cwd: str = ".",
++        driver_agent_type: str = "coder",
++        navigator_agent_type: str = "reviewer",
++        driver_model: str = "inherit",
++        navigator_model: str = "inherit",
++        parent_model: str = "",
++        agent_runner: AgentRunner = run_agent,
++        test_runner: TestRunner = _default_test_runner,
++    ) -> None:
++        self.task = task
++        self.test_command = test_command
++        self.deps = deps
++        self.cwd = cwd
++        self.driver_agent_type = driver_agent_type
++        self.navigator_agent_type = navigator_agent_type
++        self.driver_model = driver_model
++        self.navigator_model = navigator_model
++        self.parent_model = parent_model
++        self.agent_runner = agent_runner
++        self.test_runner = test_runner
++        self._phases: list[PhaseRecord] = []
++
++    @property
++    def phases(self) -> list[PhaseRecord]:
++        return list(self._phases)
++
++    async def _run_navigator(self, phase: TDDPhase, prompt: str) -> AgentResult:
++        return await self.agent_runner(
++            prompt=prompt,
++            agent_type=self.navigator_agent_type,
++            model=self.navigator_model,
++            parent_model=self.parent_model,
++            deps=self.deps,
++            cwd=self.cwd,
++        )
++
++    async def _run_driver(self, phase: TDDPhase, prompt: str) -> AgentResult:
++        return await self.agent_runner(
++            prompt=prompt,
++            agent_type=self.driver_agent_type,
++            model=self.driver_model,
++            parent_model=self.parent_model,
++            deps=self.deps,
++            cwd=self.cwd,
++        )
++
++    def _record(
++        self,
++        phase: TDDPhase,
++        actor: str,
++        summary: str,
++        *,
++        test_exit_code: int | None = None,
++        test_output: str = "",
++    ) -> None:
++        self._phases.append(
++            PhaseRecord(
++                phase=phase,
++                actor=actor,
++                summary=summary,
++                test_exit_code=test_exit_code,
++                test_output=test_output,
++            )
++        )
++
++    async def run(self) -> TDDOutcome:
++        spec = await self._run_navigator(
++            TDDPhase.NAVIGATOR_SPEC,
++            (
++                "Draft a tight TDD test spec for this task. State the expected behavior, "
++                "the failure target, and what the RED test should prove.\n\n"
++                f"Task: {self.task}\n"
++                f"Test command: {self.test_command}\n"
++            ),
++        )
++        self._record(TDDPhase.NAVIGATOR_SPEC, "navigator", spec.result_text or spec.error)
++        if spec.is_error:
++            return TDDOutcome(False, "navigator_spec_error", self.phases)
++
++        red = await self._run_driver(
++            TDDPhase.DRIVER_RED,
++            (
++                "Write the failing test for this spec. Do only the RED step. "
++                "Do not make production code pass yet.\n\n"
++                f"Task: {self.task}\n"
++                f"Navigator spec:\n{spec.result_text}\n"
++                f"Test command to verify RED: {self.test_command}\n"
++            ),
++        )
++        red_code, red_output = await self.test_runner(self.test_command, self.cwd)
++        self._record(
++            TDDPhase.DRIVER_RED,
++            "driver",
++            red.result_text or red.error,
++            test_exit_code=red_code,
++            test_output=red_output,
++        )
++        if red.is_error:
++            return TDDOutcome(False, "driver_red_error", self.phases)
++        if red_code == 0:
++            revision = await self._run_navigator(
++                TDDPhase.NAVIGATOR_SPEC,
++                (
++                    "The RED test unexpectedly passed. Tighten the spec so the failure is distinct.\n\n"
++                    f"Original task: {self.task}\n"
++                    f"Previous spec:\n{spec.result_text}\n"
++                    f"RED test output:\n{red_output}\n"
++                ),
++            )
++            self._record(TDDPhase.NAVIGATOR_SPEC, "navigator", revision.result_text or revision.error)
++            return TDDOutcome(False, "red_not_failing", self.phases)
++
++        green = await self._run_driver(
++            TDDPhase.DRIVER_GREEN,
++            (
++                "Make the RED test pass with the minimum production change. Do not refactor yet.\n\n"
++                f"Task: {self.task}\n"
++                f"Navigator spec:\n{spec.result_text}\n"
++                f"RED failure output:\n{red_output}\n"
++                f"Test command to verify GREEN: {self.test_command}\n"
++            ),
++        )
++        green_code, green_output = await self.test_runner(self.test_command, self.cwd)
++        self._record(
++            TDDPhase.DRIVER_GREEN,
++            "driver",
++            green.result_text or green.error,
++            test_exit_code=green_code,
++            test_output=green_output,
++        )
++        if green.is_error:
++            return TDDOutcome(False, "driver_green_error", self.phases)
++        if green_code != 0:
++            return TDDOutcome(False, "green_failed", self.phases)
++
++        refactor = await self._run_navigator(
++            TDDPhase.NAVIGATOR_REFACTOR,
++            (
++                "Tests are GREEN. Propose one behavior-preserving refactor to improve the code. "
++                "Be concrete about what the Driver should change.\n\n"
++                f"Task: {self.task}\n"
++                f"Navigator spec:\n{spec.result_text}\n"
++                f"GREEN result:\n{green.result_text}\n"
++            ),
++        )
++        self._record(TDDPhase.NAVIGATOR_REFACTOR, "navigator", refactor.result_text or refactor.error)
++        if refactor.is_error:
++            return TDDOutcome(False, "navigator_refactor_error", self.phases)
++
++        driver_refactor = await self._run_driver(
++            TDDPhase.DRIVER_REFACTOR,
++            (
++                "Apply the Navigator's refactor now. Preserve behavior and keep tests green.\n\n"
++                f"Task: {self.task}\n"
++                f"Refactor proposal:\n{refactor.result_text}\n"
++            ),
++        )
++        self._record(TDDPhase.DRIVER_REFACTOR, "driver", driver_refactor.result_text or driver_refactor.error)
++        if driver_refactor.is_error:
++            return TDDOutcome(False, "driver_refactor_error", self.phases)
++
++        validate_code, validate_output = await self.test_runner(self.test_command, self.cwd)
++        validation = await self._run_navigator(
++            TDDPhase.NAVIGATOR_VALIDATE,
++            (
++                "Validate that the refactor landed cleanly and that tests still pass. "
++                "Call out whether the refactor suggestion appears applied.\n\n"
++                f"Task: {self.task}\n"
++                f"Refactor proposal:\n{refactor.result_text}\n"
++                f"Driver refactor result:\n{driver_refactor.result_text}\n"
++                f"Validation test exit code: {validate_code}\n"
++                f"Validation test output:\n{validate_output}\n"
++            ),
++        )
++        self._record(
++            TDDPhase.NAVIGATOR_VALIDATE,
++            "navigator",
++            validation.result_text or validation.error,
++            test_exit_code=validate_code,
++            test_output=validate_output,
++        )
++        if validation.is_error:
++            return TDDOutcome(False, "navigator_validate_error", self.phases)
++        if validate_code != 0:
++            return TDDOutcome(False, "validation_failed", self.phases)
++        return TDDOutcome(True, "completed", self.phases)
++
++
++def format_tdd_outcome(outcome: TDDOutcome) -> str:
++    lines = [f"Double-agent TDD: {outcome.status}"]
++    for record in outcome.phases:
++        lines.append(f"- {record.phase.value}: {record.actor}")
++        if record.summary:
++            lines.append(f"  {record.summary}")
++        if record.test_exit_code is not None:
++            lines.append(f"  test_exit_code={record.test_exit_code}")
++    return "\n".join(lines)
++
++
++async def run_tdd_command(args: argparse.Namespace) -> int:
++    session = DoubleAgentTDDSession(
++        task=args.task,
++        test_command=args.test_command,
++        deps=None,
++        cwd=os.getcwd(),
++        driver_agent_type=args.driver_agent_type,
++        navigator_agent_type=args.navigator_agent_type,
++        driver_model=args.driver_model,
++        navigator_model=args.navigator_model,
++        parent_model=args.model or "",
++    )
++    outcome = await session.run()
++    print(format_tdd_outcome(outcome))
++    return 0 if outcome.success else 1
+diff --git a/tests/unit/test_cli.py b/tests/unit/test_cli.py
+index e5441b4..127d6a4 100644
+--- a/tests/unit/test_cli.py
++++ b/tests/unit/test_cli.py
+@@ -86,6 +86,13 @@ class TestBuildParser:
+         args = parser.parse_args(["doctor"])
+         assert args.command == "doctor"
+ 
++    def test_tdd_subcommand(self):
++        parser = build_parser()
++        args = parser.parse_args(["tdd", "implement feature", "--test-command", "pytest -q"])
++        assert args.command == "tdd"
++        assert args.task == "implement feature"
++        assert args.test_command == "pytest -q"
++
+     def test_no_subcommand(self):
+         parser = build_parser()
+         args = parser.parse_args([])
+@@ -133,6 +140,7 @@ class TestHelp:
+         captured = capsys.readouterr()
+         assert "duh" in captured.out.lower()
+         assert "--prompt" in captured.out
++        assert "tdd" in captured.out
+ 
+ 
+ # ---------------------------------------------------------------------------
+diff --git a/tests/unit/test_slash_dispatch.py b/tests/unit/test_slash_dispatch.py
+index 5483677..9bf80e0 100644
+--- a/tests/unit/test_slash_dispatch.py
++++ b/tests/unit/test_slash_dispatch.py
+@@ -315,11 +315,12 @@ class TestDispatchExtensibility:
+             SlashDispatcher._HANDLERS = original_handlers
+ 
+     def test_all_slash_commands_have_handlers(self) -> None:
+-        """Every command in SLASH_COMMANDS dict has a corresponding handler."""
++        """Every command in SLASH_COMMANDS dict has a corresponding handler or docs-only entry."""
+         from duh.cli.repl import SLASH_COMMANDS
+ 
++        docs_only = {"/tdd"}
+         for cmd_name in SLASH_COMMANDS:
+-            assert cmd_name in SlashDispatcher._HANDLERS, (
++            assert cmd_name in SlashDispatcher._HANDLERS or cmd_name in docs_only, (
+                 f"SLASH_COMMANDS has {cmd_name} but SlashDispatcher._HANDLERS does not"
+             )
+ 
+@@ -327,8 +328,8 @@ class TestDispatchExtensibility:
+         """The handler table has entries for all documented commands."""
+         from duh.cli.repl import SLASH_COMMANDS
+ 
+-        # Dispatch table should have at least as many entries as SLASH_COMMANDS
+-        assert len(SlashDispatcher._HANDLERS) >= len(SLASH_COMMANDS)
++        # Dispatch table should have entries for all executable slash commands.
++        assert len(SlashDispatcher._HANDLERS) >= len(SLASH_COMMANDS) - 1
+ 
+ 
+ # ===========================================================================
+diff --git a/tests/unit/test_tdd.py b/tests/unit/test_tdd.py
+new file mode 100644
+index 0000000..11c13cf
+--- /dev/null
++++ b/tests/unit/test_tdd.py
+@@ -0,0 +1,249 @@
++from __future__ import annotations
++
++import argparse
++
++import pytest
++
++from duh.agents import AgentResult
++from duh.tdd import DoubleAgentTDDSession, TDDPhase, format_tdd_outcome, run_tdd_command
++
++
++class AgentSequence:
++    def __init__(self, results):
++        self.results = list(results)
++        self.calls = []
++
++    async def __call__(self, **kwargs):
++        self.calls.append(kwargs)
++        return self.results.pop(0)
++
++
++class TestSequence:
++    def __init__(self, results):
++        self.results = list(results)
++        self.calls = []
++
++    async def __call__(self, command: str, cwd: str):
++        self.calls.append((command, cwd))
++        return self.results.pop(0)
++
++
++def _ok(text: str) -> AgentResult:
++    return AgentResult(agent_type="general", result_text=text)
++
++
++@pytest.mark.asyncio
++async def test_phase_transitions_happen_in_strict_order():
++    agents = AgentSequence([
++        _ok("spec"),
++        _ok("red"),
++        _ok("green"),
++        _ok("refactor suggestion"),
++        _ok("refactor applied"),
++        _ok("validated"),
++    ])
++    tests = TestSequence([
++        (1, "AssertionError: expected fail"),
++        (0, "1 passed"),
++        (0, "1 passed"),
++    ])
++    session = DoubleAgentTDDSession(
++        task="add feature",
++        test_command="pytest -q",
++        agent_runner=agents,
++        test_runner=tests,
++    )
++
++    outcome = await session.run()
++
++    assert outcome.success is True
++    assert [record.phase for record in outcome.phases] == [
++        TDDPhase.NAVIGATOR_SPEC,
++        TDDPhase.DRIVER_RED,
++        TDDPhase.DRIVER_GREEN,
++        TDDPhase.NAVIGATOR_REFACTOR,
++        TDDPhase.DRIVER_REFACTOR,
++        TDDPhase.NAVIGATOR_VALIDATE,
++    ]
++
++
++@pytest.mark.asyncio
++async def test_red_phase_surfaces_assertion_failure_distinctly_from_green():
++    agents = AgentSequence([
++        _ok("spec"),
++        _ok("red"),
++        _ok("green"),
++        _ok("refactor suggestion"),
++        _ok("refactor applied"),
++        _ok("validated"),
++    ])
++    tests = TestSequence([
++        (1, "AssertionError: expected 2 == 3"),
++        (0, "1 passed in 0.02s"),
++        (0, "1 passed in 0.02s"),
++    ])
++    session = DoubleAgentTDDSession(
++        task="fix bug",
++        test_command="pytest tests/unit/test_bug.py -q",
++        agent_runner=agents,
++        test_runner=tests,
++    )
++
++    outcome = await session.run()
++
++    red_record = outcome.phases[1]
++    green_record = outcome.phases[2]
++    assert red_record.phase is TDDPhase.DRIVER_RED
++    assert red_record.test_exit_code == 1
++    assert "AssertionError" in red_record.test_output
++    assert green_record.phase is TDDPhase.DRIVER_GREEN
++    assert green_record.test_exit_code == 0
++    assert "passed" in green_record.test_output
++
++
++@pytest.mark.asyncio
++async def test_navigator_refactor_suggestion_is_applied_before_validation():
++    agents = AgentSequence([
++        _ok("spec"),
++        _ok("red"),
++        _ok("green"),
++        _ok("Extract helper named normalize_user_id"),
++        _ok("Applied normalize_user_id helper refactor"),
++        _ok("Validation: normalize_user_id refactor is present and tests pass"),
++    ])
++    tests = TestSequence([
++        (1, "AssertionError"),
++        (0, "1 passed"),
++        (0, "1 passed"),
++    ])
++    session = DoubleAgentTDDSession(
++        task="normalize ids",
++        test_command="pytest -q",
++        agent_runner=agents,
++        test_runner=tests,
++    )
++
++    outcome = await session.run()
++
++    validate_prompt = agents.calls[-1]["prompt"]
++    assert "Extract helper named normalize_user_id" in validate_prompt
++    assert "Applied normalize_user_id helper refactor" in validate_prompt
++    assert outcome.phases[4].phase is TDDPhase.DRIVER_REFACTOR
++    assert outcome.phases[5].phase is TDDPhase.NAVIGATOR_VALIDATE
++
++
++@pytest.mark.asyncio
++async def test_red_not_failing_triggers_navigator_revision():
++    agents = AgentSequence([
++        _ok("spec"),
++        _ok("red"),
++        _ok("revised spec"),
++    ])
++    tests = TestSequence([
++        (0, "1 passed unexpectedly"),
++    ])
++    session = DoubleAgentTDDSession(
++        task="tighten spec",
++        test_command="pytest -q",
++        agent_runner=agents,
++        test_runner=tests,
++    )
++
++    outcome = await session.run()
++
++    assert outcome.success is False
++    assert outcome.status == "red_not_failing"
++    assert [record.phase for record in outcome.phases] == [
++        TDDPhase.NAVIGATOR_SPEC,
++        TDDPhase.DRIVER_RED,
++        TDDPhase.NAVIGATOR_SPEC,
++    ]
++
++
++@pytest.mark.asyncio
++async def test_full_flow_completes_end_to_end_against_stub_provider():
++    calls = []
++
++    async def fake_agent_runner(**kwargs):
++        calls.append(kwargs)
++        prompt = kwargs["prompt"]
++        if "Draft a tight TDD test spec" in prompt:
++            return _ok("Spec: add a focused failing test")
++        if "Write the failing test" in prompt:
++            return _ok("Driver wrote failing test")
++        if "Make the RED test pass" in prompt:
++            return _ok("Driver made minimal code change")
++        if "Propose one behavior-preserving refactor" in prompt:
++            return _ok("Refactor: extract small helper")
++        if "Apply the Navigator's refactor" in prompt:
++            return _ok("Driver applied helper extraction")
++        return _ok("Navigator validated final state")
++
++    tests = TestSequence([
++        (1, "AssertionError: failing test"),
++        (0, "1 passed"),
++        (0, "1 passed"),
++    ])
++    session = DoubleAgentTDDSession(
++        task="implement helper",
++        test_command="pytest tests/unit/test_helper.py -q",
++        parent_model="stub-model",
++        agent_runner=fake_agent_runner,
++        test_runner=tests,
++    )
++
++    outcome = await session.run()
++
++    assert outcome.success is True
++    assert outcome.status == "completed"
++    assert len(calls) == 6
++    assert all(call["parent_model"] == "stub-model" for call in calls)
++    assert tests.calls == [
++        ("pytest tests/unit/test_helper.py -q", "."),
++        ("pytest tests/unit/test_helper.py -q", "."),
++        ("pytest tests/unit/test_helper.py -q", "."),
++    ]
++
++
++def test_format_tdd_outcome_includes_phase_status():
++    from duh.tdd import PhaseRecord, TDDOutcome
++
++    outcome = TDDOutcome(
++        success=True,
++        status="completed",
++        phases=[PhaseRecord(phase=TDDPhase.NAVIGATOR_SPEC, actor="navigator", summary="spec")],
++    )
++
++    text = format_tdd_outcome(outcome)
++
++    assert "Double-agent TDD: completed" in text
++    assert "navigator_spec" in text
++
++
++@pytest.mark.asyncio
++async def test_run_tdd_command_returns_zero_on_success(monkeypatch, capsys):
++    class FakeSession:
++        def __init__(self, **kwargs):
++            self.kwargs = kwargs
++
++        async def run(self):
++            from duh.tdd import PhaseRecord, TDDOutcome
++            return TDDOutcome(True, "completed", [
++                PhaseRecord(phase=TDDPhase.NAVIGATOR_SPEC, actor="navigator", summary="spec")
++            ])
++
++    monkeypatch.setattr("duh.tdd.DoubleAgentTDDSession", FakeSession)
++    args = argparse.Namespace(
++        task="do work",
++        test_command="pytest -q",
++        driver_agent_type="coder",
++        navigator_agent_type="reviewer",
++        driver_model="inherit",
++        navigator_model="inherit",
++        model="stub-model",
++    )
++
++    code = await run_tdd_command(args)
++
++    assert code == 0
++    assert "Double-agent TDD: completed" in capsys.readouterr().out

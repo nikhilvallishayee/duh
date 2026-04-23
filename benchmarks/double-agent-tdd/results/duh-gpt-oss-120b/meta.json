@@ -1,0 +1,14 @@
+{
+  "agent_id": "duh-gpt-oss-120b",
+  "cli": "duh",
+  "model": "groq/openai/gpt-oss-120b",
+  "baseline_commit": "645d91ad10ad83b5778bcd14f2c53b8e3366497c",
+  "start_ts": "2026-04-23T18:17:52Z",
+  "end_ts": "2026-04-23T18:18:24Z",
+  "elapsed_s": 32,
+  "exit_code": 4,
+  "worktree": "/Users/nomind/Code/Tengu/tengu-cockpit/benchmarks/double-agent-tdd/worktrees/duh-gpt-oss-120b",
+  "log_bytes": 1743,
+  "diff_bytes": 0,
+  "files_changed": 0
+}

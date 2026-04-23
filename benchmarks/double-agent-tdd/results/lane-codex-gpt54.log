@@ -1,0 +1,4 @@
+[codex-gpt54] removing existing worktree
+Preparing worktree (detached HEAD 645d91a)
+[codex-gpt54] worktree ready at /Users/nomind/Code/Tengu/tengu-cockpit/benchmarks/double-agent-tdd/worktrees/codex-gpt54
+[codex-gpt54] done  exit=0  elapsed=510s  diff=44978B

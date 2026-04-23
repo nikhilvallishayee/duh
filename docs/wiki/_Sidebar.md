@@ -9,5 +9,6 @@
 * [Context Management](Context-Management)
 * [Security](Security)
 * [Provider Setup](Provider-Setup)
+* [Benchmarks](Benchmarks)
 * [FAQ](FAQ)
 * [Changelog](Changelog)

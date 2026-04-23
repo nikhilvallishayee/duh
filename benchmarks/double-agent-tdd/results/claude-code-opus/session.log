@@ -1,0 +1,28 @@
+## Summary
+
+Added a double-agent TDD flow (ADR-076) to D.U.H. — a strict six-phase driver/navigator sequence over red-green-refactor.
+
+**Files created**
+- `docs/adrs/ADR-076-double-agent-tdd.md` — ADR covering problem, design, driver/navigator contract, alternatives, wiring
+- `duh/kernel/double_agent_tdd.py` — `TDDFlow` state machine with `TDDPhase` enum, strict successor map, assertion-failure extractor, injectable test/agent runners, and a `run()` async generator driver
+- `duh/cli/tdd.py` — `duh tdd` subcommand using the existing `SessionBuilder`
+- `tests/unit/test_double_agent_tdd.py` — 25 tests covering phase order, RED-vs-GREEN distinction, refactor-apply-before-validate, end-to-end stub flow, spec-revision retry, RED-passed failure mode, CLI and slash wiring
+
+**Files modified**
+- `duh/cli/parser.py` — registers the `tdd` subparser
+- `duh/cli/main.py` — dispatches `duh tdd`
+- `duh/cli/slash_commands.py` — adds `/tdd` handler + help entry
+- `duh/cli/repl.py` — handles the `\x00tdd\x00<feature>` sentinel emitted by `/tdd`
+- `README.md` — new "Double-agent TDD" subsection under Multi-agent, `/tdd` in the slash list
+- `docs/wiki/Multi-Agent.md` — full "Double-agent TDD (ADR-076)" section with activation, phase table, flags, worked example, RED-passed recovery notes
+
+**Reuse of existing abstractions**
+- Driver = `agent_type="coder"`, Navigator = `agent_type="reviewer"` (existing constitution overlays)
+- Every phase delegates to `duh.agents.run_agent` — no new provider or engine code
+- `TDDFlow` follows the same state-machine template as `PlanMode` (`duh/kernel/plan_mode.py`)
+- CLI driver reuses `SessionBuilder` / `Deps` / `get_all_tools`
+- `/tdd` follows the same REPL-sentinel pattern as `/plan`
+
+**Verification**
+- 25/25 new tests pass; 126/126 pass including `test_plan_mode`, `test_agents`, `test_registry_unified`, `test_slash_dispatch`
+- `duh tdd --help` renders cleanly

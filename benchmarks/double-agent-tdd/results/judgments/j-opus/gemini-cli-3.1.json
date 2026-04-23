@@ -1,0 +1,25 @@
+{
+  "target": "gemini-cli-3.1",
+  "scores": {
+    "adr_quality": 3,
+    "implementation_completeness": 4,
+    "use_of_abstractions": 4,
+    "test_coverage": 2,
+    "documentation": 4,
+    "code_quality": 3,
+    "protocol_adherence": 5
+  },
+  "total_out_of_35": 25,
+  "one_line_summary": "Wired `duh tdd` subcommand reusing Engine/SessionBuilder with decent docs, but tests only count phases and skip RED/refactor contract assertions.",
+  "strengths": [
+    "Real CLI wiring via parser + main + tdd.py reusing Engine and SessionBuilder",
+    "ADR precedes code, explains contract and alternatives",
+    "README and wiki updated coherently with 6-phase breakdown"
+  ],
+  "weaknesses": [
+    "Tests only count Engine.run calls; no RED-vs-GREEN distinction, no refactor-application assertion, no phase-transition checks",
+    "ADR is thin on Driver/Navigator contract details and state handoffs",
+    "Uses private SessionBuilder internals (_build_system_prompt, _BuilderPatchTargets) and has no RED-revision bounce-back despite ADR claiming it"
+  ],
+  "judge": "j-opus"
+}

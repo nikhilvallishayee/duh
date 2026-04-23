@@ -1,0 +1,14 @@
+{
+  "agent_id": "duh-llama4-scout",
+  "cli": "duh",
+  "model": "groq/meta-llama/llama-4-scout-17b-16e-instruct",
+  "baseline_commit": "645d91ad10ad83b5778bcd14f2c53b8e3366497c",
+  "start_ts": "2026-04-23T18:17:52Z",
+  "end_ts": "2026-04-23T18:18:46Z",
+  "elapsed_s": 54,
+  "exit_code": 0,
+  "worktree": "/Users/nomind/Code/Tengu/tengu-cockpit/benchmarks/double-agent-tdd/worktrees/duh-llama4-scout",
+  "log_bytes": 14516,
+  "diff_bytes": 22520,
+  "files_changed": 5
+}

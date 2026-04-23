@@ -1,0 +1,14 @@
+{
+  "agent_id": "duh-qwen3-32b",
+  "cli": "duh",
+  "model": "groq/qwen/qwen3-32b",
+  "baseline_commit": "645d91ad10ad83b5778bcd14f2c53b8e3366497c",
+  "start_ts": "2026-04-23T18:17:52Z",
+  "end_ts": "2026-04-23T18:17:57Z",
+  "elapsed_s": 5,
+  "exit_code": 4,
+  "worktree": "/Users/nomind/Code/Tengu/tengu-cockpit/benchmarks/double-agent-tdd/worktrees/duh-qwen3-32b",
+  "log_bytes": 1639,
+  "diff_bytes": 0,
+  "files_changed": 0
+}

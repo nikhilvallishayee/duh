@@ -1,0 +1,12 @@
+{
+  "agent": "codex-gpt54",
+  "lines_added": 1154,
+  "lines_removed": 0,
+  "files_changed": 12,
+  "new_test_files_tried": "tests/integration/test_double_agent_tdd_flow.py tests/unit/test_cli.py tests/unit/test_double_agent_tdd.py",
+  "new_tests_passed": 32,
+  "new_tests_failed": 2,
+  "new_tests_errored": 0,
+  "ruff_issues": 0,
+  "pytest_tail": "nings for more info.\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n=========================== short test summary info ============================\nFAILED tests/integration/test_double_agent_tdd_flow.py::test_full_flow_completes_against_stub_provider\nFAILED tests/unit/test_cli.py::TestTddMain::test_tdd_routes_to_runner - NameE...\n2 failed, 32 passed, 2 warnings in 1.07s\n"
+}

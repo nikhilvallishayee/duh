@@ -53,6 +53,31 @@ Done in 3 turns.
 
 A universal, open-source AI coding agent. One harness, any provider — Anthropic Claude, OpenAI API, ChatGPT Plus/Pro subscription (Codex-family models), Google Gemini, Groq, local Ollama, or a deterministic stub for tests. Drop-in compatible with the Claude Agent SDK NDJSON protocol, so it can replace `claude` wherever that binary is expected.
 
+## Benchmarks
+
+Head-to-head, same model, same task, three LLM judges. Mean score /35:
+
+| Agent              | Mean | Δ vs first-party CLI |
+|--------------------|-----:|---------------------:|
+| `claude-code-opus` | 33.3 | —                    |
+| `codex-gpt54`      | 33.3 | —                    |
+| `duh-opus`         | 33.0 | −0.3                 |
+| `duh-gpt54`        | 32.7 | −0.6                 |
+| `duh-gemini-3.1`   | 27.0 | **+2.0**             |
+| `gemini-cli-3.1`   | 25.0 | —                    |
+
+At parity on Opus 4.7 + GPT-5.4, ahead on Gemini 3.1. Three additional
+D.U.H. runs benched open models (`llama-4-scout`, `gpt-oss-120b`,
+`qwen3-32b`) that have no first-party CLI at all.
+
+Pre-registered hypotheses, full methodology, and raw artefacts live in
+[`benchmarks/double-agent-tdd/`](benchmarks/double-agent-tdd/) — see
+its [README](benchmarks/double-agent-tdd/README.md), the exact
+[TASK.md](benchmarks/double-agent-tdd/TASK.md) prompt every agent
+received, and the [rubric](benchmarks/double-agent-tdd/JUDGE.md) every
+judge used. Reproduce with
+`cd benchmarks/double-agent-tdd && ./run_all.sh && ./judge_all.sh && python3 aggregate.py`.
+
 ## Install
 
 ```bash

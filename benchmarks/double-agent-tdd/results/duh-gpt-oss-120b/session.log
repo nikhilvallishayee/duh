@@ -1,0 +1,9 @@
+[33mWARNING: Detached HEAD — changes won't be on any branch[0m
+Permission prompts disabled (--dangerously-skip-permissions or automation permission_mode). All tool invocations will be auto-approved for this session.
+  [33m> Grep[0m(max_results=20, path='')
+  [33m> Glob[0m(max_results=20, path='')
+Retryable error (attempt 1/4), retrying in 0.5s: Error code: 413 - {'error': {'message': 'Request too large for model `openai/gpt-oss-120b` in organization `org_01kpgqxd7jfw4ttw150gck3w8c` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Requested 27512, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}
+Retryable error (attempt 2/4), retrying in 1.7s: Error code: 413 - {'error': {'message': 'Request too large for model `openai/gpt-oss-120b` in organization `org_01kpgqxd7jfw4ttw150gck3w8c` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Requested 27441, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}
+Retryable error (attempt 3/4), retrying in 3.8s: Error code: 413 - {'error': {'message': 'Request too large for model `openai/gpt-oss-120b` in organization `org_01kpgqxd7jfw4ttw150gck3w8c` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Requested 27441, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}
+
+[31mError: Rate limited. Wait a moment and try again.[0m

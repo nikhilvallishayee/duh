@@ -1,0 +1,12 @@
+{
+  "agent": "claude-code-opus",
+  "lines_added": 2049,
+  "lines_removed": 1,
+  "files_changed": 10,
+  "new_test_files_tried": "tests/unit/test_double_agent_tdd.py",
+  "new_tests_passed": 25,
+  "new_tests_failed": 0,
+  "new_tests_errored": 0,
+  "ruff_issues": 0,
+  "pytest_tail": ".........................                                                [100%]\n25 passed in 0.14s\n"
+}

@@ -1,0 +1,6 @@
+{
+  "target": "duh-qwen3-32b",
+  "judge": "j-opus",
+  "error": "run failed: Groq TPM rate_limit_exceeded (free tier cap)",
+  "one_line_summary": "Run failed before producing code: Groq free-tier TPM cap blocked the request."
+}

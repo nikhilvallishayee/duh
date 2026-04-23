@@ -1,0 +1,2 @@
+no diff.patch at /Users/nomind/Code/Tengu/tengu-cockpit/benchmarks/double-agent-tdd/results/gemini-cli-3.1 codex-gpt54 duh-gpt54 duh-gemini-3.1 — run run.sh gemini-cli-3.1 codex-gpt54 duh-gpt54 duh-gemini-3.1 first
+FAIL j-g31 gemini-cli-3.1 codex-gpt54 duh-gpt54 duh-gemini-3.1

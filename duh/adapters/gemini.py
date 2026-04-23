@@ -292,12 +292,25 @@ class GeminiProvider:
                                     args = json.loads(args)
                                 except json.JSONDecodeError:
                                     args = {}
-                            # Gemini sometimes includes its own id; otherwise synth one
-                            fc_id = getattr(fc, "id", None) or f"toolu_{uuid.uuid4().hex[:24]}"
+                            # Gemini sometimes includes its own id; otherwise
+                            # synth one using the tool NAME as the prefix so
+                            # ``_extract_name_hint`` on the matching
+                            # FunctionResponse resolves to the right tool
+                            # name — otherwise Gemini 3.x rejects the
+                            # request with a generic 400 "invalid argument"
+                            # because function_call.name ≠ function_response.name.
+                            fc_id = getattr(fc, "id", None) or f"{name}_{uuid.uuid4().hex[:24]}"
+                            # Gemini 3.x requires thought_signature to be round-tripped
+                            # on any function_call Part we replay. It lives on the
+                            # parent Part (sibling of function_call), not inside the
+                            # FunctionCall object. Capture it here so the conversation
+                            # replay in _contents_with_extracted_system can re-attach.
+                            thought_sig = getattr(part, "thought_signature", None)
                             function_calls.append({
                                 "id": fc_id,
                                 "name": name,
                                 "input": dict(args) if isinstance(args, dict) else {},
+                                "thought_signature": thought_sig,
                             })
                             yield {
                                 "type": "tool_use",
@@ -436,21 +449,43 @@ def _contents_with_extracted_system(
 
 
 def _contents_from_messages(messages: list[Any]) -> list[Any]:
-    """Convert D.U.H. messages → list of google.genai Content objects."""
+    """Convert D.U.H. messages → list of google.genai Content objects.
+
+    As we walk the history we build a ``tool_id → tool_name`` map from any
+    assistant ``tool_use`` blocks we see, so subsequent ``tool_result``
+    blocks can resolve their FunctionResponse ``name`` correctly. Gemini 3.x
+    rejects requests with a 400 "invalid argument" when the response name
+    does not match the declared tool name (observed with the default
+    synthesised id format, which has no ``_`` prefix).
+    """
     contents: list[Any] = []
+    tool_name_by_id: dict[str, str] = {}
     for msg in messages:
         role = msg.role if isinstance(msg, Message) else msg.get("role", "user")
         content = msg.content if isinstance(msg, Message) else msg.get("content", "")
 
+        # Capture tool_use ids → names from assistant messages in order so
+        # we can look them up when we hit a matching tool_result block
+        # later in the history.
+        if role == "assistant" and isinstance(content, list):
+            for block in content:
+                bt = block.get("type") if isinstance(block, dict) else getattr(block, "type", "")
+                if bt != "tool_use":
+                    continue
+                bid = block.get("id") if isinstance(block, dict) else getattr(block, "id", "")
+                bname = block.get("name") if isinstance(block, dict) else getattr(block, "name", "")
+                if bid and bname:
+                    tool_name_by_id[str(bid)] = str(bname)
+
         gemini_role = "model" if role == "assistant" else "user"
-        parts = _parts_from_content(content)
+        parts = _parts_from_content(content, tool_name_by_id)
         if not parts:
             continue
         contents.append(_genai_types.Content(role=gemini_role, parts=parts))
     return contents
 
 
-def _parts_from_content(content: Any) -> list[Any]:
+def _parts_from_content(content: Any, tool_name_by_id: dict[str, str] | None = None) -> list[Any]:
     """Turn a Message.content into a list of google.genai Part objects."""
     if isinstance(content, str):
         return [_genai_types.Part(text=content)] if content else []
@@ -473,15 +508,31 @@ def _parts_from_content(content: Any) -> list[Any]:
             name = block.get("name", "") if isinstance(block, dict) else getattr(block, "name", "")
             inp = block.get("input", {}) if isinstance(block, dict) else getattr(block, "input", {})
             fc_id = block.get("id", "") if isinstance(block, dict) else getattr(block, "id", "")
-            out.append(
-                _genai_types.Part(
-                    function_call=_genai_types.FunctionCall(
-                        id=fc_id or None,
-                        name=str(name),
-                        args=inp if isinstance(inp, dict) else {},
-                    )
-                )
+            # Gemini 3.x requires thought_signature on replayed function_call Parts.
+            # Missing signatures produce a 400 "Function call is missing a
+            # thought_signature" error. _build_content_blocks stored the
+            # signature base64-encoded (JSON-safe for session save); decode
+            # back to bytes for the SDK.
+            thought_sig = (
+                block.get("thought_signature") if isinstance(block, dict)
+                else getattr(block, "thought_signature", None)
             )
+            if isinstance(thought_sig, str):
+                import base64
+                try:
+                    thought_sig = base64.b64decode(thought_sig)
+                except Exception:
+                    thought_sig = None
+            part_kwargs: dict[str, Any] = {
+                "function_call": _genai_types.FunctionCall(
+                    id=fc_id or None,
+                    name=str(name),
+                    args=inp if isinstance(inp, dict) else {},
+                ),
+            }
+            if thought_sig is not None:
+                part_kwargs["thought_signature"] = thought_sig
+            out.append(_genai_types.Part(**part_kwargs))
 
         elif bt == "tool_result":
             # Translate D.U.H. tool_result → Gemini FunctionResponse part
@@ -513,12 +564,21 @@ def _parts_from_content(content: Any) -> list[Any]:
             else:
                 response_payload = {"error": str(result)} if is_error else {"result": str(result)}
 
+            # Gemini 3.x pairs function_response by (name, id) and rejects
+            # the request when name does not match the declared tool. Look
+            # up the name from the history map (populated while walking the
+            # prior assistant tool_use blocks); fall back to the id-prefix
+            # heuristic, then "tool" as a last resort.
+            resolved_name = ""
+            if tool_name_by_id and tool_use_id:
+                resolved_name = tool_name_by_id.get(str(tool_use_id), "")
+            if not resolved_name:
+                resolved_name = _extract_name_hint(tool_use_id) or "tool"
             out.append(
                 _genai_types.Part(
                     function_response=_genai_types.FunctionResponse(
                         id=tool_use_id or None,
-                        # Gemini pairs responses by name when id isn't present
-                        name=_extract_name_hint(tool_use_id) or "tool",
+                        name=resolved_name,
                         response=response_payload,
                     )
                 )
@@ -706,10 +766,24 @@ def _build_content_blocks(
     if full_text:
         blocks.append({"type": "text", "text": full_text})
     for fc in function_calls:
-        blocks.append({
+        block: dict[str, Any] = {
             "type": "tool_use",
             "id": fc["id"],
             "name": fc["name"],
             "input": fc["input"],
-        })
+        }
+        # Propagate thought_signature for Gemini 3.x round-trip. The raw
+        # payload is bytes (not JSON-serialisable), so we base64-encode for
+        # storage in content blocks and session-save; the replay path
+        # (_contents_with_extracted_system) decodes before handing back to
+        # the SDK. Skipped when absent (2.x models don't emit it); harmless
+        # for other providers because only the Gemini adapter reads this key.
+        ts = fc.get("thought_signature") if isinstance(fc, dict) else None
+        if ts is not None:
+            import base64
+            if isinstance(ts, (bytes, bytearray)):
+                block["thought_signature"] = base64.b64encode(bytes(ts)).decode("ascii")
+            elif isinstance(ts, str):
+                block["thought_signature"] = ts
+        blocks.append(block)
     return blocks

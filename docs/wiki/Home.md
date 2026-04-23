@@ -4,19 +4,28 @@
 
 D.U.H. is an open-source, provider-agnostic AI coding agent. It connects any LLM provider to your codebase through a single, clean interface — no vendor lock-in, no 500K-line codebases, no proprietary extensions. It speaks the Claude Agent SDK NDJSON protocol, so it can serve as a drop-in replacement wherever the `claude` binary is expected.
 
+## What's new in v0.8.0
+
+- **Native Gemini + Groq adapters** — LiteLLM is now an opt-in fallback ([ADR-075](../adrs/ADR-075-drop-litellm-native-adapters.md)). Supply-chain hardened (no LiteLLM in default install path after the March 2026 compromise); native SDKs unlock Anthropic `cache_control`, Gemini `thinking_budget` + explicit caches, and Groq rate-limit headers.
+- **Agent tier system** — the `Agent` / `Swarm` tools now take generic `"small"` / `"medium"` / `"large"` / `"inherit"` tiers instead of Anthropic-specific `haiku` / `sonnet` / `opus`. Resolved per-provider at invocation time, so a Gemini-parent never 404s asking for `"haiku"`. See the [Multi-Agent guide](Multi-Agent) for the per-provider resolution table.
+- **WebSearch without API keys** — the `WebSearch` tool now falls back to DuckDuckGo (Instant Answer → HTML scrape) when no paid key is set. Priority chain: Serper → Tavily → Brave → DDG IA → DDG HTML. Tune with `DUH_WEBSEARCH_TIMEOUT`.
+- **TUI parity sprint** (3 waves, [ADR-073](../adrs/ADR-073-tui-parity-sprint.md)): command palette (`Ctrl+K`), themes (`Ctrl+T`, dark / light / high-contrast), animated spinners, line virtualization, frame-rate cap, and a streaming-visibility fix so in-flight deltas render promptly in slow-terminal setups.
+- **Three-tier TUI E2E testing** ([ADR-074](../adrs/ADR-074-tui-e2e-testing.md)): Rich `CaptureConsole` snapshot → PTY + pyte byte-level → tmux full-terminal. CI installs tmux and the pty/pyte deps; `pytest.importorskip` guards keep local runs friction-free.
+- **6200+ tests, 100% line coverage** (up from 5665 in v0.7.0). LiteLLM tests auto-skip when the SDK isn't installed.
+
 ## Feature Highlights
 
-- **Provider-agnostic** — Anthropic Claude, OpenAI (API + ChatGPT Codex), Ollama (local), LiteLLM (any provider), deterministic stub for tests
-- **25+ built-in tools** — Read, Write, Edit, MultiEdit, Bash, Glob, Grep, WebFetch, WebSearch, Task, Agent, GitHub, Docker, Database, HTTP, LSP, and more
+- **Provider-agnostic (native SDKs)** — Anthropic Claude, OpenAI (API + ChatGPT Codex), Gemini, Groq, Ollama (local), deterministic stub for tests; LiteLLM as opt-in fallback for long-tail providers
+- **27 built-in tools** — Read, Write, Edit, MultiEdit, Bash, Glob, Grep, WebFetch, WebSearch, Task, Agent, Swarm, GitHub, Docker, Database, HTTP, LSP, and more
 - **MCP support** — stdio, SSE, HTTP, and WebSocket transports for connecting external tool servers
-- **Multi-agent** — AgentTool spawns child engines; SwarmTool coordinates parallel work; worktree isolation for safe concurrent edits
+- **Multi-agent** — `Agent` spawns child engines; `Swarm` coordinates parallel work; worktree isolation for safe concurrent edits; generic tier system (small/medium/large/inherit) resolved per-provider
 - **4-tier context management** — automatic compaction, smart deduplication, model-summarized compaction, configurable thresholds
 - **29 lifecycle hooks** — PreToolUse, PostToolUse, SessionStart, FileChanged, and more, with blocking semantics and input rewriting
 - **3-layer security** — vulnerability monitoring (13 scanners), runtime hardening (taint propagation, confirmation tokens), platform sandboxing (macOS Seatbelt, Linux Landlock)
 - **Session persistence** — JSONL sessions with `--continue` and `--resume` for picking up where you left off
-- **Cost control** — `--max-cost` budget enforcement, `/cost` command, per-provider token pricing
+- **Cost control** — `--max-cost` budget enforcement, `/cost` command, per-provider token pricing, cost-delta warnings on `/model` switch
 - **CLAUDE.md / DUH.md / AGENTS.md** — reads all standard instruction file formats
-- **Rich TUI** — interactive REPL with 20+ slash commands, tab completion, and streaming output
+- **Rich TUI** — interactive REPL with command palette (`Ctrl+K`), themes (`Ctrl+T`), 24+ slash commands, tab completion, and streaming output
 - **CI-friendly** — `-p "..."` print mode, `--dangerously-skip-permissions`, semantic exit codes, JSON output
 
 ## Quick Install
@@ -28,10 +37,12 @@ pip install duh-cli
 Or with extras:
 
 ```bash
-pip install 'duh-cli[all]'       # everything: OpenAI, Rich TUI, WebSocket bridge, PDF, security scanners
-pip install 'duh-cli[openai]'    # + OpenAI provider
+pip install 'duh-cli[all]'       # everything: Rich TUI, WebSocket bridge, PDF, security scanners, LiteLLM
+pip install 'duh-cli[litellm]'   # + LiteLLM fallback for long-tail providers (ADR-075)
 pip install 'duh-cli[security]'  # + vulnerability monitoring tools
 ```
+
+Core install already ships native adapters for Anthropic, OpenAI, Gemini, Groq, and Ollama. See [Provider Setup](Provider-Setup) for per-provider env vars.
 
 ## Quick Usage
 

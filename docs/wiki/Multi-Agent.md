@@ -16,16 +16,38 @@ For single-file edits, simple bug fixes, or quick questions, a single agent is f
 
 Each agent type is a system prompt overlay on top of D.U.H.'s base constitution. The overlays live in `duh/constitution.py` under `AGENT_OVERLAYS`.
 
-| Type | Specialization | Default Model |
-|------|---------------|---------------|
+| Type | Specialization | Default Tier |
+|------|---------------|--------------|
 | `general` | General-purpose coding assistant. Uses the base constitution with no overlay. | `inherit` (parent's model) |
-| `coder` | Writing clean, correct, well-tested code. Reads existing code to understand patterns before writing. Follows TDD for bug fixes. | `sonnet` |
-| `researcher` | Reading, searching, and understanding code. Uses Glob, Grep, and Read extensively. Summarizes findings with file paths and line numbers. Does not modify files unless explicitly asked. | `haiku` |
-| `planner` | Breaking down complex tasks into clear, actionable steps. Analyzes the codebase, creates concrete plans with specific files. Does not implement -- just plans. | `opus` |
-| `reviewer` | Reviewing code for correctness, security, and quality. Prioritizes bugs, then security, then regressions, then missing tests, then style. Cites file and line. | `sonnet` |
+| `coder` | Writing clean, correct, well-tested code. Reads existing code to understand patterns before writing. Follows TDD for bug fixes. | `medium` |
+| `researcher` | Reading, searching, and understanding code. Uses Glob, Grep, and Read extensively. Summarizes findings with file paths and line numbers. Does not modify files unless explicitly asked. | `small` |
+| `planner` | Breaking down complex tasks into clear, actionable steps. Analyzes the codebase, creates concrete plans with specific files. Does not implement -- just plans. | `large` |
+| `reviewer` | Reviewing code for correctness, security, and quality. Prioritizes bugs, then security, then regressions, then missing tests, then style. Cites file and line. | `medium` |
 | `subagent` | Generic delegated task execution. Executes directly without re-delegating. Uses absolute file paths. | `inherit` (parent's model) |
 
-The `model` field on any agent can be overridden to `haiku`, `sonnet`, `opus`, or `inherit`. When set to `inherit` (or omitted), the agent uses its type's default from the table above. If the default is also `inherit`, the parent's model is used unchanged.
+The `model` field on any agent can be set to `"small"`, `"medium"`, `"large"`, `"inherit"`, or any concrete model name. When set to `"inherit"` (or omitted), the agent uses its type's default tier from the table above, resolved against the parent's current provider. If the default is also `"inherit"`, the parent's model is used unchanged.
+
+## Model Tiers (v0.8.0+)
+
+The `Agent` and `Swarm` tools take **generic tiers** that resolve to a concrete model at invocation time based on the parent's *current* provider. This replaces the old Anthropic-specific enum (`haiku` / `sonnet` / `opus`) so a Gemini-parent → `"small"` child no longer 404s asking for `"haiku"`.
+
+The authoritative mapping lives in `duh/providers/registry.py` as `PROVIDER_TIER_MODELS`:
+
+| Tier | Anthropic | OpenAI | Gemini | Groq | Ollama | LiteLLM |
+|------|-----------|--------|--------|------|--------|---------|
+| `small`  | `claude-haiku-4-5` | `gpt-4o-mini` | `gemini-2.5-flash` | `llama-3.1-8b-instant` | `qwen2.5-coder:1.5b` | `gemini/gemini-2.5-flash` |
+| `medium` | `claude-sonnet-4-6` | `gpt-4o` | `gemini-2.5-pro` | `llama-3.3-70b-versatile` | `qwen2.5-coder:7b` | `gemini/gemini-2.5-pro` |
+| `large`  | `claude-opus-4-6` | `o1` | `gemini-3.1-pro-preview` | `openai/gpt-oss-120b` | `deepseek-coder-v2:lite` | `gemini/gemini-3.1-pro-preview` |
+
+Resolution rules (`resolve_agent_tier()` in the same module):
+
+- `"inherit"` or `""` → return the parent's current model unchanged (no API call changes provider).
+- `"small"` / `"medium"` / `"large"` → look up in `PROVIDER_TIER_MODELS` for the parent's inferred provider. If the provider can't be inferred (or the tier is missing), log a warning and fall back to the parent's model.
+- Any other string → treated as a **literal model name**, passed through unchanged. This keeps backwards compatibility for callers that still hand-write `"claude-haiku-4-5"` or `"gemini-2.5-flash"`.
+
+### Why `"inherit"` is the default
+
+Switching providers mid-conversation is rarely what you want — it changes cost model, latency, and tool-use style. `"inherit"` keeps sub-agents aligned with the parent so cost and behavior are predictable. Override with `"small"` for cheap research work, `"large"` for architectural reasoning. The table above tells you what each tier will actually resolve to.
 
 ## AgentTool
 
@@ -37,11 +59,11 @@ The `Agent` tool lets the model spawn a single subagent. The model calls it like
 {
   "prompt": "string (required) -- the task for the subagent",
   "agent_type": "string (optional) -- one of: general, coder, researcher, planner, reviewer, subagent",
-  "model": "string (optional) -- one of: haiku, sonnet, opus, inherit"
+  "model": "string (optional) -- one of: small, medium, large, inherit, or a literal model name"
 }
 ```
 
-Only `prompt` is required. If `agent_type` is omitted, it defaults to `general`. If `model` is omitted, the agent type's default model is used.
+Only `prompt` is required. If `agent_type` is omitted, it defaults to `general`. If `model` is omitted, the agent type's default tier is used, resolved against the parent's provider.
 
 ### How It Works
 
@@ -58,11 +80,11 @@ The model might call:
 {
   "prompt": "Search the codebase for all uses of deprecated_function() and list each file:line",
   "agent_type": "researcher",
-  "model": "haiku"
+  "model": "small"
 }
 ```
 
-This spawns a researcher agent running on Haiku. The researcher uses Glob, Grep, and Read to find all call sites, then returns a summary. The parent receives the summary as a tool result and continues its conversation.
+This spawns a researcher agent on the **small** tier. If the parent is running Claude, `"small"` resolves to `claude-haiku-4-5`; on Gemini it resolves to `gemini-2.5-flash`; on Groq to `llama-3.1-8b-instant`. The researcher uses Glob, Grep, and Read to find all call sites, then returns a summary. The parent receives the summary as a tool result and continues its conversation.
 
 ## SwarmTool
 
@@ -76,7 +98,7 @@ The `Swarm` tool spawns multiple subagents in parallel using `asyncio.gather`. I
     {
       "prompt": "string (required) -- the task for this subagent",
       "agent_type": "string (optional) -- general, coder, researcher, planner, reviewer, subagent",
-      "model": "string (optional) -- haiku, sonnet, opus, inherit"
+      "model": "string (optional) -- small, medium, large, inherit, or a literal model name"
     }
   ]
 }
@@ -198,12 +220,12 @@ Use the Swarm tool to research and implement simultaneously:
     {
       "prompt": "Read src/auth/ and document how the token refresh flow works. List all files involved and the call chain.",
       "agent_type": "researcher",
-      "model": "haiku"
+      "model": "small"
     },
     {
       "prompt": "Add rate limiting to the /api/login endpoint in src/api/routes.py. Use the existing RateLimiter class from src/middleware/.",
       "agent_type": "coder",
-      "model": "sonnet"
+      "model": "medium"
     }
   ]
 }
@@ -256,14 +278,14 @@ Each subagent is a separate API conversation. Costs scale linearly:
 
 Each conversation may use multiple turns internally, and each turn is an API call. A 5-agent swarm where each agent uses 5 turns is 25 API calls total (plus the parent's turns).
 
-**Model selection matters.** The default model assignments are tuned for cost/quality tradeoffs:
+**Tier selection matters.** The default tier assignments are tuned for cost/quality tradeoffs:
 
-- `haiku` for researchers -- fast, cheap, sufficient for reading and searching.
-- `sonnet` for coders and reviewers -- balanced quality and speed.
-- `opus` for planners -- complex reasoning benefits from the strongest model.
-- `inherit` for general/subagent -- uses whatever the parent is using.
+- `"small"` for researchers -- fast, cheap, sufficient for reading and searching (`claude-haiku-4-5` / `gemini-2.5-flash` / `llama-3.1-8b-instant` / …).
+- `"medium"` for coders and reviewers -- balanced quality and speed (`claude-sonnet-4-6` / `gemini-2.5-pro` / `llama-3.3-70b-versatile` / …).
+- `"large"` for planners -- complex reasoning benefits from the strongest model (`claude-opus-4-6` / `gemini-3.1-pro-preview` / `openai/gpt-oss-120b` / …).
+- `"inherit"` for general/subagent -- uses whatever the parent is using (no provider switch, no surprise cost).
 
-Override with the `model` field when the defaults don't fit. Use `haiku` aggressively for simple subtasks to keep costs down.
+Override with the `model` field when the defaults don't fit. Use `"small"` aggressively for simple subtasks to keep costs down. The full per-provider resolution table is in the [Model Tiers section](#model-tiers-v080) above.
 
 ## Limitations
 

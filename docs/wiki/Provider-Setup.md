@@ -108,6 +108,89 @@ D.U.H. auto-routes based on model name: `--model gpt-5.2-codex` uses the ChatGPT
 
 ---
 
+## Gemini
+
+D.U.H. ships a native Gemini adapter (`duh/adapters/gemini.py`) built on the `google-genai` SDK. This is preferred over the LiteLLM fallback because it surfaces provider-specific features (`thinking_budget`, explicit cache objects, the system-instructions / system-role distinction) that LiteLLM's OpenAI-shaped normalization flattens.
+
+### Setup
+
+Get a free API key at [aistudio.google.com](https://aistudio.google.com), then:
+
+```bash
+export GEMINI_API_KEY="AIza..."
+# (GOOGLE_API_KEY also works — see PROVIDER_ENV_VARS in duh/providers/registry.py)
+```
+
+### Usage
+
+```bash
+# Explicit provider
+duh --provider gemini --model gemini-2.5-pro -p "hello"
+
+# Auto-detected from model prefix — gemini/ and gemini- both route to the native adapter
+duh --model gemini-2.5-flash -p "hello"
+duh --model gemini/gemini-3.1-pro-preview -p "hello"
+
+# In-REPL
+duh
+> /connect gemini
+```
+
+### Available Models
+
+| Model | Description |
+|-------|-------------|
+| `gemini-2.5-pro` | Strong general-purpose reasoning, 2M context |
+| `gemini-2.5-flash` | Fast and cheap, 1M context |
+| `gemini-3.1-pro-preview` | Latest preview, 1M context, strongest reasoning |
+
+Run `duh models gemini` (or `/models gemini` in the REPL) to see what your key can actually access.
+
+### Notes
+
+- Native adapter requires `google-genai` (installed by default in `duh-cli`). If it's not importable, D.U.H. falls through to LiteLLM and logs a deprecation notice ([ADR-075](../adrs/ADR-075-drop-litellm-native-adapters.md)).
+- Supports `thinking_budget` for the 2.5 / 3.1 reasoning variants.
+- Explicit cache objects (`client.caches.create(...)`) are wired through the adapter for long-system-prompt workloads.
+
+---
+
+## Groq
+
+D.U.H. ships a native Groq adapter (`duh/adapters/groq.py`) built on the `groq` SDK. Groq's LPU hardware offers extremely low latency (often <500ms first token on small models) and they host both their own Llama fine-tunes and OpenAI's open-weights 120B reasoning model.
+
+### Setup
+
+Get a free API key at [console.groq.com](https://console.groq.com), then:
+
+```bash
+export GROQ_API_KEY="gsk_..."
+```
+
+### Usage
+
+```bash
+# Explicit provider
+duh --provider groq --model llama-3.3-70b-versatile -p "hello"
+
+# Prefix routing
+duh --model groq/openai/gpt-oss-120b -p "refactor this function"
+```
+
+### Available Models
+
+| Model | Description |
+|-------|-------------|
+| `llama-3.3-70b-versatile` | Default. Balanced quality and speed |
+| `openai/gpt-oss-120b` | OpenAI's open-weights 120B reasoning model hosted on Groq (strongest) |
+| `llama-3.1-8b-instant` | Fastest, cheapest. Good for research / search subagents |
+
+### Notes
+
+- Native adapter preserves `X-RateLimit-Remaining` and `X-RateLimit-Reset` headers so the engine can tune batch size and back off gracefully.
+- Free tier has generous rate limits but they're enforced; `duh doctor` includes a Groq reachability check.
+
+---
+
 ## Ollama
 
 Ollama lets you run models locally with no API keys and no data leaving your machine.
@@ -246,12 +329,18 @@ LiteLLM supports many providers including Azure OpenAI, AWS Bedrock, Google Vert
 
 ## Provider Auto-Detection
 
-When no `--provider` flag is given, D.U.H. checks in order:
+When no `--provider` flag is given and the model name does not contain a routing prefix, D.U.H. checks in order:
 
 1. `ANTHROPIC_API_KEY` is set -- use Anthropic
-2. `OPENAI_API_KEY` is set -- use OpenAI
+2. `OPENAI_API_KEY` is set (or ChatGPT OAuth exists) -- use OpenAI
 3. Ollama is reachable at `localhost:11434` -- use Ollama
 4. None found -- display an actionable error message
+
+If the model name itself has a prefix, that takes precedence:
+
+- `gemini/…` / `gemini-…` → native Gemini (requires `google-genai`; falls through to LiteLLM if not importable)
+- `groq/…` → native Groq (requires `groq` SDK; falls through to LiteLLM if not importable)
+- Anything else with a `/` → LiteLLM (opt-in, install with `pip install 'duh-cli[litellm]'`)
 
 You can always override with `--provider <name>`.
 

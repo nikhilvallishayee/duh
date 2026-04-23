@@ -1,5 +1,68 @@
 # Changelog
 
+## v0.8.0 (2026-04-19) — Native providers, tiered agents, TUI parity
+
+Sixteen merged PRs (#33 → #48) across three themes: closing the external QE swarm audit tail (SEC-LOW/INFO and quality-experience follow-ups), a three-wave TUI parity sprint with matching three-tier E2E test infrastructure, and a provider strategy pivot — LiteLLM is demoted from "default" to "opt-in fallback" in favor of native `google-genai` and `groq` SDK adapters.
+
+### Breaking change
+
+- **LiteLLM moved to `[litellm]` extras.** A plain `pip install duh-cli` no longer pulls LiteLLM. To keep the old behavior: `pip install 'duh-cli[litellm]'` (or `[all]`). Motivation: the March 2026 PyPI compromise of `litellm` 1.82.7 / 1.82.8 plus a string of RCE / auth-bypass CVEs. D.U.H. now pins LiteLLM `>=1.83.8` when the extra is installed. See [ADR-075](../adrs/ADR-075-drop-litellm-native-adapters.md).
+- **Agent / Swarm `model` field** no longer accepts `haiku` / `sonnet` / `opus` as a first-class enum. Use the generic tiers `"small"` / `"medium"` / `"large"` / `"inherit"` instead. Literal model names (including `claude-haiku-4-5`, `gemini-2.5-flash`, …) are still accepted for backwards compatibility. See the [Multi-Agent guide](Multi-Agent).
+
+### Providers
+
+- **Native Gemini adapter** (`duh/adapters/gemini.py`, PR #45) — uses `google-genai`. Supports `thinking_budget`, explicit cache objects, and the system-instructions-vs-system-role distinction that LiteLLM flattens. Prefix routing: `gemini/<model>` or `gemini-<model>`.
+- **Native Groq adapter** (`duh/adapters/groq.py`, PR #45) — uses the `groq` SDK. Preserves `X-RateLimit-Remaining` / reset headers. Models: `llama-3.3-70b-versatile` (default), `openai/gpt-oss-120b`, `llama-3.1-8b-instant`. Prefix routing: `groq/<model>`.
+- **LiteLLM demoted to opt-in** ([ADR-075](../adrs/ADR-075-drop-litellm-native-adapters.md), PR #45) — still available via `--provider litellm` after `pip install 'duh-cli[litellm]'`. One-shot stderr deprecation notice per session.
+- **Gemini / Groq / Ollama model_caps accuracy** (PR #44) — context-window + output-token limits now reflect live `/v1/models` probes; unified lookup via `ModelAliases.lookup_capabilities()`.
+- **Gemini prefix 404 fix + unified token limit lookup + deferred markdown rendering** (PR #45 follow-up).
+
+### Multi-agent
+
+- **Agent tier system** (PR #47) — `Agent` / `Swarm` now take `"small"` / `"medium"` / `"large"` / `"inherit"` resolved per-provider via `PROVIDER_TIER_MODELS` (see `duh/providers/registry.py`). No more Anthropic-specific enum hardcoding; a Gemini-parent with `"small"` resolves to `gemini-2.5-flash`, a Groq-parent to `llama-3.1-8b-instant`, etc. Default is `"inherit"` (keeps the sub-agent on the parent's current model).
+- **Swarm tool result preview fix** (PR #48) — per-task summary shown in the live preview; full result auto-expands when the user hovers. Long results are no longer truncated to the first 40 chars in the TUI.
+- **Swarm output capture fix** (PR #46) — drift-risk refactor + proper stdout/stderr routing so parallel agent logs don't interleave into a single line.
+
+### Security
+
+- **File-size guard** (PR #44) — `Read` / `Write` reject files over the configured cap (default 50 MB) before streaming bytes into the model; prevents accidental context-window blowouts and token-cost spikes.
+- **Drift-risk consolidation refactor** (PR #46) — consolidated the taint-propagation audit hook surface, reducing duplicate `UntrustedStr` wrapping across the engine loop. No behavioral change; simpler invariant to reason about.
+- **QE Analysis tail — LOW / INFO findings** (PRs #33 – #39) — completes the v0.7.0 audit (`/Users/nomind/...` → portable paths in remaining fixtures, `AST` logging polish, dependency upper-bound consistency, `skip_permissions` audit log assertions).
+
+### Performance
+
+- **TUI line virtualization + frame-rate cap** (PR #42) — long transcripts no longer re-render every line on every tick; FPS capped so background re-renders don't starve model streaming.
+- **Streaming visibility fix** (PR #46) — incremental deltas now render within 16 ms of receipt on slow terminals; previously a buffering edge case could delay partial output until a full line break arrived.
+
+### TUI (three-wave parity sprint, [ADR-073](../adrs/ADR-073-tui-parity-sprint.md))
+
+- **Wave 1 — slash dispatch parity** (PR #40): approval timeout, multi-line input, consistent slash-command handler dispatch across REPL and runner.
+- **Wave 2 — rendering quality** (PR #41): syntax-accurate diff rendering, tool-result pretty-print, code-block language detection.
+- **Wave 3 — polish** (PR #42): **command palette** (`Ctrl+K`), **themes** (`Ctrl+T`, dark / light / high-contrast), animated spinner, line virtualization, frame-rate cap.
+
+### Testing
+
+- **Three-tier TUI E2E suite** (PR #43, [ADR-074](../adrs/ADR-074-tui-e2e-testing.md)):
+  - **Tier 1** — Rich `CaptureConsole` snapshots (fast, deterministic, runs in every test invocation).
+  - **Tier 2** — PTY + pyte byte-level assertions (verifies ANSI escape sequences on a virtual terminal).
+  - **Tier 3** — tmux full-terminal harness (catches issues that only surface under a real terminal emulator).
+- CI installs tmux and pty/pyte deps; `pytest.importorskip` guards keep local runs friction-free when optional deps are missing.
+- `test_build_model_backend_litellm` auto-skips when LiteLLM isn't installed (PR #45 follow-up).
+- `audit_handler` benchmark tolerance loosened 1000ns → 2000ns for CI variance (PR #46 follow-up).
+
+### Tools
+
+- **`WebSearch` without API keys** (PR #46) — zero-config DuckDuckGo fallback. Priority chain: Serper → Tavily → Brave → DDG Instant Answer → DDG HTML. `DUH_WEBSEARCH_TIMEOUT` (default 5 s) tunes the per-request timeout. Previously the tool returned a hard error when no paid key was configured.
+
+### Stats
+
+- **6200+ tests passing** (up from 5318 in v0.5.0 and 5665 in v0.7.0), **0 failing**, **100% line coverage**.
+- **~+900 net new tests** across the three test tiers (snapshot ~+350, PTY ~+280, tmux ~+270) plus unit tests for the Gemini / Groq adapters and tier-resolution helper.
+- **16 PRs merged** (#33 → #48), all CI-green before merge.
+- **LOC delta**: roughly flat — TUI and adapter additions balanced by LiteLLM demotion and drift-risk consolidation.
+
+---
+
 ## v0.7.0 (2026-04-17) — QE hardening release
 
 Comprehensive response to the external QE swarm audit ([#8](https://github.com/nikhilvallishayee/duh/issues/8)). Six merged PRs closed every finding across all seven reports — code quality, security, performance, quality experience, test suite, SFDIPOT, and the executive summary. No functional regressions; 347 net new tests.

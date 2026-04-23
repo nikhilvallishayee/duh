@@ -3,11 +3,47 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>D.U.H. — Security</title>
-  <meta name="description" content="D.U.H. 3-layer security architecture: 13 vulnerability scanners, taint propagation, confirmation tokens, lethal trifecta, OS sandboxing. The deepest security story in open-source AI agents.">
+  <title>D.U.H. — Security Architecture</title>
+  <meta name="description" content="D.U.H. 3-layer security architecture: 13 vulnerability scanners, taint propagation, confirmation tokens, lethal trifecta, OS sandboxing. Covers every published agent RCE in the 2024-2026 CVE corpus.">
+  <meta name="keywords" content="AI agent security, LLM security, Claude Code security, taint propagation, lethal trifecta, MCP security, sandboxing, Seatbelt, Landlock, CVE, SARIF">
+  <meta name="author" content="Nikhil Vallishayee">
   <meta name="theme-color" content="#0a0a0a">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="D.U.H. — Security Architecture">
+  <meta property="og:description" content="Three-layer security covering every published AI-agent RCE in the 2024-2026 CVE corpus.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://nikhilvallishayee.github.io/duh/site/security.html">
+  <meta property="og:image" content="https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png">
+  <meta property="og:site_name" content="D.U.H.">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="D.U.H. — Security Architecture">
+  <meta name="twitter:description" content="Three-layer security covering every published AI-agent RCE in the 2024-2026 CVE corpus.">
+  <meta name="twitter:image" content="https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png">
+
+  <!-- Canonical -->
+  <link rel="canonical" href="https://nikhilvallishayee.github.io/duh/site/security.html">
+
   <link rel="stylesheet" href="style.css">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🔧</text></svg>">
+
+  <!-- JSON-LD structured data: TechArticle -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "D.U.H. Security Architecture",
+    "description": "Three-layer security: 13 vulnerability scanners, runtime hardening (taint propagation, confirmation tokens, lethal trifecta), and OS sandboxing (macOS Seatbelt, Linux Landlock).",
+    "author": { "@type": "Person", "name": "Nikhil Vallishayee" },
+    "publisher": { "@type": "Organization", "name": "D.U.H.", "logo": { "@type": "ImageObject", "url": "https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png" } },
+    "mainEntityOfPage": "https://nikhilvallishayee.github.io/duh/site/security.html",
+    "image": "https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png",
+    "proficiencyLevel": "Expert",
+    "about": ["AI agent security", "CVE mitigation", "Taint analysis", "OS sandboxing"]
+  }
+  </script>
   <style>
     .sec-layout {
       display: grid;
@@ -141,6 +177,8 @@
 </head>
 <body class="page-body">
 
+<a href="#main-content" class="visually-hidden" style="position:absolute;left:-9999px;">Skip to main content</a>
+
 <!-- ── Navigation ── -->
 <nav class="nav" role="navigation" aria-label="Main navigation">
   <div class="nav-inner">
@@ -193,7 +231,7 @@
   </aside>
 
   <!-- Content -->
-  <main class="sec-content">
+  <main id="main-content" class="sec-content">
 
     <!-- Overview -->
     <h2 id="overview">3-Layer Security Architecture</h2>

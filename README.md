@@ -8,15 +8,25 @@
 
 [![CI](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml/badge.svg)](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/duh-cli?color=blue)](https://pypi.org/project/duh-cli/)
-[![Tests](https://img.shields.io/badge/tests-5665%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-6119%20passing-brightgreen)]()
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)]()
-[![Security](https://img.shields.io/badge/security-ADR--053%20%2B%20ADR--054-blueviolet)]()
+[![Security](https://img.shields.io/badge/security-ADR--053%20%2B%20ADR--054%20%2B%20ADR--075-blueviolet)]()
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)]()
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 **[Website](https://nikhilvallishayee.github.io/duh/site/)** | **[Comparisons](https://nikhilvallishayee.github.io/duh/site/comparisons.html)** | **[Getting Started](https://nikhilvallishayee.github.io/duh/site/getting-started.html)** | **[Security](https://nikhilvallishayee.github.io/duh/site/security.html)**
 
 </div>
+
+---
+
+## Demo
+
+<video src="docs/site/assets/duh-tui-demo.mp4" poster="docs/site/assets/duh-tui-demo-poster.jpg" width="720" autoplay loop muted playsinline>
+  <img src="docs/site/assets/duh-tui-demo.gif" alt="D.U.H. TUI demo: streaming output, slash commands, and theme switching" width="720">
+</video>
+
+*(GIF fallback shown above on platforms that do not render `<video>`. Source assets live under [`docs/site/assets/`](docs/site/assets/).)*
 
 ---
 
@@ -41,7 +51,7 @@ Done in 3 turns.
 
 ---
 
-A universal, open-source AI coding agent. One harness, any provider — Anthropic Claude, OpenAI API, ChatGPT Plus/Pro subscription (Codex-family models), local Ollama, or a deterministic stub for tests. Drop-in compatible with the Claude Agent SDK NDJSON protocol, so it can replace `claude` wherever that binary is expected.
+A universal, open-source AI coding agent. One harness, any provider — Anthropic Claude, OpenAI API, ChatGPT Plus/Pro subscription (Codex-family models), Google Gemini, Groq, local Ollama, or a deterministic stub for tests. Drop-in compatible with the Claude Agent SDK NDJSON protocol, so it can replace `claude` wherever that binary is expected.
 
 ## Install
 
@@ -53,14 +63,16 @@ python3.12 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
 # From PyPI
-pip install duh-cli                    # core: Anthropic + Ollama + httpx
-pip install 'duh-cli[openai]'          # + OpenAI API key provider
+pip install duh-cli                    # core: Anthropic + OpenAI + Gemini + Groq + Ollama (native SDKs)
 pip install 'duh-cli[rich]'            # + Rich TUI rendering
 pip install 'duh-cli[bridge]'          # + WebSocket remote bridge
 pip install 'duh-cli[attachments]'     # + PDF attachment support (pdfplumber)
 pip install 'duh-cli[security]'        # + vulnerability monitoring (ruff, pip-audit, detect-secrets, cyclonedx)
+pip install 'duh-cli[litellm]'         # + LiteLLM fallback for long-tail providers (opt-in, see ADR-075)
 pip install 'duh-cli[all]'             # everything above
 ```
+
+As of v0.8.0, `duh-cli` ships **native adapters** for Anthropic, OpenAI, Gemini, Groq, and Ollama — no LiteLLM in the default install path. LiteLLM is now an **opt-in fallback** (`duh-cli[litellm]`) for providers without a native adapter (Azure, Bedrock, Vertex, Together, Cohere, Mistral, …). See [ADR-075](docs/adrs/ADR-075-drop-litellm-native-adapters.md) for the rationale (supply-chain hardening + native feature fidelity: Anthropic `cache_control`, Gemini `thinking_budget`, Groq rate-limit headers).
 
 ## Quick start
 
@@ -77,25 +89,52 @@ duh security doctor                                              # scanner healt
 
 ## Providers
 
+All six first-class providers use **native SDKs** — no LiteLLM in the default install path (ADR-075).
+
 | Provider | Auth | Example models |
 |---|---|---|
 | **Anthropic** | `ANTHROPIC_API_KEY` env var or `/connect anthropic` | `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5` |
 | **OpenAI API** | `OPENAI_API_KEY` env var or `/connect openai` (API key) | `gpt-4o`, `o1`, `o3` |
 | **OpenAI ChatGPT** (Codex) | `/connect openai` → PKCE OAuth against `auth.openai.com`; tokens stored in `~/.config/duh/auth.json` (0600). See [ADR-051](docs/adrs/ADR-051-oauth-provider-authentication.md), [ADR-052](docs/adrs/ADR-052-chatgpt-codex-adapter.md). | `gpt-5.2-codex`, `gpt-5.1-codex`, `gpt-5.1-codex-max`, `gpt-5.1-codex-mini` |
+| **Gemini** | `GEMINI_API_KEY` env var or `/connect gemini` (free at [aistudio.google.com](https://aistudio.google.com)) | `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-3.1-pro-preview` |
+| **Groq** | `GROQ_API_KEY` env var or `/connect groq` (free at [console.groq.com](https://console.groq.com)) | `llama-3.3-70b-versatile`, `openai/gpt-oss-120b`, `llama-3.1-8b-instant` |
 | **Ollama** | Local daemon on `localhost:11434`, no key | Any locally-pulled model |
+| **LiteLLM** (opt-in, ADR-075) | `pip install 'duh-cli[litellm]'` + provider-specific env vars | `azure/gpt-4o`, `bedrock/anthropic.claude-3-5-sonnet`, … |
 | **Stub** | `DUH_STUB_PROVIDER=1` | Deterministic canned response for tests / offline runs |
 
-Provider and model auto-detect: give `--model gpt-5.2-codex` and D.U.H. will route to the ChatGPT/Codex Responses endpoint if OAuth exists; otherwise it falls back to the standard OpenAI Chat Completions adapter with your API key.
+Provider and model auto-detect: give `--model gpt-5.2-codex` and D.U.H. will route to the ChatGPT/Codex Responses endpoint if OAuth exists; otherwise it falls back to the standard OpenAI Chat Completions adapter with your API key. `--model gemini-2.5-pro` routes to the native `google-genai` adapter; `--model groq/llama-3.3-70b-versatile` routes to the native `groq` SDK.
 
 ## Slash commands (REPL)
 
-`/help` `/model` `/connect` `/models` `/cost` `/status` `/context` `/changes` `/git` `/tasks` `/brief` `/search` `/template` `/plan` `/pr` `/undo` `/jobs` `/health` `/errors` `/clear` `/compact` `/snapshot` `/exit`
+`/help` `/model` `/connect` `/models` `/cost` `/status` `/context` `/changes` `/git` `/tasks` `/brief` `/search` `/template` `/plan` `/pr` `/undo` `/jobs` `/health` `/errors` `/theme` `/mode` `/clear` `/compact` `/snapshot` `/exit`
 
-Run `/help` in the REPL for the full description of each command. Highlights: `/connect openai` runs the ChatGPT OAuth flow; `/snapshot` takes a ghost filesystem snapshot you can `apply` or `discard`; `/plan` switches to design-first two-phase execution; `/pr list|view|diff|checks` integrates with `gh`.
+Plus `Ctrl+K` for the **command palette** (fuzzy search across every slash command, model, provider, and recent file) and `Ctrl+T` to cycle **themes** (dark / light / high-contrast).
+
+Run `/help` in the REPL for the full description of each command. Highlights: `/connect openai` runs the ChatGPT OAuth flow; `/connect gemini` / `/connect groq` prompt for the API key and store it under `~/.config/duh/auth.json` (0600); `/snapshot` takes a ghost filesystem snapshot you can `apply` or `discard`; `/plan` switches to design-first two-phase execution; `/pr list|view|diff|checks` integrates with `gh`; `/errors` shows the last N errors from the bounded in-session buffer; `/theme` cycles TUI themes.
 
 ## Built-in tools
 
-`Read`, `Write`, `Edit`, `MultiEdit`, `Bash`, `Glob`, `Grep`, `Skill`, `ToolSearch`, `WebFetch`, `WebSearch`, `Task`, `EnterWorktree`, `ExitWorktree`, `NotebookEdit`, `TestImpact`, `MemoryStore`, `MemoryRecall`, `HTTP`, `Docker`, `Database`, `GitHub`, `TodoWrite`, `AskUserQuestion`, plus `LSP` (deferred, loaded via `ToolSearch`).
+`Read`, `Write`, `Edit`, `MultiEdit`, `Bash`, `Glob`, `Grep`, `Skill`, `ToolSearch`, `WebFetch`, `WebSearch`, `Task`, `Agent`, `Swarm`, `EnterWorktree`, `ExitWorktree`, `NotebookEdit`, `TestImpact`, `MemoryStore`, `MemoryRecall`, `HTTP`, `Docker`, `Database`, `GitHub`, `TodoWrite`, `AskUserQuestion`, plus `LSP` (deferred, loaded via `ToolSearch`).
+
+**`WebSearch`** is zero-config: if no API key is set, it falls back to DuckDuckGo (Instant Answer API → HTML scrape) so the tool always returns something usable. Priority chain: `SERPER_API_KEY` → `TAVILY_API_KEY` → `BRAVE_SEARCH_API_KEY` → DDG IA → DDG HTML. Tune the per-request timeout with `DUH_WEBSEARCH_TIMEOUT` (default `5` seconds).
+
+## Multi-agent
+
+D.U.H. spawns child engines on demand. Two entry points:
+
+- **`Agent`** — one subagent, synchronous result.
+- **`Swarm`** — 1–5 subagents in parallel via `asyncio.gather` (partial failure tolerant).
+
+Both accept `agent_type` (`general` / `coder` / `researcher` / `planner` / `reviewer` / `subagent`) and `model`. Since v0.8.0 the `model` field takes **generic tiers** resolved per-provider:
+
+| Tier | Description | Resolves to (parent on Anthropic) | …on Gemini | …on Groq |
+|---|---|---|---|---|
+| `small` | Cheapest / fastest | `claude-haiku-4-5` | `gemini-2.5-flash` | `llama-3.1-8b-instant` |
+| `medium` | Balanced default | `claude-sonnet-4-6` | `gemini-2.5-pro` | `llama-3.3-70b-versatile` |
+| `large` | Strongest reasoning | `claude-opus-4-6` | `gemini-3.1-pro-preview` | `openai/gpt-oss-120b` |
+| `inherit` (default) | Use parent's model unchanged | — | — | — |
+
+This means a Gemini-parent → `"small"` child never 404s asking for `"haiku"`. Literal model names (`claude-haiku-4-5`, `gemini-2.5-flash`, …) are still accepted for backwards compatibility. See [docs/wiki/Multi-Agent.md](docs/wiki/Multi-Agent.md) and [ADR-012](docs/adrs/ADR-012-multi-agent.md). Coordinator mode (`duh --coordinator`) turns the main agent into a pure orchestrator that delegates everything to subagents.
 
 ## Security
 
@@ -130,7 +169,7 @@ MCP servers connect via four transports: **stdio** (via the `mcp` SDK), **SSE**,
 
 ## Tests and coverage
 
-**5665 tests, 100% line coverage**, ~55s on a laptop. Includes 330+ security-specific tests (unit, integration, property-based), CVE replay fixtures, and performance regression gates. CI runs on GitHub Actions with a `--cov-fail-under=85` floor (current actual: 100%).
+**6119 tests, 100% line coverage**, ~60s on a laptop. Includes 330+ security-specific tests (unit, integration, property-based), CVE replay fixtures, performance regression gates, and a **three-tier TUI E2E suite** (Rich `CaptureConsole` snapshots → PTY+pyte byte-level → tmux full-terminal, [ADR-074](docs/adrs/ADR-074-tui-e2e-testing.md)). CI runs on GitHub Actions with a `--cov-fail-under=85` floor (current actual: 100%).
 
 ```bash
 .venv/bin/python -m pytest tests/                         # full suite
@@ -154,8 +193,11 @@ DUH_STUB_PROVIDER=1 .venv/bin/python -m pytest tests/     # force stub provider
 | [052](docs/adrs/ADR-052-chatgpt-codex-adapter.md) | ChatGPT Codex adapter (Responses API) |
 | [053](docs/adrs/ADR-053-continuous-vulnerability-monitoring.md) | Continuous vulnerability monitoring (pluggable scanner module) |
 | [054](docs/adrs/ADR-054-llm-specific-security-hardening.md) | LLM-specific security hardening (taint propagation, confirmation tokens, lethal trifecta) |
+| [073](docs/adrs/ADR-073-tui-parity-sprint.md) | TUI parity sprint (command palette, themes, streaming, virtualization) |
+| [074](docs/adrs/ADR-074-tui-e2e-testing.md) | TUI E2E testing (3-tier: snapshot, PTY+pyte, tmux) |
+| [075](docs/adrs/ADR-075-drop-litellm-native-adapters.md) | Drop LiteLLM as default; native Gemini + Groq adapters |
 
-Full list: [docs/adrs/](docs/adrs/) (54 ADRs).
+Full list: [docs/adrs/](docs/adrs/) (75 ADRs).
 
 ## Development
 
@@ -182,16 +224,17 @@ Source layout:
 duh/
   kernel/        # agentic loop, sessions, tasks, plan mode, undo, skills, memory
   ports/         # abstract provider / tool / approver interfaces
-  adapters/      # anthropic, openai, openai_chatgpt, ollama, stub, mcp_executor, mcp_transports
+  adapters/      # anthropic, openai, openai_chatgpt, gemini, groq, ollama, stub,
+                 # litellm_provider (opt-in fallback), mcp_executor, mcp_transports
     sandbox/     # seatbelt, landlock, network policy
   auth/          # credential store + OpenAI ChatGPT PKCE OAuth
-  providers/     # provider registry + model resolution
-  tools/         # 25+ built-in tools (see list above)
+  providers/     # provider registry + model resolution + tier mapping (small/medium/large)
+  tools/         # 27 built-in tools (see list above)
   security/      # vulnerability monitoring, policy resolver, scanner plugins, CI templates
     scanners/    # 13 scanners (4 minimal, 5 D.U.H.-custom, 4 extended)
   cli/           # parser, main, runner, repl, sdk_runner, ndjson
   bridge/        # optional WebSocket remote bridge
-  ui/            # Rich TUI rendering
+  ui/            # Rich TUI rendering + command palette + themes
   plugins/       # plugin loader, signed manifests, TOFU trust store
   hooks.py       # 29-event hook system with per-hook FS namespacing
 ```

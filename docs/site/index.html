@@ -5,14 +5,58 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>D.U.H. — The Universal AI Coding Agent</title>
   <meta name="description" content="Provider-agnostic, open-source AI coding agent. One harness. Any model. Your machine. 5 providers, 26 tools, 3-layer security, 4160 tests.">
+  <meta name="keywords" content="AI coding agent, Claude Code alternative, open source, universal harness, Anthropic, OpenAI, Gemini, Groq, Ollama, CLI, TUI, agentic coding, AI developer tool">
+  <meta name="author" content="Nikhil Vallishayee">
   <meta name="theme-color" content="#0a0a0a">
+
+  <!-- Open Graph -->
   <meta property="og:title" content="D.U.H. — The Universal AI Coding Agent">
-  <meta property="og:description" content="One harness. Any model. Your machine. 5 providers, 26 tools, 3-layer security.">
+  <meta property="og:description" content="One harness. Any model. Your machine. Open-source, provider-agnostic, drop-in Claude Agent SDK compatible. 5 providers, 26 tools, 3-layer security.">
   <meta property="og:type" content="website">
+  <meta property="og:url" content="https://nikhilvallishayee.github.io/duh/site/index.html">
+  <meta property="og:image" content="https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png">
+  <meta property="og:site_name" content="D.U.H.">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="D.U.H. — The Universal AI Coding Agent">
+  <meta name="twitter:description" content="One harness. Any model. Your machine. Open-source, provider-agnostic, drop-in Claude Agent SDK compatible.">
+  <meta name="twitter:image" content="https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png">
+
+  <!-- Canonical -->
+  <link rel="canonical" href="https://nikhilvallishayee.github.io/duh/site/index.html">
+
+  <!-- Preload hero video (helps inline auto-play start instantly) -->
+  <link rel="preload" as="video" href="assets/duh-tui-demo.mp4" type="video/mp4">
+
   <link rel="stylesheet" href="style.css">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🔧</text></svg>">
+
+  <!-- JSON-LD structured data: SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "D.U.H.",
+    "alternateName": "D.U.H. is a Universal Harness",
+    "description": "Open-source AI coding agent — provider-agnostic, runs locally, drop-in Claude Agent SDK compatible. Works with Anthropic Claude, OpenAI GPT, Google Gemini, Groq, and local Ollama.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "softwareVersion": "0.8.0",
+    "author": { "@type": "Person", "name": "Nikhil Vallishayee" },
+    "license": "https://www.apache.org/licenses/LICENSE-2.0",
+    "codeRepository": "https://github.com/nikhilvallishayee/duh",
+    "programmingLanguage": "Python",
+    "url": "https://nikhilvallishayee.github.io/duh/site/",
+    "downloadUrl": "https://pypi.org/project/duh-cli/",
+    "keywords": "AI coding agent, Claude Code alternative, universal harness, open source, Anthropic, OpenAI, Gemini, Groq, Ollama"
+  }
+  </script>
 </head>
 <body class="page-body">
+
+<a href="#main-content" class="visually-hidden" style="position:absolute;left:-9999px;">Skip to main content</a>
 
 <!-- ── Navigation ── -->
 <nav class="nav" role="navigation" aria-label="Main navigation">
@@ -78,8 +122,25 @@
       <span class="badge badge-blue">Python 3.12+</span>
       <span class="badge badge-yellow">Apache 2.0</span>
     </div>
+
+    <!-- ── TUI demo video ── -->
+    <figure style="margin: 48px auto 0; max-width: 960px;">
+      <video src="assets/duh-tui-demo.mp4"
+             poster="assets/duh-tui-demo-poster.jpg"
+             muted autoplay loop playsinline controls
+             preload="auto"
+             aria-label="D.U.H. TUI demo: streaming output, slash commands, and theme switching"
+             style="width: 100%; height: auto; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);">
+        <a href="assets/duh-tui-demo.gif">
+          <img src="assets/duh-tui-demo.gif" alt="D.U.H. TUI demo: streaming output, slash commands, and theme switching" style="max-width: 100%; border-radius: 12px;">
+        </a>
+      </video>
+      <figcaption style="text-align:center; color: var(--fg-3); font-size: 0.875rem; margin-top: 12px;">D.U.H. TUI in action — streaming output, slash commands, and theme switching.</figcaption>
+    </figure>
   </div>
 </section>
+
+<main id="main-content">
 
 <!-- ── Feature Cards ── -->
 <section id="features">
@@ -462,6 +523,8 @@
     </div>
   </div>
 </section>
+
+</main>
 
 <!-- ── Footer ── -->
 <footer>

@@ -298,11 +298,22 @@ Fetch a URL and return its text content. HTML tags are automatically stripped. F
 
 ### WebSearch
 
-Search the web for a query. Requires either `SERPER_API_KEY` or `TAVILY_API_KEY` to be set in the environment. Returns the top 5 results with titles, links, and snippets.
+Search the web for a query. **Zero-config**: when no paid API key is set, falls back to DuckDuckGo (Instant Answer JSON API → HTML scrape) so the tool is always usable. Returns the top 5 results with titles, links, and snippets.
+
+**Priority chain (highest first)**: `SERPER_API_KEY` (Google Search via Serper) → `TAVILY_API_KEY` (Tavily) → `BRAVE_SEARCH_API_KEY` (Brave Search) → DuckDuckGo Instant Answer → DuckDuckGo HTML scrape.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `query` | string | yes | The search query |
+
+Relevant environment variables:
+
+| Env var | Effect |
+|---------|--------|
+| `SERPER_API_KEY` | Prefer Serper (Google Search) when set |
+| `TAVILY_API_KEY` | Prefer Tavily when above is unset |
+| `BRAVE_SEARCH_API_KEY` | Prefer Brave when above two are unset |
+| `DUH_WEBSEARCH_TIMEOUT` | Per-request timeout in seconds (default `5`) |
 
 ```json
 {
@@ -345,13 +356,13 @@ Spawn a subagent to handle a task independently. The subagent gets its own conve
 |-----------|------|----------|-------------|
 | `prompt` | string | yes | The task for the subagent |
 | `agent_type` | string | no | Agent specialization: `"general"`, `"coder"`, `"researcher"`, `"planner"`, `"reviewer"`, `"subagent"`. Default: `"general"` |
-| `model` | string | no | Model for the subagent: `"haiku"`, `"sonnet"`, `"opus"`, `"inherit"`. Defaults to the agent type's preferred model |
+| `model` | string | no | Model tier: `"small"`, `"medium"`, `"large"`, `"inherit"`, or a literal model name. Tiers resolve per-provider — see the [Multi-Agent guide](Multi-Agent#model-tiers-v080). Defaults to the agent type's preferred tier |
 
 ```json
 {
   "prompt": "Research the best Python async HTTP client libraries and compare their performance characteristics",
   "agent_type": "researcher",
-  "model": "sonnet"
+  "model": "medium"
 }
 ```
 
@@ -371,7 +382,7 @@ Each task object:
 |-------|------|----------|-------------|
 | `prompt` | string | yes | The task for the subagent |
 | `agent_type` | string | no | Specialization. Default: `"general"` |
-| `model` | string | no | Model: `"haiku"`, `"sonnet"`, `"opus"`, `"inherit"`. Default: `"inherit"` |
+| `model` | string | no | Tier: `"small"`, `"medium"`, `"large"`, `"inherit"`, or a literal model name. Default: `"inherit"` |
 
 ```json
 {
@@ -383,11 +394,12 @@ Each task object:
     {
       "prompt": "Write unit tests for src/auth.py",
       "agent_type": "coder",
-      "model": "sonnet"
+      "model": "medium"
     },
     {
       "prompt": "Check test coverage for the auth module",
-      "agent_type": "researcher"
+      "agent_type": "researcher",
+      "model": "small"
     }
   ]
 }
@@ -680,7 +692,7 @@ Execute read-only SQL queries against a SQLite database. Only SELECT statements 
 | 10 | TestImpact | Search | yes | Find tests affected by changed files |
 | 11 | Bash | Shell | no | Execute shell commands |
 | 12 | WebFetch | Web | yes | Fetch a URL and return text content |
-| 13 | WebSearch | Web | yes | Search the web (requires API key) |
+| 13 | WebSearch | Web | yes | Search the web (zero-config DDG fallback) |
 | 14 | HTTP | Web | no | Send HTTP requests for API testing |
 | 15 | Agent | Multi-Agent | no | Spawn a single subagent |
 | 16 | Swarm | Multi-Agent | no | Spawn multiple subagents in parallel |

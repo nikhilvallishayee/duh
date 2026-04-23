@@ -4,10 +4,45 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>D.U.H. — Getting Started</title>
-  <meta name="description" content="Install D.U.H., set up a provider, run your first session, and explore the REPL. Takes about 5 minutes.">
+  <meta name="description" content="Install D.U.H. in 60 seconds. Configure Anthropic, OpenAI, Gemini, Groq, or local Ollama. Run your first session in TUI, REPL, or CI print mode.">
+  <meta name="keywords" content="D.U.H. install, quickstart, AI coding agent tutorial, Claude Code alternative setup, Anthropic API, OpenAI API, Ollama, pip install duh-cli">
+  <meta name="author" content="Nikhil Vallishayee">
   <meta name="theme-color" content="#0a0a0a">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="D.U.H. — Getting Started in 60 seconds">
+  <meta property="og:description" content="Install, configure a provider, run your first session. TUI, REPL, print mode, or SDK mode.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://nikhilvallishayee.github.io/duh/site/getting-started.html">
+  <meta property="og:image" content="https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png">
+  <meta property="og:site_name" content="D.U.H.">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="D.U.H. — Getting Started">
+  <meta name="twitter:description" content="Install, configure, and run your first session in under 5 minutes.">
+  <meta name="twitter:image" content="https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png">
+
+  <!-- Canonical -->
+  <link rel="canonical" href="https://nikhilvallishayee.github.io/duh/site/getting-started.html">
+
   <link rel="stylesheet" href="style.css">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🔧</text></svg>">
+
+  <!-- JSON-LD structured data: TechArticle -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "D.U.H. — Getting Started",
+    "description": "Install D.U.H., configure a provider, and run your first session in under 5 minutes.",
+    "author": { "@type": "Person", "name": "Nikhil Vallishayee" },
+    "publisher": { "@type": "Organization", "name": "D.U.H.", "logo": { "@type": "ImageObject", "url": "https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png" } },
+    "mainEntityOfPage": "https://nikhilvallishayee.github.io/duh/site/getting-started.html",
+    "image": "https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png",
+    "proficiencyLevel": "Beginner"
+  }
+  </script>
   <style>
     .gs-layout {
       display: grid;
@@ -107,6 +142,8 @@
 </head>
 <body class="page-body">
 
+<a href="#main-content" class="visually-hidden" style="position:absolute;left:-9999px;">Skip to main content</a>
+
 <!-- ── Navigation ── -->
 <nav class="nav" role="navigation" aria-label="Main navigation">
   <div class="nav-inner">
@@ -135,6 +172,20 @@
     <div class="hero-badge">Tutorial · ~5 minutes</div>
     <h1>Getting Started</h1>
     <p>Install D.U.H., configure your provider, and run your first session. Takes about 5 minutes.</p>
+
+    <figure style="margin: 32px auto 0; max-width: 900px;">
+      <video src="assets/duh-tui-demo.mp4"
+             poster="assets/duh-tui-demo-poster.jpg"
+             muted autoplay loop playsinline controls
+             preload="metadata"
+             aria-label="Preview of the D.U.H. TUI you will see after install"
+             style="width: 100%; height: auto; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,0.35);">
+        <a href="assets/duh-tui-demo.gif">
+          <img src="assets/duh-tui-demo.gif" alt="Preview of the D.U.H. TUI you will see after install" style="max-width: 100%; border-radius: 10px;">
+        </a>
+      </video>
+      <figcaption style="text-align:center; color: var(--fg-3); font-size: 0.875rem; margin-top: 10px;">This is what you will see after <code>pip install duh-cli &amp;&amp; duh --tui</code>.</figcaption>
+    </figure>
   </div>
 </div>
 
@@ -157,7 +208,7 @@
   </aside>
 
   <!-- Content -->
-  <main class="gs-content">
+  <main id="main-content" class="gs-content">
 
     <!-- Installation -->
     <h2 id="install">Installation</h2>

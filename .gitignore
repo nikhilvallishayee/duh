@@ -17,3 +17,7 @@ uv.lock
 benchmarks/benchmark-2-ratelimit/worktrees/
 benchmarks/benchmark-3-docs/worktrees/
 benchmarks/double-agent-tdd/worktrees/
+
+# The baseline is its own nested git repo (needed for git worktree add).
+# Track its source files but not its internal .git metadata.
+benchmarks/benchmark-2-ratelimit/baseline/.git/

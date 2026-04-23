@@ -9,7 +9,7 @@ set -euo pipefail
 AGENT_ID="${1:?usage: run.sh <agent-id>}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BASELINE_REPO="$HERE/baseline"
-BASELINE_COMMIT="7152f3c679c18d62cacb517c06e0344f21ba1870"
+BASELINE_COMMIT="1b2bb9ad523de4880a75bce14f9c079b3fe182c3"
 WORKTREE="$HERE/worktrees/$AGENT_ID"
 OUT="$HERE/results/$AGENT_ID"
 TASK_FILE="$HERE/TASK.md"
@@ -26,6 +26,7 @@ case "$AGENT_ID" in
   *) echo "unknown agent id: $AGENT_ID" >&2; exit 2 ;;
 esac
 
+"$HERE/init_baseline.sh"
 if [ -d "$WORKTREE" ]; then
   git -C "$BASELINE_REPO" worktree remove --force "$WORKTREE" 2>/dev/null || rm -rf "$WORKTREE"
 fi

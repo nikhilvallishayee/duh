@@ -1,0 +1,15 @@
+{
+  "agent_id": "gemini-cli-3.1",
+  "cli": "gemini",
+  "model": "gemini-3.1-pro-preview",
+  "baseline_commit": "645d91ad10ad83b5778bcd14f2c53b8e3366497c",
+  "benchmark": "benchmark-3-docs",
+  "start_ts": "2026-04-23T19:39:44Z",
+  "end_ts": "2026-04-23T19:47:54Z",
+  "elapsed_s": 490,
+  "exit_code": 0,
+  "worktree": "/Users/nomind/Code/duh/benchmarks/benchmark-3-docs/worktrees/gemini-cli-3.1",
+  "log_bytes": 2265,
+  "diff_bytes": 99365,
+  "files_changed": 13
+}

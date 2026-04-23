@@ -1,0 +1,6 @@
+{
+  "target": "claude-code-opus",
+  "judge": "j-gpt54",
+  "error": "Run produced no docs (provider rate-limit or credit exhaustion during B3 run). See results/claude-code-opus/session.log.",
+  "one_line_summary": "Agent failed during run — no docs to judge."
+}

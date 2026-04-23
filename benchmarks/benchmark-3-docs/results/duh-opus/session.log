@@ -1,0 +1,5 @@
+[33mWARNING: Detached HEAD — changes won't be on any branch[0m
+[33mWARNING: Uncommitted changes in working tree[0m
+Permission prompts disabled (--dangerously-skip-permissions or automation permission_mode). All tool invocations will be auto-approved for this session.
+
+[31mError: Your API key has no credits. Go to console.anthropic.com → Plans & Billing to add credits.[0m

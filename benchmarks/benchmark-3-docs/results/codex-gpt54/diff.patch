@@ -1,0 +1,1465 @@
+diff --git a/docs-new/.gitkeep b/docs-new/.gitkeep
+new file mode 100644
+index 0000000..b78bf80
+--- /dev/null
++++ b/docs-new/.gitkeep
+@@ -0,0 +1 @@
++# docs-new — agent writes documentation here
+diff --git a/docs-new/API.md b/docs-new/API.md
+new file mode 100644
+index 0000000..284ca76
+--- /dev/null
++++ b/docs-new/API.md
+@@ -0,0 +1,545 @@
++# Kernel and Ports API Reference
++
++This reference covers the public surface of `duh/kernel/` and `duh/ports/`. Signatures are source-derived from this checkout.
++
++## `duh.kernel.attachments`
++
++### `Attachment`
++
++`class Attachment`  
++Purpose: A file attachment with content type detection. Fields: `name: str`, `content_type: str`, `data: bytes`, `metadata: dict[str, Any]`. Returns: `Attachment` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `Attachment(...)`. Methods: `def size(self) -> int`; `def is_image(self) -> bool`; `def text(self) -> str | None`; `def base64(self) -> str`.
++
++### `AttachmentManager`
++
++`class AttachmentManager`  
++Purpose: Reads files, detects content types, and converts to content blocks. Returns: `AttachmentManager` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `AttachmentManager(...)`. Methods: `def read_file(self, path: str) -> Attachment`; `def detect_content_type(self, filename: str, data: bytes) -> str`; `def to_image_block(self, attachment: Attachment) -> ImageBlock`; `def extract_text(self, attachment: Attachment) -> str`.
++
++## `duh.kernel.audit`
++
++### `install`
++
++`def install(registry: Any) -> None`  
++Purpose: Install the audit hook. Safe to call once per process. Params: registry. Returns: `None`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `install(...)`.
++
++## `duh.kernel.auto_memory`
++
++### `extract_memories`
++
++`async def extract_memories(messages: list[Message], call_model: CallModelFn, *, model: str = '') -> list[dict[str, str]]`  
++Purpose: Extract key facts from a conversation using the model. Params: messages, call_model, model. Returns: `list[dict[str, str]]`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `extract_memories(...)`.
++
++## `duh.kernel.backoff`
++
++### `is_retryable`
++
++`def is_retryable(exc: BaseException) -> bool`  
++Purpose: Return True if *exc* represents a transient, retryable error. Params: exc. Returns: `bool`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `is_retryable(...)`.
++
++### `with_backoff`
++
++`async def with_backoff(fn: Callable[[], AsyncGenerator[dict[str, Any], None]], *, max_retries: int = 3, base_delay: float = 1.0, max_delay: float = 30.0) -> AsyncGenerator[dict[str, Any], None]`  
++Purpose: Retry an async-generator–returning callable with exponential backoff. Params: fn, max_retries, base_delay, max_delay. Returns: `AsyncGenerator[dict[str, Any], None]`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `with_backoff(...)`.
++
++## `duh.kernel.cache_tracker`
++
++### `CacheTracker`
++
++`class CacheTracker`  
++Purpose: Track prompt cache hit rates across turns. Fields: `_history: Deque[dict]`, `_compaction_pending: bool`, `_total_cache_read: int`, `_total_cache_creation: int`, `_total_turns: int`. Returns: `CacheTracker` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `CacheTracker(...)`. Methods: `def record_usage(self, usage: dict) -> None`; `def notify_compaction(self) -> None`; `def cache_read_ratio(self) -> float`; `def is_break_detected(self) -> bool`; `def total_cache_read_tokens(self) -> int`; `def total_cache_creation_tokens(self) -> int`; `def summary(self) -> str`.
++
++## `duh.kernel.compact_analytics`
++
++### `CompactStats`
++
++`class CompactStats`  
++Purpose: Accumulates compaction statistics for a session. Fields: `total_compactions: int`, `total_tokens_freed: int`, `snip_count: int`, `summary_count: int`, `microcompact_count: int`, `dedup_count: int`, `_history: list[tuple[str, int]]`. Returns: `CompactStats` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `CompactStats(...)`. Methods: `def record(self, tier: str, tokens_freed: int) -> None`; `def summary(self) -> str`.
++
++## `duh.kernel.confirmation`
++
++### `ConfirmationMinter`
++
++`class ConfirmationMinter`  
++Purpose: Mints and validates single-use confirmation tokens. Returns: `ConfirmationMinter` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `ConfirmationMinter(...)`. Methods: `def mint(self, session_id: str, tool: str, input_obj: dict) -> str`; `def validate(self, token: str, session_id: str, tool: str, input_obj: dict) -> bool`.
++
++## `duh.kernel.context_gate`
++
++### `ContextGate`
++
++`class ContextGate`  
++Purpose: Blocks new queries when context usage exceeds the blocking threshold. Returns: `ContextGate` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `ContextGate(...)`. Methods: `def check(self, token_estimate: int) -> tuple[bool, str]`.
++
++## `duh.kernel.coordinator`
++
++No public classes or top-level functions.
++
++## `duh.kernel.deps`
++
++### `Deps`
++
++`class Deps`  
++Purpose: All external dependencies the kernel needs. Fields: `call_model: CallModelFn | None`, `run_tool: RunToolFn | None`, `approve: ApproveFn | None`, `compact: CompactFn | None`, `hook_registry: Any`, `uuid: UuidFn`, `confirm_gate: Callable[..., Any] | None`, `session_id: str`, `audit_logger: Any`. Returns: `Deps` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `Deps(...)`.
++
++## `duh.kernel.engine`
++
++### `EngineConfig`
++
++`class EngineConfig`  
++Purpose: Configuration for an Engine session. Fields: `model: str`, `fallback_model: str | None`, `max_fallback_retries: int`, `system_prompt: str | list[str]`, `tools: list[Any]`, `thinking: dict[str, Any] | None`, `tool_choice: str | dict[str, Any] | None`, `max_turns: int`, `max_cost: float | None`, `cwd: str`, `trifecta_acknowledged: bool`, `auto_memory: bool`. Returns: `EngineConfig` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `EngineConfig(...)`.
++
++### `Engine`
++
++`class Engine`  
++Purpose: Session lifecycle wrapper around the query loop. Returns: `Engine` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `Engine(...)`. Methods: `def compact_stats(self) -> CompactStats`; `def messages(self) -> list[Message]`; `def session_id(self) -> str`; `def turn_count(self) -> int`; `def total_input_tokens(self) -> int`; `def total_output_tokens(self) -> int`; `def model(self) -> str`; `def cache_tracker(self) -> CacheTracker`; `def max_cost(self) -> float | None`; `def budget_remaining(self, model: str | None = None) -> float | None`; `def estimated_cost(self, model: str | None = None) -> float`; `def cost_summary(self, model: str | None = None) -> str`; `async def run(self, prompt: str | list[Any], *, max_turns: int | None = None, model: str | None = None) -> AsyncGenerator[dict[str, Any], None]`.
++
++## `duh.kernel.file_size_guard`
++
++### `FileSizeDecision`
++
++`class FileSizeDecision`  
++Purpose: Verdict on whether a file is safe to read under a model's context budget. Fields: `allowed: bool`, `reason: str`, `estimated_tokens: int`, `budget_tokens: int`. Returns: `FileSizeDecision` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `FileSizeDecision(...)`.
++
++### `check_file_size`
++
++`def check_file_size(file_path: str, model: str, *, size_bytes: int | None = None, fraction: float = MAX_FILE_FRACTION) -> FileSizeDecision`  
++Purpose: Return a decision on whether *file_path* can be safely read under. Params: file_path, model, size_bytes, fraction. Returns: `FileSizeDecision`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `check_file_size(...)`.
++
++## `duh.kernel.file_tracker`
++
++### `FileOp`
++
++`class FileOp`  
++Purpose: A single recorded file operation. Fields: `path: str`, `operation: str`, `timestamp: datetime`. Returns: `FileOp` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `FileOp(...)`.
++
++### `FileTracker`
++
++`class FileTracker`  
++Purpose: Records file operations and produces summaries. Returns: `FileTracker` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `FileTracker(...)`. Methods: `def track(self, path: str, operation: str) -> None`; `def ops(self) -> list[FileOp]`; `def clear(self) -> None`; `def summary(self) -> str`; `async def diff_summary(self, *, cwd: str = '.') -> str`; `def diff_summary_sync(self, *, cwd: str = '.') -> str`.
++
++## `duh.kernel.git_context`
++
++### `get_git_warnings`
++
++`def get_git_warnings(cwd: str) -> list[str]`  
++Purpose: Return warnings about risky git states. Params: cwd. Returns: `list[str]`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `get_git_warnings(...)`.
++
++### `get_git_context`
++
++`def get_git_context(cwd: str) -> Optional[str]`  
++Purpose: Return a formatted git context string, or None if not in a git repo. Params: cwd. Returns: `Optional[str]`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `get_git_context(...)`.
++
++## `duh.kernel.health_check`
++
++### `HealthChecker`
++
++`class HealthChecker`  
++Purpose: Periodically (or on-demand) check provider and MCP server health. Returns: `HealthChecker` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `HealthChecker(...)`. Methods: `def check_provider(self, provider_name: str) -> ProviderHealth`; `def check_all_providers(self) -> dict[str, ProviderHealth]`; `def check_mcp(self, server_name: str, *, connections: dict[str, Any] | None = None) -> MCPHealth`; `def check_all_mcp(self, *, connections: dict[str, Any] | None = None, configs: dict[str, Any] | None = None) -> dict[str, MCPHealth]`.
++
++## `duh.kernel.job_queue`
++
++### `JobState`
++
++`class JobState`  
++Purpose: No docstring. Returns: `JobState` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `JobState(...)`.
++
++### `JobQueue`
++
++`class JobQueue`  
++Purpose: Submit, track, and retrieve results of background async jobs. Returns: `JobQueue` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `JobQueue(...)`. Methods: `def submit(self, name: str, coro: Coroutine[Any, Any, Any]) -> str`; `def status(self, job_id: str) -> dict[str, Any]`; `def results(self, job_id: str) -> str`; `def list_jobs(self) -> list[dict[str, Any]]`.
++
++## `duh.kernel.loop`
++
++### `query`
++
++`async def query(*, messages: list[Message], system_prompt: str | list[str] = '', deps: Deps, tools: list[Any] | None = None, max_turns: int = 1000, model: str = '', thinking: dict[str, Any] | None = None, tool_choice: str | dict[str, Any] | None = None) -> AsyncGenerator[dict[str, Any], None]`  
++Purpose: The core agentic loop. Params: messages, system_prompt, deps, tools, max_turns, model, thinking, tool_choice. Returns: `AsyncGenerator[dict[str, Any], None]`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `query(...)`.
++
++## `duh.kernel.memory`
++
++### `make_frontmatter`
++
++`def make_frontmatter(*, name: str, description: str, type: str) -> str`  
++Purpose: Generate frontmatter for a new memory topic file. Params: name, description, type. Returns: `str`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `make_frontmatter(...)`.
++
++### `build_memory_prompt`
++
++`def build_memory_prompt(store: MemoryStore) -> str`  
++Purpose: Read the MEMORY.md index and persistent facts, build a system prompt section. Params: store. Returns: `str`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `build_memory_prompt(...)`.
++
++## `duh.kernel.memory_decay`
++
++### `score_facts`
++
++`def score_facts(facts: list[dict[str, Any]], *, now: datetime | None = None) -> list[tuple[dict[str, Any], float]]`  
++Purpose: Score facts by relevance. Lower score = more likely to decay. Params: facts, now. Returns: `list[tuple[dict[str, Any], float]]`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `score_facts(...)`.
++
++### `gc_memories`
++
++`def gc_memories(store: Any, *, max_facts: int = 200, min_score: float = 0.1, now: datetime | None = None) -> int`  
++Purpose: Remove low-scoring facts from *store*. Returns count removed. Params: store, max_facts, min_score, now. Returns: `int`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `gc_memories(...)`.
++
++## `duh.kernel.messages`
++
++### `TextBlock`
++
++`class TextBlock`  
++Purpose: A block of text content. Fields: `text: str`, `type: str`. Returns: `TextBlock` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `TextBlock(...)`.
++
++### `ToolUseBlock`
++
++`class ToolUseBlock`  
++Purpose: A request to use a tool. Fields: `id: str`, `name: str`, `input: dict[str, Any]`, `type: str`. Returns: `ToolUseBlock` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `ToolUseBlock(...)`.
++
++### `ToolResultBlock`
++
++`class ToolResultBlock`  
++Purpose: The result of a tool execution. Fields: `tool_use_id: str`, `content: str | list[Any]`, `is_error: bool`, `type: str`. Returns: `ToolResultBlock` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `ToolResultBlock(...)`.
++
++### `ThinkingBlock`
++
++`class ThinkingBlock`  
++Purpose: A thinking/reasoning block (extended thinking). Fields: `thinking: str`, `type: str`. Returns: `ThinkingBlock` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `ThinkingBlock(...)`.
++
++### `ImageBlock`
++
++`class ImageBlock`  
++Purpose: An image content block (base64-encoded). Fields: `media_type: str`, `data: str`, `type: str`. Returns: `ImageBlock` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `ImageBlock(...)`.
++
++### `Message`
++
++`class Message`  
++Purpose: Base message in a conversation turn. Fields: `role: str`, `content: str | list[ContentBlock]`, `id: str`, `timestamp: str`, `metadata: dict[str, Any]`. Returns: `Message` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `Message(...)`. Methods: `def text(self) -> str`; `def tool_use_blocks(self) -> list[ToolUseBlock | dict[str, Any]]`; `def has_tool_use(self) -> bool`.
++
++### `UserMessage`
++
++`def UserMessage(content: str | list[ContentBlock], **kwargs: Any) -> Message`  
++Purpose: Create a user message. Params: content, kwargs. Returns: `Message`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `UserMessage(...)`.
++
++### `AssistantMessage`
++
++`def AssistantMessage(content: str | list[ContentBlock], **kwargs: Any) -> Message`  
++Purpose: Create an assistant message. Params: content, kwargs. Returns: `Message`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `AssistantMessage(...)`.
++
++### `SystemMessage`
++
++`def SystemMessage(content: str, **kwargs: Any) -> Message`  
++Purpose: Create a system message. Params: content, kwargs. Returns: `Message`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `SystemMessage(...)`.
++
++### `merge_consecutive`
++
++`def merge_consecutive(messages: list[Message]) -> list[Message]`  
++Purpose: Merge consecutive messages with the same role into one. Params: messages. Returns: `list[Message]`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `merge_consecutive(...)`.
++
++### `validate_alternation`
++
++`def validate_alternation(messages: list[Message]) -> list[Message]`  
++Purpose: Ensure messages strictly alternate user/assistant. Params: messages. Returns: `list[Message]`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `validate_alternation(...)`.
++
++## `duh.kernel.model_caps`
++
++### `ModelCapabilities`
++
++`class ModelCapabilities`  
++Purpose: Immutable capability descriptor for a model. Fields: `supports_tools: bool`, `supports_thinking: bool`, `supports_vision: bool`, `supports_cache_control: bool`, `max_output_tokens: int`, `context_window: int`. Returns: `ModelCapabilities` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `ModelCapabilities(...)`.
++
++### `get_capabilities`
++
++`def get_capabilities(model: str) -> ModelCapabilities`  
++Purpose: Return capabilities for a model by name prefix matching. Params: model. Returns: `ModelCapabilities`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `get_capabilities(...)`.
++
++### `model_context_block`
++
++`def model_context_block(model: str) -> str`  
++Purpose: Build a ``<model-context>`` block for embedding in the system prompt. Params: model. Returns: `str`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `model_context_block(...)`.
++
++### `rebuild_system_prompt`
++
++`def rebuild_system_prompt(system_prompt: str | list[str], old_model: str, new_model: str) -> str`  
++Purpose: Return *system_prompt* with the ``<model-context>`` block updated. Params: system_prompt, old_model, new_model. Returns: `str`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `rebuild_system_prompt(...)`.
++
++## `duh.kernel.permission_cache`
++
++### `SessionPermissionCache`
++
++`class SessionPermissionCache`  
++Purpose: Remembers tool approval decisions for the current session. Returns: `SessionPermissionCache` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `SessionPermissionCache(...)`. Methods: `def check(self, tool_name: str) -> str | None`; `def record(self, tool_name: str, decision: str) -> None`; `def clear(self) -> None`.
++
++## `duh.kernel.plan_mode`
++
++### `PlanState`
++
++`class PlanState`  
++Purpose: Current state of a plan mode session. Returns: `PlanState` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `PlanState(...)`.
++
++### `PlanStep`
++
++`class PlanStep`  
++Purpose: A single step in a plan. Fields: `number: int`, `description: str`, `done: bool`. Returns: `PlanStep` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `PlanStep(...)`.
++
++### `PlanMode`
++
++`class PlanMode`  
++Purpose: Two-phase plan-then-execute wrapper around an Engine. Returns: `PlanMode` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `PlanMode(...)`. Methods: `def state(self) -> PlanState`; `def steps(self) -> list[PlanStep]`; `def description(self) -> str`; `def format_plan(self) -> str`; `def clear(self) -> None`; `async def plan(self, description: str) -> AsyncGenerator[dict[str, Any], None]`; `async def execute(self) -> AsyncGenerator[dict[str, Any], None]`.
++
++## `duh.kernel.post_compact`
++
++### `rebuild_post_compact_context`
++
++`async def rebuild_post_compact_context(messages: list[Any], file_tracker: Any, max_files: int = DEFAULT_MAX_FILES, max_tokens_per_file: int = DEFAULT_MAX_TOKENS_PER_FILE) -> list[Any]`  
++Purpose: Append file-content messages for recently-read files after compaction. Params: messages, file_tracker, max_files, max_tokens_per_file. Returns: `list[Any]`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `rebuild_post_compact_context(...)`.
++
++### `restore_plan_context`
++
++`def restore_plan_context(engine: Any) -> str | None`  
++Purpose: If plan mode is active, return the plan content as a context string. Params: engine. Returns: `str | None`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `restore_plan_context(...)`.
++
++### `restore_skill_context`
++
++`def restore_skill_context(engine: Any) -> str | None`  
++Purpose: If skills were loaded, return their names and descriptions. Params: engine. Returns: `str | None`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `restore_skill_context(...)`.
++
++## `duh.kernel.query_guard`
++
++### `QueryState`
++
++`class QueryState`  
++Purpose: No docstring. Returns: `QueryState` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `QueryState(...)`.
++
++### `QueryGuard`
++
++`class QueryGuard`  
++Purpose: Thread-safe state machine for concurrent query prevention. Returns: `QueryGuard` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `QueryGuard(...)`. Methods: `def state(self) -> QueryState`; `def generation(self) -> int`; `def reserve(self) -> int`; `def try_start(self, gen: int) -> int | None`; `def end(self, gen: int) -> bool`; `def force_end(self) -> None`; `async def async_reserve(self) -> int`; `async def async_try_start(self, gen: int) -> int | None`; `async def async_end(self, gen: int) -> bool`; `async def async_force_end(self) -> None`; `def set_current_task(self, task: 'asyncio.Task[object]') -> None`.
++
++## `duh.kernel.redact`
++
++### `redact_secrets`
++
++`def redact_secrets(text: str) -> str`  
++Purpose: Redact secrets from text, returning the sanitized version. Params: text. Returns: `str`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `redact_secrets(...)`.
++
++## `duh.kernel.schema_validator`
++
++### `SchemaValidationError`
++
++`class SchemaValidationError`  
++Purpose: Raised when a tool schema is invalid. Returns: `SchemaValidationError` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `SchemaValidationError(...)`.
++
++### `validate_tool_schema`
++
++`def validate_tool_schema(name: str, schema: dict[str, Any]) -> list[str]`  
++Purpose: Validate a tool's input_schema.  Returns list of warnings (empty = valid). Params: name, schema. Returns: `list[str]`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `validate_tool_schema(...)`.
++
++## `duh.kernel.signals`
++
++### `ShutdownHandler`
++
++`class ShutdownHandler`  
++Purpose: Coordinates graceful shutdown with timeout-bounded cleanup. Returns: `ShutdownHandler` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `ShutdownHandler(...)`. Methods: `def shutting_down(self) -> bool`; `def trigger(self) -> None`; `def on_shutdown(self, callback: Callable[[], Awaitable[None]]) -> None`; `async def run_cleanup(self) -> None`; `def install(self, loop: asyncio.AbstractEventLoop | None = None) -> None`.
++
++## `duh.kernel.skill`
++
++### `SkillDef`
++
++`class SkillDef`  
++Purpose: A loaded skill definition. Fields: `name: str`, `description: str`, `when_to_use: str`, `allowed_tools: list[str]`, `model: str`, `content: str`, `argument_hint: str`, `source_path: str`, `user_invocable: bool`, `context: str`, `agent: str`, `effort: str`, `paths: list[str]`. Returns: `SkillDef` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `SkillDef(...)`. Methods: `def render(self, arguments: str = '') -> str`.
++
++### `load_skills_dir`
++
++`def load_skills_dir(path: str | Path) -> list[SkillDef]`  
++Purpose: Load all skill files from a directory. Params: path. Returns: `list[SkillDef]`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `load_skills_dir(...)`.
++
++### `load_all_skills`
++
++`def load_all_skills(cwd: str = '.') -> list[SkillDef]`  
++Purpose: Load skills from all standard locations. Params: cwd. Returns: `list[SkillDef]`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `load_all_skills(...)`.
++
++## `duh.kernel.snapshot`
++
++### `ReadOnlyExecutor`
++
++`class ReadOnlyExecutor`  
++Purpose: Wraps a tool executor to block all mutating operations. Returns: `ReadOnlyExecutor` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `ReadOnlyExecutor(...)`. Methods: `async def run(self, tool_name: str, input: dict[str, Any], **kwargs: Any) -> Any`.
++
++### `SnapshotSession`
++
++`class SnapshotSession`  
++Purpose: A forked conversation state for read-only exploration. Returns: `SnapshotSession` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `SnapshotSession(...)`. Methods: `def messages(self) -> list[Message]`; `def is_discarded(self) -> bool`; `def add_message(self, message: Message) -> None`; `def get_new_messages(self) -> list[Message]`; `def discard(self) -> None`.
++
++### `GhostSnapshot`
++
++`class GhostSnapshot`  
++Purpose: Metadata for an active ghost session. Fields: `id: str`, `parent_messages: list[Message]`, `fs_overlay: dict[str, str]`, `created_at: float`, `label: str`, `_turn_count: int`. Returns: `GhostSnapshot` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `GhostSnapshot(...)`. Methods: `def increment_turn(self) -> None`; `def turn_count(self) -> int`; `def get_new_messages(self, original_count: int) -> list[Message]`; `def discard(self) -> None`.
++
++### `GhostExecutor`
++
++`class GhostExecutor`  
++Purpose: Tool executor that intercepts writes into an in-memory overlay. Returns: `GhostExecutor` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `GhostExecutor(...)`. Methods: `async def execute_write(self, path: str, content: str) -> dict[str, Any]`; `async def execute_read(self, path: str) -> dict[str, Any]`; `async def run(self, tool_name: str, input: dict[str, Any], **kwargs: Any) -> Any`; `def merge_to_disk(self) -> list[str]`.
++
++## `duh.kernel.tasks`
++
++### `Task`
++
++`class Task`  
++Purpose: A single tracked task. Fields: `id: str`, `description: str`, `status: Status`, `created_at: str`. Returns: `Task` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `Task(...)`.
++
++### `TaskManager`
++
++`class TaskManager`  
++Purpose: In-memory task tracker. Returns: `TaskManager` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `TaskManager(...)`. Methods: `def create(self, description: str) -> Task`; `def update(self, task_id: str, status: str) -> Task`; `def get(self, task_id: str) -> Task | None`; `def list_all(self) -> list[Task]`; `def summary(self) -> str`.
++
++## `duh.kernel.templates`
++
++### `TemplateDef`
++
++`class TemplateDef`  
++Purpose: A loaded prompt template definition. Fields: `name: str`, `description: str`, `content: str`, `source_path: str`. Returns: `TemplateDef` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `TemplateDef(...)`. Methods: `def render(self, prompt: str = '') -> str`.
++
++### `load_templates_dir`
++
++`def load_templates_dir(path: str | Path) -> list[TemplateDef]`  
++Purpose: Load all template files from a directory. Params: path. Returns: `list[TemplateDef]`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `load_templates_dir(...)`.
++
++### `load_all_templates`
++
++`def load_all_templates(cwd: str = '.') -> list[TemplateDef]`  
++Purpose: Load templates from all standard locations. Params: cwd. Returns: `list[TemplateDef]`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `load_all_templates(...)`.
++
++## `duh.kernel.tokens`
++
++### `count_tokens`
++
++`def count_tokens(text: str) -> int`  
++Purpose: Estimate the number of tokens in a text string using the generic ratio. Params: text. Returns: `int`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `count_tokens(...)`.
++
++### `count_tokens_for_model`
++
++`def count_tokens_for_model(text: str, model: str) -> int`  
++Purpose: Estimate token count using a model-family-calibrated ratio. Params: text, model. Returns: `int`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `count_tokens_for_model(...)`.
++
++### `estimate_cost`
++
++`def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float`  
++Purpose: Estimate the cost in USD for a given number of tokens. Params: model, input_tokens, output_tokens. Returns: `float`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `estimate_cost(...)`.
++
++### `get_context_limit`
++
++`def get_context_limit(model: str) -> int`  
++Purpose: Return the context window size (in tokens) for a model. Params: model. Returns: `int`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `get_context_limit(...)`.
++
++### `format_cost`
++
++`def format_cost(cost: float) -> str`  
++Purpose: Format a cost value for display. Params: cost. Returns: `str`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `format_cost(...)`.
++
++## `duh.kernel.tool`
++
++### `get_tool_timeout`
++
++`def get_tool_timeout(tool_name: str) -> int`  
++Purpose: Return the configured timeout for a tool, or DEFAULT_TIMEOUT. Params: tool_name. Returns: `int`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `get_tool_timeout(...)`.
++
++### `ToolResult`
++
++`class ToolResult`  
++Purpose: What a tool returns after execution. Fields: `output: str | list[Any]`, `is_error: bool`, `metadata: dict[str, Any]`. Returns: `ToolResult` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `ToolResult(...)`.
++
++### `ToolContext`
++
++`class ToolContext`  
++Purpose: Runtime context available to tools during execution. Fields: `cwd: str`, `tool_use_id: str`, `abort_signal: Any`, `permissions: Any`, `session_id: str`, `metadata: dict[str, Any]`, `sandbox_policy: Any`, `tool_name: str`, `input_obj: dict[str, Any]`, `confirm_token: str | None`, `model: str | None`. Returns: `ToolContext` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `ToolContext(...)`.
++
++### `Tool`
++
++`class Tool`  
++Purpose: The contract every tool implements. Returns: `Tool` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `Tool(...)`. Methods: `async def call(self, input: dict[str, Any], context: ToolContext) -> ToolResult`; `def is_read_only(self) -> bool`; `def is_destructive(self) -> bool`; `async def check_permissions(self, input: dict[str, Any], context: ToolContext) -> dict[str, Any]`.
++
++## `duh.kernel.tool_categories`
++
++No public classes or top-level functions.
++
++## `duh.kernel.undo`
++
++### `UndoStack`
++
++`class UndoStack`  
++Purpose: Fixed-size stack of file snapshots that supports undo. Returns: `UndoStack` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `UndoStack(...)`. Methods: `def push(self, file_path: str, original_content: str | None) -> None`; `def undo(self) -> tuple[str, str]`; `def depth(self) -> int`; `def maxlen(self) -> int`; `def in_memory_bytes(self) -> int`; `def peek(self) -> UndoEntry | None`; `def clear(self) -> None`.
++
++## `duh.kernel.untrusted`
++
++### `TaintSource`
++
++`class TaintSource`  
++Purpose: No docstring. Returns: `TaintSource` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `TaintSource(...)`.
++
++### `TaintLossError`
++
++`class TaintLossError`  
++Purpose: Raised when DUH_TAINT_STRICT=1 and a str op silently drops taint. Returns: `TaintLossError` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `TaintLossError(...)`.
++
++### `merge_source`
++
++`def merge_source(a: Any, b: Any) -> TaintSource`  
++Purpose: Combine two source tags; tainted wins over untainted. Params: a, b. Returns: `TaintSource`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `merge_source(...)`.
++
++### `assert_no_tag_loss`
++
++`def assert_no_tag_loss(value: object, op: str) -> None`  
++Purpose: Call from test infrastructure: if value is a plain str but was expected. Params: value, op. Returns: `None`. Exceptions: none special beyond ordinary Python, adapter, or I/O failures unless documented otherwise. Example: `assert_no_tag_loss(...)`.
++
++### `UntrustedStr`
++
++`class UntrustedStr`  
++Purpose: str subclass carrying a TaintSource tag. Returns: `UntrustedStr` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `UntrustedStr(...)`. Methods: `def source(self) -> TaintSource`; `def is_tainted(self) -> bool`; `def format(self, *args: object, **kwargs: object) -> 'UntrustedStr'`; `def format_map(self, mapping: object) -> 'UntrustedStr'`; `def join(self, iterable) -> 'UntrustedStr'`; `def replace(self, old, new, count = -1) -> 'UntrustedStr'`; `def strip(self, chars = None) -> 'UntrustedStr'`; `def lstrip(self, chars = None) -> 'UntrustedStr'`; `def rstrip(self, chars = None) -> 'UntrustedStr'`; `def split(self, sep = None, maxsplit = -1) -> list['UntrustedStr']`; `def rsplit(self, sep = None, maxsplit = -1) -> list['UntrustedStr']`; `def splitlines(self, keepends = False) -> list['UntrustedStr']`; `def lower(self) -> 'UntrustedStr'`; `def upper(self) -> 'UntrustedStr'`; `def title(self) -> 'UntrustedStr'`; `def casefold(self) -> 'UntrustedStr'`; `def capitalize(self) -> 'UntrustedStr'`; `def swapcase(self) -> 'UntrustedStr'`; `def expandtabs(self, tabsize = 8) -> 'UntrustedStr'`; `def center(self, width, fillchar = ' ') -> 'UntrustedStr'`; `def ljust(self, width, fillchar = ' ') -> 'UntrustedStr'`; `def rjust(self, width, fillchar = ' ') -> 'UntrustedStr'`; `def zfill(self, width) -> 'UntrustedStr'`; `def translate(self, table) -> 'UntrustedStr'`; `def removeprefix(self, prefix) -> 'UntrustedStr'`; `def removesuffix(self, suffix) -> 'UntrustedStr'`.
++
++## `duh.ports.approver`
++
++### `ApprovalGate`
++
++`class ApprovalGate`  
++Purpose: Abstract interface for tool approval. Returns: `ApprovalGate` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `ApprovalGate(...)`. Methods: `async def check(self, tool_name: str, input: dict[str, Any]) -> dict[str, Any]`.
++
++## `duh.ports.context`
++
++### `ContextManager`
++
++`class ContextManager`  
++Purpose: Abstract interface for context window management. Returns: `ContextManager` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `ContextManager(...)`. Methods: `async def compact(self, messages: list[Any], token_limit: int) -> list[Any]`; `def estimate_tokens(self, messages: list[Any]) -> int`.
++
++## `duh.ports.executor`
++
++### `ToolExecutor`
++
++`class ToolExecutor`  
++Purpose: Abstract interface for tool execution. Returns: `ToolExecutor` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `ToolExecutor(...)`. Methods: `async def run(self, tool_name: str, input: dict[str, Any], *, tool_use_id: str = '', context: Any = None) -> str | dict[str, Any]`.
++
++## `duh.ports.memory`
++
++### `MemoryHeader`
++
++`class MemoryHeader`  
++Purpose: Metadata parsed from a memory topic file's frontmatter. Fields: `filename: str`, `name: str`, `description: str`, `type: str`. Returns: `MemoryHeader` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `MemoryHeader(...)`.
++
++### `MemoryStore`
++
++`class MemoryStore`  
++Purpose: Abstract interface for per-project memory persistence. Returns: `MemoryStore` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `MemoryStore(...)`. Methods: `def get_memory_dir(self) -> Path`; `def read_index(self) -> str`; `def write_index(self, content: str) -> None`; `def read_file(self, name: str) -> str`; `def write_file(self, name: str, content: str) -> None`; `def list_files(self) -> list[MemoryHeader]`; `def delete_file(self, name: str) -> None`.
++
++## `duh.ports.provider`
++
++### `ModelProvider`
++
++`class ModelProvider`  
++Purpose: Abstract interface for LLM providers. Returns: `ModelProvider` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `ModelProvider(...)`. Methods: `async def stream(self, *, messages: list[Any], system_prompt: str | list[str] = '', model: str = '', tools: list[Any] | None = None, thinking: dict[str, Any] | None = None, max_tokens: int | None = None, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]`.
++
++## `duh.ports.renderer`
++
++### `Renderer`
++
++`class Renderer`  
++Purpose: Consumes engine events and produces terminal output. Returns: `Renderer` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `Renderer(...)`. Methods: `def render_text_delta(self, text: str) -> None`; `def render_tool_use(self, name: str, input: dict[str, Any]) -> None`; `def render_tool_result(self, output: str, is_error: bool) -> None`; `def render_thinking(self, text: str) -> None`; `def render_error(self, error: str) -> None`; `def render_permission_request(self, tool_name: str, input: dict[str, Any]) -> None`; `def finish(self) -> None`; `def handle(self, event: dict[str, Any]) -> None`.
++
++## `duh.ports.store`
++
++### `SessionStore`
++
++`class SessionStore`  
++Purpose: Abstract interface for session persistence. Returns: `SessionStore` instances. Exceptions: none special on construction; see listed methods for behavior. Example: `SessionStore(...)`. Methods: `async def save(self, session_id: str, messages: list[Any]) -> None`; `async def load(self, session_id: str) -> list[Any] | None`; `async def list_sessions(self) -> list[dict[str, Any]]`; `async def delete(self, session_id: str) -> bool`.
+diff --git a/docs-new/ARCHITECTURE.md b/docs-new/ARCHITECTURE.md
+new file mode 100644
+index 0000000..9ffda26
+--- /dev/null
++++ b/docs-new/ARCHITECTURE.md
+@@ -0,0 +1,425 @@
++# D.U.H. Architecture
++
++D.U.H. is a ports-and-adapters coding agent built around a small async kernel. The codebase separates four concerns:
++
++- CLI and UI entry points choose a run mode and collect operator intent.
++- The kernel owns conversation state, event flow, compaction, budgeting, and safety checks.
++- Ports define the narrow interfaces the kernel depends on.
++- Adapters implement providers, tools, persistence, approvals, renderers, and sandboxes.
++
++That split is visible in the runtime path: `duh/cli/main.py` selects print mode, REPL, TUI, SDK mode, review mode, batch mode, or bridge mode; `duh/cli/session_builder.py` assembles the session; `duh/kernel/engine.py` and `duh/kernel/loop.py` run turns; `duh/ports/` defines the contracts; and `duh/adapters/`, `duh/tools/`, `duh/providers/`, and `duh/security/` provide concrete behavior.
++
++## Top-Level Layout
++
++At a high level, the repository is organized like this:
++
++- `duh/cli/`: argument parsing, REPL, print-mode runner, session assembly, slash command dispatch, SDK runner.
++- `duh/kernel/`: message model, engine, query loop, token accounting, plan mode, snapshot mode, memory helpers, safety primitives, utility state machines.
++- `duh/ports/`: abstract interfaces for providers, tools, approvals, context compaction, renderers, memory, and session stores.
++- `duh/adapters/`: concrete provider adapters, approvers, stores, compaction adapters, native tool executor, structured logging, sandbox backends, MCP integration.
++- `duh/tools/`: concrete tools such as `Read`, `Write`, `Edit`, `Bash`, `WebFetch`, `WebSearch`, `Task`, `Memory*`, `HTTP`, `Docker`, `Database`, `GitHub`, and more.
++- `duh/providers/`: provider/model registry logic that resolves model strings and picks the adapter backend.
++- `duh/security/`: higher-level security policy, trifecta checks, findings, exceptions, audit support, and scanners.
++- `duh/ui/`: the Textual TUI.
++- `duh/bridge/`: remote bridge server support.
++
++The main assembly pattern is intentionally centralized. `SessionBuilder` wires path policy, skills, tools, hooks, MCP, provider backend, compactor, store, approver, and engine in one place. That reduces duplication between print mode and REPL, but it also means `duh/cli/session_builder.py` is the highest-leverage file when you need to understand how a session comes together.
++
++## Component Diagram
++
++```mermaid
++flowchart TD
++    A[duh.cli.main] --> B[duh.cli.parser]
++    A --> C[Runner / REPL / TUI / SDK]
++    C --> D[duh.cli.session_builder.SessionBuilder]
++    D --> E[duh.providers.registry]
++    D --> F[duh.tools.registry]
++    D --> G[duh.adapters.native_executor.NativeExecutor]
++    D --> H[Approver Adapter]
++    D --> I[duh.adapters.file_store.FileStore]
++    D --> J[duh.kernel.engine.Engine]
++
++    J --> K[duh.kernel.loop.query]
++    K --> L[Deps.call_model]
++    L --> M[Provider Adapter]
++    K --> N[Deps.approve]
++    N --> H
++    K --> O[Deps.run_tool]
++    O --> G
++    G --> P[Tool Objects]
++    K --> Q[tool_result_message]
++    Q --> J
++
++    J --> R[Session Store]
++    J --> S[Hooks / Audit / Auto-memory / Compaction]
++
++    C --> T[Renderer]
++    J --> T
++```
++
++The important design choice is that the kernel never imports a provider SDK or a concrete tool module directly. It talks to callables and protocols held in `Deps`, `EngineConfig`, and the `tools` list.
++
++## Core Runtime Objects
++
++### `Deps`
++
++`duh/kernel/deps.py` defines the dependency-injection surface the kernel consumes:
++
++- `call_model`: async generator that yields streaming provider events.
++- `run_tool`: async callable that executes a tool.
++- `approve`: async callable that authorizes tool calls.
++- `compact`: async callable that trims conversation state.
++- optional extras such as `hook_registry`, `confirm_gate`, `session_id`, and `audit_logger`.
++
++This is the central seam in the system. If you understand `Deps`, you understand how the kernel stays adapter-agnostic.
++
++### `EngineConfig`
++
++`duh/kernel/engine.py` stores per-session policy and behavior:
++
++- model and fallback model
++- system prompt
++- tool list
++- max turns and max cost
++- thinking/tool-choice settings
++- trifecta acknowledgement and auto-memory toggle
++
++`EngineConfig` is intentionally plain. The kernel reads it, but most construction choices are made earlier by `SessionBuilder`.
++
++### `Message`
++
++`duh/kernel/messages.py` defines the kernel’s lingua franca:
++
++- `Message`
++- `TextBlock`
++- `ToolUseBlock`
++- `ToolResultBlock`
++- `ThinkingBlock`
++- `ImageBlock`
++
++Provider adapters translate external SDK payloads into this internal message/block representation. Tool results also get turned back into message content blocks before the next model turn.
++
++## Stateful Subsystems
++
++The kernel keeps most state in a few focused helpers instead of a single monolithic session object.
++
++### Session History and Persistence
++
++`Engine` owns the in-memory message list, turn counters, token totals, cache tracking, and the session identifier. Persistence is delegated to the `SessionStore` port and, in the default runtime, implemented by `duh/adapters/file_store.py`. The file store writes JSONL session files per project, appends only new messages, preserves taint metadata, and uses temp-file replacement for atomicity.
++
++`SessionBuilder._maybe_resume_session()` is the bridge between persistence and runtime state. It can:
++
++- resume a specific session by ID
++- continue the latest session automatically
++- compact on resume when `--summarize` is set
++- restore coordinator mode by rewriting the system prompt prefix
++
++That means session restore is not just “load text from disk”; it also repairs higher-level session mode.
++
++### Compaction and Context Recovery
++
++Compaction is spread across several cooperating modules:
++
++- `duh/kernel/engine.py` decides when to compact
++- `duh/kernel/context_gate.py` blocks turns after compaction if the context is still too large
++- `duh/kernel/post_compact.py` can rebuild file, plan, and skill context after a shrink
++- `duh/kernel/compact_analytics.py` and `duh/kernel/cache_tracker.py` measure what happened
++
++The design goal is to keep the main loop simple while still giving the runtime a way to recover important context after aggressive trimming. This is why file tracker state, plan state, and loaded skills are treated as recoverable side channels rather than just raw message text.
++
++### Alternative Execution Modes
++
++Two kernel-adjacent modes are worth calling out because they reuse the same primitives without changing the kernel contract:
++
++- `duh/kernel/plan_mode.py` wraps an `Engine` to split work into a planning phase with `tool_choice="none"` and an execution phase with full tools.
++- `duh/kernel/snapshot.py` provides read-only and ghost-execution helpers so a caller can fork conversation state and, in ghost mode, intercept writes into an in-memory overlay before optionally merging them back to disk.
++
++These are not separate engines. They are specialized orchestration layers built on top of `Engine`, `query()`, `Message`, and the tool executor abstractions.
++
++## Data Flow: One User Request End to End
++
++This is the flow for a single print-mode request such as `duh -p "fix the bug"`:
++
++1. `duh/cli/main.py` calls `build_parser()` from `duh/cli/parser.py`, parses CLI flags, and routes to `run_print_mode()` in `duh/cli/runner.py`.
++2. `run_print_mode()` builds `SessionBuilderOptions` and creates `SessionBuilder(args, options, ...)`.
++3. `SessionBuilder.build()` resolves the provider through `SessionBuilder._build_provider()`, which delegates to `duh/providers/registry.py`:
++   - `resolve_provider_name()` chooses a provider from flags, model string, saved auth, env vars, or Ollama detection.
++   - `build_model_backend()` instantiates the concrete backend and returns a `ProviderBackend` with `call_model`.
++4. `SessionBuilder` constructs the tool set:
++   - `_build_path_policy()` builds `duh/security/path_policy.PathPolicy` from the git root.
++   - `_load_skills()` loads skills via `duh/kernel/skill.py`.
++   - `_discover_deferred_tools()` loads plugin-advertised tools for `ToolSearch`.
++   - `_build_tools()` calls `duh/tools/registry.get_all_tools(...)`.
++   - `_connect_mcp()` optionally appends `MCPToolWrapper` instances after connecting MCP servers.
++5. `SessionBuilder` constructs the system prompt:
++   - base constitution prompt
++   - optional coordinator prompt from `duh/kernel/coordinator.py`
++   - optional brief instruction
++   - repo/user instructions from config
++   - memory prompt from `duh/kernel/memory.build_memory_prompt()`
++   - environment block
++   - git context from `duh/kernel/git_context.py`
++   - skills/templates/deferred-tools hints
++6. `SessionBuilder` wires adapters:
++   - `NativeExecutor(tools=tools, cwd=...)`
++   - approver adapter (`AutoApprover`, `InteractiveApprover`, or `TieredApprover`)
++   - `SimpleCompactor`
++   - `FileStore`
++   - `Deps(call_model=..., run_tool=executor.run, approve=approver.check, compact=compactor.compact, ...)`
++7. `SessionBuilder` creates `Engine(config=EngineConfig(...), deps=deps, session_store=store, ...)`.
++8. `run_print_mode()` iterates `async for event in engine.run(args.prompt)`.
++9. Inside `Engine.run()`:
++   - `_begin_turn()` appends the user message and estimates token usage.
++   - `_emit_session_lifecycle()` fires setup/task hooks.
++   - `_auto_compact()` compacts if the context is too large.
++   - `ContextGate.check()` blocks the turn if post-compaction context is still too close to the model limit.
++   - `_run_with_ptl_retry()` drives the actual query loop.
++10. `_run_with_ptl_retry()` calls `duh/kernel/loop.query(...)`.
++11. `query()` invokes `deps.call_model(...)`, which streams events from the provider adapter.
++12. Provider events come back as kernel events:
++   - `text_delta`
++   - `thinking_delta`
++   - `assistant`
++   - eventually tool-use blocks embedded in the assistant message
++13. If the assistant message contains tool calls, `query()` executes them:
++   - it groups consecutive read-only tool calls and runs them concurrently
++   - it runs mutating tools sequentially
++   - it consults `deps.approve` before execution
++   - it optionally consults `deps.confirm_gate`
++   - it calls `deps.run_tool`
++14. In the default runtime, `deps.run_tool` is `NativeExecutor.run()`:
++   - find tool by name
++   - build `ToolContext`
++   - call tool-level `check_permissions()`
++   - snapshot pre-edit state for undo if needed
++   - call `tool.call(...)` under timeout
++   - track file operations and truncate/redact output if configured
++15. `query()` collects all tool outputs into a single `tool_result_message` user message. That is important for Anthropic compatibility and is explicitly documented in `duh/kernel/loop.py`.
++16. The loop calls the provider again with the updated message list so the model can continue from tool output.
++17. `Engine` captures assistant messages and tool result messages into session state, updates token counters, checks budgets, auto-saves through `FileStore.save()`, optionally runs auto-memory extraction, and emits usage events.
++18. The CLI runner renders events:
++   - in print mode, `text_delta` goes to stdout, tool activity goes to stderr, JSON/NDJSON modes serialize the events
++   - in REPL and TUI, renderer adapters and slash-command infrastructure sit on top of the same event stream
++
++That flow is stable across modes. REPL, TUI, and SDK mode differ mainly in assembly and rendering, not in kernel control flow.
++
++## Extension Points
++
++### Add a New Provider Adapter
++
++The provider seam is defined by `duh/ports/provider.py`:
++
++- implement `ModelProvider.stream(...)`
++- yield kernel events that match what `duh/kernel/loop.py` expects
++
++In practice, a new provider requires four changes:
++
++1. Add an adapter module under `duh/adapters/` similar to `openai.py`, `anthropic.py`, `gemini.py`, `groq.py`, `ollama.py`, or `stub_provider.py`.
++2. Make the adapter expose a `stream()` implementation compatible with `Deps.call_model`.
++3. Teach `duh/providers/registry.py` how to:
++   - infer the provider from model names if needed
++   - choose default models
++   - build the backend in `build_model_backend()`
++   - optionally enumerate models in `available_models_for_provider()`
++4. If you want CLI auto-selection, ensure `resolve_provider_name()` can discover the provider from auth state, env vars, or model prefixes.
++
++The default runtime never imports provider adapters directly from the kernel. The only place that knows the concrete adapter class is the registry and session builder layer.
++
++### Add a New Tool
++
++There are two ways to add a tool: runtime registration and permanent product registration.
++
++The tool contract lives in `duh/kernel/tool.py`:
++
++- provide `name`, `description`, and `input_schema`
++- implement `async def call(self, input, context) -> ToolResult`
++- optionally expose `is_read_only`, `is_destructive`, and `check_permissions()`
++
++For one-off or embedded use, register the tool at runtime with `NativeExecutor.register()` or pass it in the initial tool list. That is the path used in the tutorial.
++
++For a first-class built-in tool:
++
++1. Add a module under `duh/tools/`.
++2. Instantiate it from `duh/tools/registry.py:get_all_tools()`.
++3. If tiered approvals or snapshot mode should understand it, classify it in `duh/kernel/tool_categories.py`.
++4. If it contributes session capabilities, set a `capabilities` flag so `duh/security/trifecta.py` can account for it.
++5. If it needs filesystem boundaries or model context information, read them from `ToolContext` and/or accept `path_policy` in the constructor like `ReadTool`, `WriteTool`, `EditTool`, and `MultiEditTool`.
++
++The subtle but important point is that approvals are not inferred from `is_read_only`. The concurrent execution path in `query()` uses `is_read_only`, but tiered approval logic uses `duh/kernel/tool_categories.py`. If you skip that classification, `TieredApprover` treats the tool conservatively as unknown.
++
++### Add a New Slash Command
++
++Slash commands are centralized in `duh/cli/slash_commands.py`. To add one:
++
++1. Add a handler method on `SlashDispatcher`.
++2. Register it in `SlashDispatcher._HANDLERS`.
++3. If the command must run in an already-running event loop, also add an async version to `_ASYNC_HANDLERS`.
++4. Add help text to `SLASH_COMMANDS`.
++
++The REPL imports `SLASH_COMMANDS` from that module, and the TUI uses the same dispatcher through `async_dispatch()`. That keeps REPL and TUI slash behavior aligned.
++
++## Security Architecture
++
++Security is layered rather than monolithic. The important pieces live across `duh/kernel/`, `duh/tools/`, `duh/security/`, and `duh/adapters/sandbox/`.
++
++### 1. Taint Propagation
++
++`duh/kernel/untrusted.py` defines `UntrustedStr` and `TaintSource`. The goal is simple: keep track of where bytes came from so downstream policy can distinguish trusted operator intent from model/tool/network/file output.
++
++Taint enters the system in several places:
++
++- CLI prompt text is wrapped as `USER_INPUT` in `duh/cli/runner.py`.
++- REPL input is wrapped as `USER_INPUT` in `duh/cli/repl.py`.
++- SDK input is wrapped in `duh/cli/sdk_runner.py`.
++- file tools wrap data as `FILE_CONTENT`
++- network tools wrap data as `NETWORK`
++- native tool execution can wrap tool output as `TOOL_OUTPUT`
++- provider adapters and the stub provider wrap model text as `MODEL_OUTPUT`
++
++`UntrustedStr` overrides a large set of string-returning methods so taint usually propagates through concatenation, formatting, joins, case transforms, splits, and similar operations. The design is intentionally pragmatic, not formally complete. The module docstring explicitly calls out a limitation: multi-part f-strings can still drop taint because Python produces a plain `str` during formatting.
++
++### 2. Confirmation Tokens
++
++`duh/kernel/confirmation.py` provides `ConfirmationMinter`, which creates single-use, session-bound, tool-bound, input-bound HMAC tokens with a five-minute lifetime.
++
++`duh/security/policy.py:resolve_confirmation()` uses those tokens to block dangerous tool calls that originate from tainted context unless the operator explicitly confirms them.
++
++`duh/kernel/loop.py` already understands this gate: before a tool executes, it checks `deps.confirm_gate` and blocks if the decision says so. `Engine` also has `_check_confirmation_gate()` to connect session state and the per-session minter.
++
++One current tradeoff matters: the default `SessionBuilder` wires `approve`, `run_tool`, `compact`, hooks, and audit logging, but it does not currently set `Deps.confirm_gate`. So the confirmation-token architecture exists, the kernel supports it, and helper code mints tokens, but the default assembled session does not enable it yet. That is an important design seam and an honest current limitation.
++
++### 3. Approval Gates
++
++There are two approval layers:
++
++- tool-local permission checks via `tool.check_permissions()`
++- session-level approval adapters via `deps.approve`
++
++The built-in approval adapters in `duh/adapters/approvers.py` are:
++
++- `AutoApprover`
++- `InteractiveApprover`
++- `RuleApprover`
++- `TieredApprover`
++
++`TieredApprover` is the default safety model for REPL approval modes. It classifies tools into read, write, and command buckets using `duh/kernel/tool_categories.py`, and it also contains a hard git safety check that blocks destructive git operations even in `FULL_AUTO`.
++
++### 4. Filesystem Boundaries
++
++`duh/security/path_policy.py` defines `PathPolicy`. `SessionBuilder` constructs it from the repo root, then passes it into file tools through `get_all_tools(...)`.
++
++Read/write/edit style tools resolve symlinks before policy checks, which is critical. Without that step, a symlink inside the repo could point outside the repo and bypass the boundary.
++
++### 5. Sandboxing
++
++The sandbox model is adapter-based:
++
++- `duh/adapters/sandbox/policy.py` defines `SandboxPolicy`, `SandboxType`, `detect_sandbox_type()`, and `SandboxCommand`.
++- `duh/adapters/sandbox/seatbelt.py` generates macOS profiles.
++- `duh/adapters/sandbox/landlock.py` builds Linux Landlock wrappers.
++
++`BashTool` consults `ToolContext.sandbox_policy`; if present, it wraps the command in a platform-appropriate sandbox before spawning the subprocess. MCP subprocesses use the same abstraction through `duh/adapters/mcp_executor.py`, which derives a sandbox policy from the MCP manifest.
++
++This layering matters: approval answers “may I run this?”, while sandboxing answers “if it runs, what can it touch?”.
++
++### 6. Session Capability Check: The Trifecta
++
++Before the session even starts, `Engine.__init__()` computes combined tool capabilities through `duh/security/trifecta.py`. If the session simultaneously enables:
++
++- `READ_PRIVATE`
++- `READ_UNTRUSTED`
++- `NETWORK_EGRESS`
++
++then `check_trifecta()` raises unless the operator explicitly acknowledges the risk via CLI flag or config. This is a startup-time exfiltration guard, not a per-call policy.
++
++### 7. Auditing and Redaction
++
++`duh/kernel/loop.py` emits tool audit records through `deps.audit_logger`. `SessionBuilder` wires `AuditLogger` by default in print mode assembly, and the CLI exposes audit output through `duh audit`.
++
++`duh/kernel/redact.py` provides secret redaction, and `NativeExecutor` can redact tool output before returning it to the kernel.
++
++## Threading and Concurrency Model
++
++D.U.H. is primarily an `asyncio` system. The default model is single-process, single-event-loop concurrency, with a few carefully chosen points of parallelism.
++
++### Turn Execution
++
++`Engine.run()` is an async generator. Every turn is streamed event by event. That makes the control flow easy to integrate in print mode, REPL, TUI, batch mode, and SDK mode without separate kernel variants.
++
++### Parallel Read-Only Tools
++
++Inside `duh/kernel/loop.py`, consecutive read-only tool calls are grouped and executed concurrently with `asyncio.create_task()` plus `asyncio.gather()`. Mutating tools always stay sequential.
++
++That gives D.U.H. limited speculative parallelism without risking write-order races. The grouping rule is intentionally strict:
++
++- read-only grouping depends on each tool’s `is_read_only`
++- result emission still happens in submission order
++- mutating tools preserve the exact assistant-requested order
++
++### Query Serialization
++
++`duh/kernel/query_guard.py` provides a generation-based state machine for callers that need to prevent overlapping queries. It supports both synchronous and async transitions and can optionally cancel the previous in-flight task when a new query is reserved.
++
++This is especially relevant for interactive frontends where a user can trigger another request before the last one finishes.
++
++### Background Jobs
++
++`duh/kernel/job_queue.py` provides a bounded async background queue used by `BashTool` for `bg:` commands. Jobs run under an `asyncio.Semaphore`, defaulting to five concurrent jobs, and completed results are retained up to a cap.
++
++### Persistence and File Safety
++
++`duh/adapters/file_store.py` uses atomic temp-file-then-rename writes, which gives safe local persistence without threads or a database. `UndoStack` and `FileTracker` are in-memory session helpers rather than concurrent shared services.
++
++## Known Tradeoffs
++
++### Centralized Session Assembly
++
++`SessionBuilder` is productive because it keeps one assembly path for print mode and REPL, but it is also heavy. Provider resolution, tool loading, config loading, MCP connection, prompt assembly, approver selection, and engine creation all happen in one class.
++
++The upside is coherence. The downside is a large file with many responsibilities.
++
++### Small Ports, Rich Adapters
++
++The ports are intentionally narrow, but that pushes complexity outward:
++
++- provider-specific streaming quirks live in adapters
++- tool capability classification lives outside the tool protocol
++- some safety behavior depends on both tool-local methods and external registries
++
++This is a deliberate bias toward a simple kernel at the cost of some manual wiring.
++
++### Security Is Layered, Not Formally Unified
++
++Taint tracking, approvals, confirmation tokens, path policy, sandboxes, audit logging, and trifecta checks are real, but they are not one single formally verified information-flow system. A contributor still needs to understand which layer they are relying on.
++
++The most notable current gap is the confirmation-token seam: supported by kernel and policy code, but not enabled by default in `SessionBuilder`.
++
++### Local-First Persistence
++
++Sessions, memory, and undo state are local-file oriented. That keeps the system easy to inspect and hack on, but it is not trying to be a distributed control plane, a multi-user service, or a transactional workflow database.
++
++### Explicit State Repair Over Hidden Magic
++
++Resume, compaction, and special modes are handled by explicit repair steps such as `restore_plan_context()`, `restore_skill_context()`, alternation repair in `validate_alternation()`, and session-mode restoration in `SessionBuilder._maybe_resume_session()`. That is more verbose than a framework-driven state machine, but it makes recovery behavior inspectable in ordinary Python files.
++
++### Manual Registries
++
++Adding a tool or slash command is straightforward, but it is not magically discoverable:
++
++- built-in tools go through `duh/tools/registry.py`
++- slash commands go through `duh/cli/slash_commands.py`
++- provider backends go through `duh/providers/registry.py`
++
++That is less dynamic than a plugin-first system, but it keeps the main runtime explicit and testable.
++
++## Non-Goals
++
++Several things are clearly not what this codebase is optimizing for:
++
++- It is not trying to hide control flow behind framework magic. Most important assembly is explicit Python.
++- It is not trying to make the kernel depend on provider SDKs or UI frameworks.
++- It is not trying to auto-parallelize arbitrary tool graphs; only a narrow read-only case is parallelized.
++- It is not trying to be a general workflow orchestrator or distributed task runner.
++- It is not trying to expose every internal extension seam as a polished plugin API yet.
++
++The resulting architecture is pragmatic: explicit wiring at the edges, a small async kernel in the middle, and safety mechanisms layered around tool execution rather than buried inside provider code.
+diff --git a/docs-new/TUTORIAL.md b/docs-new/TUTORIAL.md
+new file mode 100644
+index 0000000..aea22b8
+--- /dev/null
++++ b/docs-new/TUTORIAL.md
+@@ -0,0 +1,451 @@
++# Tutorial: From Zero to Your First Custom Tool
++
++This walkthrough stays inside the pinned checkout and uses real symbols from the tree. It starts with installation, confirms the CLI works in stub mode, and then builds a custom tool end to end using the same kernel objects the product uses internally.
++
++Nothing here relies on invented helper APIs or pseudo-code wrappers.
++
++The examples assume:
++
++- you are in the repository root
++- you have Python 3.12 available
++- you want examples that work without a real API key
++
++Python 3.12 matters here because the codebase uses modern typing syntax such as `A | B`. If you accidentally run the examples with Python 3.9 or 3.10, imports from `duh/kernel/messages.py` will fail before you ever reach your custom tool.
++
++## 1. Install the Checkout
++
++Create or activate a Python 3.12 environment, then install the project in editable mode:
++
++```bash
++python3.12 -m pip install -e .
++```
++
++Expected output:
++
++```text
++Obtaining file:///.../codex-gpt54
++Installing collected packages: duh-cli
++Successfully installed duh-cli-0.8.0
++```
++
++The exact dependency lines will vary, but the important part is that `duh-cli` is installed from the current checkout.
++
++## 2. Hello World: Confirm the CLI Imports
++
++Before touching tools, confirm the package imports and the CLI entry point resolves:
++
++```bash
++python3.12 -m duh --version
++```
++
++Expected output:
++
++```text
++duh 0.8.0
++```
++
++That proves the Python package, `duh.__main__`, `duh.cli.main`, and `duh.cli.parser` all import cleanly.
++
++## 3. Run the Agent in Stub Mode
++
++The codebase ships a deterministic offline provider in `duh/adapters/stub_provider.py`. `duh/providers/registry.py` checks the `DUH_STUB_PROVIDER=1` environment variable before looking at any real provider credentials, so this is the fastest way to test the end-to-end CLI path.
++
++Run:
++
++```bash
++HOME="$PWD/.duh-home" DUH_STUB_PROVIDER=1 python3.12 -m duh -p "hello"
++```
++
++Expected output:
++
++```text
++WARNING: Detached HEAD — changes won't be on any branch
++WARNING: Uncommitted changes in working tree
++stub-ok
++```
++
++Those git warnings come from `duh/kernel/git_context.py`. The actual model response, `stub-ok`, comes from `StubProvider.stream()`.
++
++What just happened:
++
++1. `duh/cli/main.py` routed the request to `run_print_mode()`.
++2. `SessionBuilder` resolved the `"stub"` provider.
++3. The builder loaded the default tool set through `duh/tools/registry.py`.
++4. `Engine.run()` appended your prompt as a `Message`.
++5. `duh/kernel/loop.py:query()` called `StubProvider.stream()`.
++6. The runner rendered the streamed `text_delta`.
++
++That is the same control path as a real provider call, just without network traffic.
++
++## 4. Understand the Minimum Tool Surface
++
++The smallest useful custom tool only needs four things from `duh/kernel/tool.py`:
++
++- a `name`
++- a `description`
++- an `input_schema`
++- `async def call(self, input, context) -> ToolResult`
++
++You do not need to subclass anything. `duh/kernel/tool.py` defines `Tool` as a protocol, so any object with the expected shape works.
++
++The runtime pieces we will use are:
++
++- `ToolResult` and `ToolContext` from `duh/kernel/tool.py`
++- `NativeExecutor` from `duh/adapters/native_executor.py`
++- `Deps` from `duh/kernel/deps.py`
++- `Engine` and `EngineConfig` from `duh/kernel/engine.py`
++- an approver adapter from `duh/adapters/approvers.py`
++
++We also need a fake provider that actually asks for the tool. The stub provider is great for CLI smoke tests, but it only emits plain text; it never produces a tool-use block. So for the custom-tool demo, we will build a tiny in-process provider that emits a `tool_use` message on its first call and a final text response on its second call.
++
++## 5. Build a Custom Tool End to End
++
++Create a demo script in the repo root:
++
++```bash
++cat > hello_tool_demo.py <<'PY'
++import asyncio
++
++from duh.adapters.approvers import AutoApprover
++from duh.adapters.native_executor import NativeExecutor
++from duh.kernel.deps import Deps
++from duh.kernel.engine import Engine, EngineConfig
++from duh.kernel.messages import Message
++from duh.kernel.tool import ToolContext, ToolResult
++
++
++class HelloTool:
++    name = "Hello"
++    description = "Return a greeting."
++    input_schema = {
++        "type": "object",
++        "properties": {
++            "name": {"type": "string"},
++        },
++        "required": ["name"],
++        "additionalProperties": False,
++    }
++
++    @property
++    def is_read_only(self) -> bool:
++        return True
++
++    async def call(self, input: dict[str, object], context: ToolContext) -> ToolResult:
++        return ToolResult(output=f"Hello, {input['name']}! cwd={context.cwd}")
++
++
++class DemoProvider:
++    def __init__(self) -> None:
++        self.calls = 0
++
++    async def stream(
++        self,
++        *,
++        messages,
++        system_prompt="",
++        model="",
++        tools=None,
++        thinking=None,
++        tool_choice=None,
++    ):
++        self.calls += 1
++        if self.calls == 1:
++            yield {
++                "type": "assistant",
++                "message": Message(
++                    role="assistant",
++                    content=[
++                        {
++                            "type": "tool_use",
++                            "id": "toolu_1",
++                            "name": "Hello",
++                            "input": {"name": "D.U.H."},
++                        }
++                    ],
++                    metadata={"stop_reason": "tool_use", "model": model or "demo-model"},
++                ),
++            }
++            return
++
++        tool_result = messages[-1].content[0]["content"]
++        text = f"Tool said: {tool_result}"
++        yield {"type": "text_delta", "text": text}
++        yield {
++            "type": "assistant",
++            "message": Message(
++                role="assistant",
++                content=[{"type": "text", "text": text}],
++                metadata={"stop_reason": "end_turn", "model": model or "demo-model"},
++            ),
++        }
++        yield {"type": "done", "stop_reason": "end_turn", "turns": 2}
++
++
++async def main() -> None:
++    tool = HelloTool()
++
++    executor = NativeExecutor(cwd=".")
++    executor.register(tool)
++
++    deps = Deps(
++        call_model=DemoProvider().stream,
++        run_tool=executor.run,
++        approve=AutoApprover().check,
++    )
++
++    engine = Engine(
++        deps=deps,
++        config=EngineConfig(
++            model="demo-model",
++            system_prompt="You are a demo.",
++            tools=[tool],
++            max_turns=4,
++            trifecta_acknowledged=True,
++        ),
++    )
++
++    async for event in engine.run("Say hello"):
++        if event["type"] in {"tool_use", "tool_result", "text_delta", "done"}:
++            print(event)
++
++
++asyncio.run(main())
++PY
++```
++
++Now run it:
++
++```bash
++python3.12 hello_tool_demo.py
++```
++
++Expected output:
++
++```text
++{'type': 'tool_use', 'id': 'toolu_1', 'name': 'Hello', 'input': {'name': 'D.U.H.'}}
++{'type': 'tool_result', 'tool_use_id': 'toolu_1', 'output': 'Hello, D.U.H.! cwd=.', 'is_error': False}
++{'type': 'text_delta', 'text': 'Tool said: Hello, D.U.H.! cwd=.'}
++{'type': 'done', 'stop_reason': 'end_turn', 'turns': 2}
++```
++
++That single file exercised the real kernel path:
++
++- `Engine.run()` created the session turn.
++- `query()` consumed the provider stream.
++- the provider emitted a real `tool_use` block embedded in a real `Message`.
++- `query()` called `deps.approve`.
++- `query()` called `deps.run_tool`.
++- `NativeExecutor.run()` built a real `ToolContext` and called your tool.
++- `query()` wrapped the tool output into a `tool_result_message`.
++- the provider saw the tool result in `messages[-1]` and produced final text.
++
++There are two deliberate design choices in that script:
++
++- `HelloTool` is just a plain Python object. It does not inherit from a framework base class, because the kernel consumes the structural `Tool` protocol from `duh/kernel/tool.py`.
++- `DemoProvider` is also just a compatible object with `stream(...)`. That mirrors how the real provider adapters are used: the kernel only cares that `Deps.call_model` yields the right event dictionaries.
++
++## 6. What Each Piece Does
++
++### The Schema
++
++Your tool’s `input_schema` is standard JSON Schema and is the same shape validated by `duh/kernel/schema_validator.py`. In built-in registration, `duh/tools/registry.py` validates schemas after tool construction and logs warnings for malformed schemas.
++
++For the demo tool:
++
++- `type: object` says the input must be an object
++- `properties.name` defines the argument
++- `required` makes `name` mandatory
++- `additionalProperties: False` keeps the contract tight
++
++### The Implementation
++
++The implementation surface is just:
++
++```python
++async def call(self, input: dict[str, object], context: ToolContext) -> ToolResult
++```
++
++`ToolContext` carries runtime state such as:
++
++- `cwd`
++- `session_id`
++- `tool_use_id`
++- `model`
++- `sandbox_policy`
++
++`ToolResult` carries:
++
++- `output`
++- `is_error`
++- `metadata`
++
++### Registration
++
++In the demo, registration happened here:
++
++```python
++executor = NativeExecutor(cwd=".")
++executor.register(tool)
++```
++
++That is real registration. `NativeExecutor` stores tools by `name`, and `query()` later resolves the tool call by name through `deps.run_tool`.
++
++There is a second registration path for product code: add the tool to `duh/tools/registry.py:get_all_tools()`. Use runtime registration for experiments and tests; use the registry when you want the CLI and REPL to load the tool automatically.
++
++## 7. Inspect the Engine State After the Run
++
++One useful property of `Engine` is that it keeps the whole conversation in memory, even when you drive it with a tiny custom provider. If you want to inspect that state after the run, replace the `async for` loop tail in `hello_tool_demo.py` with this:
++
++```python
++    async for event in engine.run("Say hello"):
++        if event["type"] in {"tool_use", "tool_result", "text_delta", "done"}:
++            print(event)
++
++    print("turns:", engine.turn_count)
++    print("messages:", len(engine.messages))
++    print("cost:", engine.cost_summary("demo-model"))
++```
++
++Expected output shape:
++
++```text
++{'type': 'tool_use', 'id': 'toolu_1', 'name': 'Hello', 'input': {'name': 'D.U.H.'}}
++{'type': 'tool_result', 'tool_use_id': 'toolu_1', 'output': 'Hello, D.U.H.! cwd=.', 'is_error': False}
++{'type': 'text_delta', 'text': 'Tool said: Hello, D.U.H.! cwd=.'}
++{'type': 'done', 'stop_reason': 'end_turn', 'turns': 2}
++turns: 1
++messages: 3
++cost: Input tokens: ...
++```
++
++The exact token and cost numbers depend on the model name you pass into `cost_summary()`, but the structure is stable:
++
++- one user message
++- one assistant message containing `tool_use`
++- one assistant text response after the tool result round-trip
++
++That is the same history shape the CLI stores through `FileStore`.
++
++## 8. Approval Policy: Why `AutoApprover` Was Used
++
++The demo uses `AutoApprover` on purpose. `TieredApprover` classifies tools using `duh/kernel/tool_categories.py`, and your new tool is unknown until you add it there.
++
++Run this short check:
++
++```bash
++python3.12 - <<'PY'
++import asyncio
++
++from duh.adapters.approvers import ApprovalMode, TieredApprover
++
++
++async def main() -> None:
++    approver = TieredApprover(mode=ApprovalMode.SUGGEST, cwd=".")
++    print(await approver.check("Hello", {"name": "D.U.H."}))
++    print(await approver.check("Read", {"file_path": "README.md"}))
++    print(await approver.check("Write", {"file_path": "tmp.txt"}))
++
++
++asyncio.run(main())
++PY
++```
++
++Expected output:
++
++```text
++{'allowed': False, 'reason': "Unknown tool 'Hello' requires approval in suggest mode."}
++{'allowed': True}
++{'allowed': False, 'reason': "Tool 'Write' requires approval in suggest mode. Use --approval-mode auto-edit to auto-approve file edits."}
++```
++
++This is the rule to remember:
++
++- `is_read_only` affects concurrency in `duh/kernel/loop.py`
++- `duh/kernel/tool_categories.py` affects tiered approvals and snapshot blocking
++
++If you want your custom tool to behave like a built-in read tool under `TieredApprover`, you must classify it in `duh/kernel/tool_categories.py`.
++
++## 9. Make the Tool a First-Class Built-In
++
++The demo script proved the kernel wiring. To ship the tool as part of D.U.H., follow the repo’s permanent registration path:
++
++1. Add `duh/tools/hello_tool.py` with the `HelloTool` class.
++2. Instantiate it from `duh/tools/registry.py:get_all_tools()`.
++3. If it should be treated as read-only, add `"Hello"` to `READ_TOOLS` in `duh/kernel/tool_categories.py`.
++4. If it has session capabilities that matter for the trifecta check, set a `capabilities` flag on the tool class.
++5. If it needs repo-bound file access, accept a `path_policy` constructor argument like `ReadTool`, `WriteTool`, `EditTool`, and `MultiEditTool`.
++
++Those are all real files and real extension seams in this checkout. No extra plugin API is required for a built-in tool.
++
++One more practical note: built-in registration changes two separate surfaces.
++
++- `duh/tools/registry.py` controls whether the tool exists in the default session at all.
++- `duh/kernel/tool_categories.py` controls how approval modes and snapshot helpers reason about the tool.
++
++Skipping the second file is the most common mistake when moving from a demo script to a productized tool.
++
++## 10. Use the Same Pattern for Other Extensions
++
++The custom-tool path teaches most of the architecture:
++
++- Provider adapters plug in through `duh/ports/provider.py` and `duh/providers/registry.py`.
++- Slash commands plug in through `duh/cli/slash_commands.py`.
++- Kernel integrations flow through `Deps`, `EngineConfig`, and the event stream from `Engine.run()`.
++
++The key idea is always the same: keep the kernel talking to protocols and callables, then wire concrete behavior at the edges.
++
++In normal CLI sessions, that wiring is centralized in `duh/cli/session_builder.py`. That same builder is also where full sessions pick up:
++
++- skills from `duh/kernel/skill.py`
++- templates from `duh/kernel/templates.py`
++- MCP tool wrappers from `duh/adapters/mcp_executor.py` and `duh/tools/mcp_tool.py`
++- coordinator mode via the prompt path in `duh/kernel/coordinator.py`
++
++The custom-tool demo skipped those pieces so the runtime stayed minimal, but the extension seam is the same: explicit session assembly around `Deps`, `EngineConfig`, and the tool list.
++
++If you want to continue beyond tools, the next source files to read are:
++
++- `duh/ports/provider.py` and `duh/providers/registry.py` for a new provider adapter
++- `duh/cli/slash_commands.py` for a new slash command
++- `duh/cli/session_builder.py` if your extension needs to be loaded automatically in normal sessions
++
++That sequence matches how the runtime is assembled in the real CLI path.
++
++## 11. Troubleshooting
++
++### Import errors mentioning `|` in type hints
++
++You are not on Python 3.12. Re-run the commands with `python3.12`.
++
++### Your tool never runs
++
++Your provider did not emit a `tool_use` block. The stub provider is text-only, so it is good for CLI smoke tests but not for tool-invocation demos.
++
++### Your tool is denied in suggest mode
++
++That is expected for unknown tools under `TieredApprover`. Use `AutoApprover` while prototyping, or permanently classify the tool in `duh/kernel/tool_categories.py`.
++
++### Your tool sees the wrong working directory
++
++`ToolContext.cwd` comes from `NativeExecutor(cwd=...)`. Set it deliberately if your tool depends on relative paths.
++
++### You added the tool to the registry but the CLI still will not auto-approve it
++
++Registry membership and approval classification are separate concerns. Add the tool name to the appropriate set in `duh/kernel/tool_categories.py`, or use a different approval adapter while you iterate.
++
++### You want to reuse the demo inside tests
++
++Keep the runtime-registration pattern. It is faster and more isolated than editing the built-in registry for every test fixture.
++
++## 12. What You Built
++
++By the end of this tutorial, you exercised the same core contracts D.U.H. uses in production:
++
++- `ToolContext` and `ToolResult` from `duh/kernel/tool.py`
++- `Deps` from `duh/kernel/deps.py`
++- `Engine` and `EngineConfig` from `duh/kernel/engine.py`
++- `NativeExecutor` from `duh/adapters/native_executor.py`
++- approval adapters from `duh/adapters/approvers.py`
++- kernel events flowing through `duh/kernel/loop.py`
++
++That is enough to build tools locally, embed D.U.H. into tests, or continue toward a built-in tool, a provider adapter, or a new slash command.
+diff --git a/docs-new/index.md b/docs-new/index.md
+new file mode 100644
+index 0000000..d72d611
+--- /dev/null
++++ b/docs-new/index.md
+@@ -0,0 +1,13 @@
++# D.U.H. Documentation Set
++
++- [Architecture](./ARCHITECTURE.md)
++
++  `ARCHITECTURE.md` explains how the CLI, session builder, kernel, ports, adapters, tools, and security layers fit together. It follows a request from parser entry to rendered output, then calls out the real extension seams for providers, tools, and slash commands.
++
++- [Tutorial](./TUTORIAL.md)
++
++  `TUTORIAL.md` is a source-accurate, runnable path from installation to a working custom tool. It covers Python 3.12 setup, stub-mode CLI validation, runtime tool registration with `NativeExecutor`, approval-policy behavior, and the files you would touch to promote the demo into a built-in tool.
++
++- [API Reference](./API.md)
++
++  `API.md` is the module-by-module reference for the public surface of `duh/kernel/` and `duh/ports/`. It records source-derived signatures, summarizes purpose and return behavior, and lists the public methods that make up the kernel’s practical programming interface.

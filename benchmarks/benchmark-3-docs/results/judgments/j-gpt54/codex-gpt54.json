@@ -1,0 +1,28 @@
+{
+  "target": "codex-gpt54",
+  "scores": {
+    "architecture_doc": 4,
+    "tutorial_quality": 2,
+    "api_completeness": 2,
+    "cross_artifact_coherence": 4,
+    "faithfulness": 3,
+    "reading_discipline": 5,
+    "writing_quality": 4,
+    "structure_navigation": 3,
+    "protocol_adherence": 3
+  },
+  "total_out_of_45": 30,
+  "consistency_pass_rate": 0.5239520958083832,
+  "one_line_summary": "Readable and well-structured set with strong architectural understanding, but the API reference and runnable tutorial claims are undermined by many signature mismatches and a protocol slip outside docs-new/.",
+  "strengths": [
+    "Architecture document gives a coherent end-to-end flow, real extension points, security layers, concurrency model, and explicit tradeoffs/non-goals.",
+    "Session log shows substantial source reading before writing, with references anchored in real files and concepts.",
+    "Cross-document concepts mostly align: SessionBuilder, Engine/Deps, tool registration, approvals, and provider wiring are consistent across artefacts."
+  ],
+  "weaknesses": [
+    "Consistency harness is only 52.4% overall, with signature matching especially weak (38/197), so the API reference is not source-accurate enough.",
+    "Tutorial includes commands that create files in the repo root and likely violate the 'write only under docs-new/' constraint; it also presents runnable examples whose exact outputs are partly hand-wavy (for example cost output).",
+    "Navigation is minimal: index links exist, but there is little internal cross-linking/TOC support, and the API reference is dense rather than example-driven."
+  ],
+  "judge": "j-gpt54"
+}

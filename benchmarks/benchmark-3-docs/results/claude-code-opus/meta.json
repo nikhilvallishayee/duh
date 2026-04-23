@@ -1,0 +1,15 @@
+{
+  "agent_id": "claude-code-opus",
+  "cli": "claude",
+  "model": "claude-opus-4-7",
+  "baseline_commit": "645d91ad10ad83b5778bcd14f2c53b8e3366497c",
+  "benchmark": "benchmark-3-docs",
+  "start_ts": "2026-04-23T19:39:44Z",
+  "end_ts": "2026-04-23T19:41:48Z",
+  "elapsed_s": 124,
+  "exit_code": 1,
+  "worktree": "/Users/nomind/Code/duh/benchmarks/benchmark-3-docs/worktrees/claude-code-opus",
+  "log_bytes": 26,
+  "diff_bytes": 195,
+  "files_changed": 1
+}

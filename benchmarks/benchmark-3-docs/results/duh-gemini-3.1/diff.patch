@@ -1,0 +1,7 @@
+diff --git a/docs-new/.gitkeep b/docs-new/.gitkeep
+new file mode 100644
+index 0000000..b78bf80
+--- /dev/null
++++ b/docs-new/.gitkeep
+@@ -0,0 +1 @@
++# docs-new — agent writes documentation here

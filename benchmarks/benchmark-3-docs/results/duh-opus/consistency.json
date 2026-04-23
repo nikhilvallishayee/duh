@@ -1,0 +1,26 @@
+{
+  "symbol_existence": {
+    "ok": 0,
+    "total": 0,
+    "rate": 0.0
+  },
+  "signature_match": {
+    "ok": 0,
+    "total": 0,
+    "rate": 0.0
+  },
+  "import_check": {
+    "ok": 0,
+    "total": 0,
+    "rate": 0.0
+  },
+  "coverage": {
+    "ok": 0,
+    "total": 90,
+    "rate": 0.0
+  },
+  "overall_ok": 0,
+  "overall_total": 90,
+  "pass_rate": 0.0,
+  "docs_files": []
+}

@@ -1,0 +1,6 @@
+{
+  "target": "duh-opus",
+  "judge": "j-opus",
+  "error": "Run produced no docs (provider rate-limit or credit exhaustion during B3 run). See results/duh-opus/session.log.",
+  "one_line_summary": "Agent failed during run — no docs to judge."
+}

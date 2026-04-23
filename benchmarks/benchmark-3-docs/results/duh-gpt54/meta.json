@@ -1,0 +1,15 @@
+{
+  "agent_id": "duh-gpt54",
+  "cli": "duh",
+  "model": "gpt-5.4",
+  "baseline_commit": "645d91ad10ad83b5778bcd14f2c53b8e3366497c",
+  "benchmark": "benchmark-3-docs",
+  "start_ts": "2026-04-23T19:51:41Z",
+  "end_ts": "2026-04-23T19:57:48Z",
+  "elapsed_s": 367,
+  "exit_code": 0,
+  "worktree": "/Users/nomind/Code/duh/benchmarks/benchmark-3-docs/worktrees/duh-gpt54",
+  "log_bytes": 99545,
+  "diff_bytes": 89199,
+  "files_changed": 5
+}

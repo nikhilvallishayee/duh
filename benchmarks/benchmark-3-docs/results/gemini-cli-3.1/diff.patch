@@ -1,0 +1,2565 @@
+diff --git a/docs-new/.gitkeep b/docs-new/.gitkeep
+new file mode 100644
+index 0000000..b78bf80
+--- /dev/null
++++ b/docs-new/.gitkeep
+@@ -0,0 +1 @@
++# docs-new — agent writes documentation here
+diff --git a/docs-new/API.md b/docs-new/API.md
+new file mode 100644
+index 0000000..7467997
+--- /dev/null
++++ b/docs-new/API.md
+@@ -0,0 +1,1578 @@
++# D.U.H. API Reference
++
++
++## duh.kernel.attachments
++
++### Attachment
++
++`@dataclassclassAttachment`
++
++Purpose: `Attachment`. Parameters: None. Return type: `Attachment`. Exceptions: N/A. Example: `Attachment()`
++
++#### Attachment.size
++
++`defsize(self)->int`
++
++Purpose: `size`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.size()`
++
++#### Attachment.is_image
++
++`defis_image(self)->bool`
++
++Purpose: `is_image`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.is_image()`
++
++#### Attachment.text
++
++`deftext(self)->str|None`
++
++Purpose: `text`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.text()`
++
++#### Attachment.base64
++
++`defbase64(self)->str`
++
++Purpose: `base64`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.base64()`
++
++### AttachmentManager
++
++`classAttachmentManager`
++
++Purpose: `AttachmentManager`. Parameters: None. Return type: `AttachmentManager`. Exceptions: N/A. Example: `AttachmentManager()`
++
++#### AttachmentManager.read_file
++
++`defread_file(self,path:str)->Attachment`
++
++Purpose: `read_file`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.read_file()`
++
++#### AttachmentManager.detect_content_type
++
++`defdetect_content_type(self,filename:str,data:bytes)->str`
++
++Purpose: `detect_content_type`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.detect_content_type()`
++
++#### AttachmentManager.to_image_block
++
++`defto_image_block(self,attachment:Attachment)->ImageBlock`
++
++Purpose: `to_image_block`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.to_image_block()`
++
++#### AttachmentManager.extract_text
++
++`defextract_text(self,attachment:Attachment)->str`
++
++Purpose: `extract_text`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.extract_text()`
++
++## duh.kernel.audit
++
++### install
++
++`definstall(registry:Any)->None`
++
++Purpose: `install`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `install()`
++
++## duh.kernel.auto_memory
++
++### extract_memories
++
++`asyncdefextract_memories(messages:list[Message],call_model:CallModelFn,*,model:str='')->list[dict[str,str]]`
++
++Purpose: `extract_memories`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `extract_memories()`
++
++## duh.kernel.backoff
++
++### is_retryable
++
++`defis_retryable(exc:BaseException)->bool`
++
++Purpose: `is_retryable`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `is_retryable()`
++
++### with_backoff
++
++`asyncdefwith_backoff(fn:Callable[[],AsyncGenerator[dict[str,Any],None]],*,max_retries:int=3,base_delay:float=1.0,max_delay:float=30.0)->AsyncGenerator[dict[str,Any],None]`
++
++Purpose: `with_backoff`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `with_backoff()`
++
++## duh.kernel.cache_tracker
++
++### CacheTracker
++
++`@dataclassclassCacheTracker`
++
++Purpose: `CacheTracker`. Parameters: None. Return type: `CacheTracker`. Exceptions: N/A. Example: `CacheTracker()`
++
++#### CacheTracker.record_usage
++
++`defrecord_usage(self,usage:dict)->None`
++
++Purpose: `record_usage`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.record_usage()`
++
++#### CacheTracker.notify_compaction
++
++`defnotify_compaction(self)->None`
++
++Purpose: `notify_compaction`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.notify_compaction()`
++
++#### CacheTracker.cache_read_ratio
++
++`defcache_read_ratio(self)->float`
++
++Purpose: `cache_read_ratio`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.cache_read_ratio()`
++
++#### CacheTracker.is_break_detected
++
++`defis_break_detected(self)->bool`
++
++Purpose: `is_break_detected`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.is_break_detected()`
++
++#### CacheTracker.total_cache_read_tokens
++
++`deftotal_cache_read_tokens(self)->int`
++
++Purpose: `total_cache_read_tokens`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.total_cache_read_tokens()`
++
++#### CacheTracker.total_cache_creation_tokens
++
++`deftotal_cache_creation_tokens(self)->int`
++
++Purpose: `total_cache_creation_tokens`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.total_cache_creation_tokens()`
++
++#### CacheTracker.summary
++
++`defsummary(self)->str`
++
++Purpose: `summary`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.summary()`
++
++## duh.kernel.compact_analytics
++
++### CompactStats
++
++`@dataclassclassCompactStats`
++
++Purpose: `CompactStats`. Parameters: None. Return type: `CompactStats`. Exceptions: N/A. Example: `CompactStats()`
++
++#### CompactStats.record
++
++`defrecord(self,tier:str,tokens_freed:int)->None`
++
++Purpose: `record`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.record()`
++
++#### CompactStats.summary
++
++`defsummary(self)->str`
++
++Purpose: `summary`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.summary()`
++
++## duh.kernel.confirmation
++
++### ConfirmationMinter
++
++`classConfirmationMinter`
++
++Purpose: `ConfirmationMinter`. Parameters: None. Return type: `ConfirmationMinter`. Exceptions: N/A. Example: `ConfirmationMinter()`
++
++#### ConfirmationMinter.mint
++
++`defmint(self,session_id:str,tool:str,input_obj:dict)->str`
++
++Purpose: `mint`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.mint()`
++
++#### ConfirmationMinter.validate
++
++`defvalidate(self,token:str,session_id:str,tool:str,input_obj:dict)->bool`
++
++Purpose: `validate`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.validate()`
++
++## duh.kernel.context_gate
++
++### ContextGate
++
++`classContextGate`
++
++Purpose: `ContextGate`. Parameters: None. Return type: `ContextGate`. Exceptions: N/A. Example: `ContextGate()`
++
++#### ContextGate.check
++
++`defcheck(self,token_estimate:int)->tuple[bool,str]`
++
++Purpose: `check`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.check()`
++
++
++
++## duh.kernel.deps
++
++### Deps
++
++`@dataclassclassDeps`
++
++Purpose: `Deps`. Parameters: None. Return type: `Deps`. Exceptions: N/A. Example: `Deps()`
++
++## duh.kernel.engine
++
++### EngineConfig
++
++`@dataclassclassEngineConfig`
++
++Purpose: `EngineConfig`. Parameters: None. Return type: `EngineConfig`. Exceptions: N/A. Example: `EngineConfig()`
++
++### Engine
++
++`classEngine`
++
++Purpose: `Engine`. Parameters: None. Return type: `Engine`. Exceptions: N/A. Example: `Engine()`
++
++#### Engine.compact_stats
++
++`defcompact_stats(self)->CompactStats`
++
++Purpose: `compact_stats`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.compact_stats()`
++
++#### Engine.messages
++
++`defmessages(self)->list[Message]`
++
++Purpose: `messages`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.messages()`
++
++#### Engine.session_id
++
++`defsession_id(self)->str`
++
++Purpose: `session_id`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.session_id()`
++
++#### Engine.turn_count
++
++`defturn_count(self)->int`
++
++Purpose: `turn_count`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.turn_count()`
++
++#### Engine.total_input_tokens
++
++`deftotal_input_tokens(self)->int`
++
++Purpose: `total_input_tokens`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.total_input_tokens()`
++
++#### Engine.total_output_tokens
++
++`deftotal_output_tokens(self)->int`
++
++Purpose: `total_output_tokens`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.total_output_tokens()`
++
++#### Engine.model
++
++`defmodel(self)->str`
++
++Purpose: `model`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.model()`
++
++#### Engine.cache_tracker
++
++`defcache_tracker(self)->CacheTracker`
++
++Purpose: `cache_tracker`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.cache_tracker()`
++
++#### Engine.max_cost
++
++`defmax_cost(self)->float|None`
++
++Purpose: `max_cost`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.max_cost()`
++
++#### Engine.budget_remaining
++
++`defbudget_remaining(self,model:str|None=None)->float|None`
++
++Purpose: `budget_remaining`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.budget_remaining()`
++
++#### Engine.estimated_cost
++
++`defestimated_cost(self,model:str|None=None)->float`
++
++Purpose: `estimated_cost`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.estimated_cost()`
++
++#### Engine.cost_summary
++
++`defcost_summary(self,model:str|None=None)->str`
++
++Purpose: `cost_summary`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.cost_summary()`
++
++#### Engine.run
++
++`asyncdefrun(self,prompt:str|list[Any],*,max_turns:int|None=None,model:str|None=None)->AsyncGenerator[dict[str,Any],None]`
++
++Purpose: `run`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.run()`
++
++## duh.kernel.file_size_guard
++
++### FileSizeDecision
++
++`@dataclass(frozen=True)classFileSizeDecision`
++
++Purpose: `FileSizeDecision`. Parameters: None. Return type: `FileSizeDecision`. Exceptions: N/A. Example: `FileSizeDecision()`
++
++### check_file_size
++
++`defcheck_file_size(file_path:str,model:str,*,size_bytes:int|None=None,fraction:float=MAX_FILE_FRACTION)->FileSizeDecision`
++
++Purpose: `check_file_size`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `check_file_size()`
++
++## duh.kernel.file_tracker
++
++### FileOp
++
++`@dataclass(frozen=True)classFileOp`
++
++Purpose: `FileOp`. Parameters: None. Return type: `FileOp`. Exceptions: N/A. Example: `FileOp()`
++
++### FileTracker
++
++`classFileTracker`
++
++Purpose: `FileTracker`. Parameters: None. Return type: `FileTracker`. Exceptions: N/A. Example: `FileTracker()`
++
++#### FileTracker.track
++
++`deftrack(self,path:str,operation:str)->None`
++
++Purpose: `track`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.track()`
++
++#### FileTracker.ops
++
++`defops(self)->list[FileOp]`
++
++Purpose: `ops`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.ops()`
++
++#### FileTracker.clear
++
++`defclear(self)->None`
++
++Purpose: `clear`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.clear()`
++
++#### FileTracker.summary
++
++`defsummary(self)->str`
++
++Purpose: `summary`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.summary()`
++
++#### FileTracker.diff_summary
++
++`asyncdefdiff_summary(self,*,cwd:str='.')->str`
++
++Purpose: `diff_summary`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.diff_summary()`
++
++#### FileTracker.diff_summary_sync
++
++`defdiff_summary_sync(self,*,cwd:str='.')->str`
++
++Purpose: `diff_summary_sync`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.diff_summary_sync()`
++
++## duh.kernel.git_context
++
++### get_git_warnings
++
++`defget_git_warnings(cwd:str)->list[str]`
++
++Purpose: `get_git_warnings`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `get_git_warnings()`
++
++### get_git_context
++
++`defget_git_context(cwd:str)->Optional[str]`
++
++Purpose: `get_git_context`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `get_git_context()`
++
++## duh.kernel.health_check
++
++### HealthChecker
++
++`classHealthChecker`
++
++Purpose: `HealthChecker`. Parameters: None. Return type: `HealthChecker`. Exceptions: N/A. Example: `HealthChecker()`
++
++#### HealthChecker.check_provider
++
++`defcheck_provider(self,provider_name:str)->ProviderHealth`
++
++Purpose: `check_provider`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.check_provider()`
++
++#### HealthChecker.check_all_providers
++
++`defcheck_all_providers(self)->dict[str,ProviderHealth]`
++
++Purpose: `check_all_providers`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.check_all_providers()`
++
++#### HealthChecker.check_mcp
++
++`defcheck_mcp(self,server_name:str,*,connections:dict[str,Any]|None=None)->MCPHealth`
++
++Purpose: `check_mcp`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.check_mcp()`
++
++#### HealthChecker.check_all_mcp
++
++`defcheck_all_mcp(self,*,connections:dict[str,Any]|None=None,configs:dict[str,Any]|None=None)->dict[str,MCPHealth]`
++
++Purpose: `check_all_mcp`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.check_all_mcp()`
++
++## duh.kernel.job_queue
++
++### JobState
++
++`classJobState(str,Enum)`
++
++Purpose: `JobState`. Parameters: None. Return type: `JobState`. Exceptions: N/A. Example: `JobState()`
++
++### JobQueue
++
++`classJobQueue`
++
++Purpose: `JobQueue`. Parameters: None. Return type: `JobQueue`. Exceptions: N/A. Example: `JobQueue()`
++
++#### JobQueue.submit
++
++`defsubmit(self,name:str,coro:Coroutine[Any,Any,Any])->str`
++
++Purpose: `submit`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.submit()`
++
++#### JobQueue.status
++
++`defstatus(self,job_id:str)->dict[str,Any]`
++
++Purpose: `status`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.status()`
++
++#### JobQueue.results
++
++`defresults(self,job_id:str)->str`
++
++Purpose: `results`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.results()`
++
++#### JobQueue.list_jobs
++
++`deflist_jobs(self)->list[dict[str,Any]]`
++
++Purpose: `list_jobs`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.list_jobs()`
++
++## duh.kernel.loop
++
++### query
++
++`asyncdefquery(*,messages:list[Message],system_prompt:str|list[str]='',deps:Deps,tools:list[Any]|None=None,max_turns:int=1000,model:str='',thinking:dict[str,Any]|None=None,tool_choice:str|dict[str,Any]|None=None)->AsyncGenerator[dict[str,Any],None]`
++
++Purpose: `query`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `query()`
++
++## duh.kernel.memory
++
++### make_frontmatter
++
++`defmake_frontmatter(*,name:str,description:str,type:str)->str`
++
++Purpose: `make_frontmatter`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `make_frontmatter()`
++
++### build_memory_prompt
++
++`defbuild_memory_prompt(store:MemoryStore)->str`
++
++Purpose: `build_memory_prompt`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `build_memory_prompt()`
++
++## duh.kernel.memory_decay
++
++### score_facts
++
++`defscore_facts(facts:list[dict[str,Any]],*,now:datetime|None=None)->list[tuple[dict[str,Any],float]]`
++
++Purpose: `score_facts`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `score_facts()`
++
++### gc_memories
++
++`defgc_memories(store:Any,*,max_facts:int=200,min_score:float=0.1,now:datetime|None=None)->int`
++
++Purpose: `gc_memories`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `gc_memories()`
++
++## duh.kernel.messages
++
++### TextBlock
++
++`@dataclass(frozen=True)classTextBlock`
++
++Purpose: `TextBlock`. Parameters: None. Return type: `TextBlock`. Exceptions: N/A. Example: `TextBlock()`
++
++### ToolUseBlock
++
++`@dataclass(frozen=True)classToolUseBlock`
++
++Purpose: `ToolUseBlock`. Parameters: None. Return type: `ToolUseBlock`. Exceptions: N/A. Example: `ToolUseBlock()`
++
++### ToolResultBlock
++
++`@dataclass(frozen=True)classToolResultBlock`
++
++Purpose: `ToolResultBlock`. Parameters: None. Return type: `ToolResultBlock`. Exceptions: N/A. Example: `ToolResultBlock()`
++
++### ThinkingBlock
++
++`@dataclass(frozen=True)classThinkingBlock`
++
++Purpose: `ThinkingBlock`. Parameters: None. Return type: `ThinkingBlock`. Exceptions: N/A. Example: `ThinkingBlock()`
++
++### ImageBlock
++
++`@dataclass(frozen=True)classImageBlock`
++
++Purpose: `ImageBlock`. Parameters: None. Return type: `ImageBlock`. Exceptions: N/A. Example: `ImageBlock()`
++
++### Message
++
++`@dataclassclassMessage`
++
++Purpose: `Message`. Parameters: None. Return type: `Message`. Exceptions: N/A. Example: `Message()`
++
++#### Message.text
++
++`deftext(self)->str`
++
++Purpose: `text`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.text()`
++
++#### Message.tool_use_blocks
++
++`deftool_use_blocks(self)->list[ToolUseBlock|dict[str,Any]]`
++
++Purpose: `tool_use_blocks`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.tool_use_blocks()`
++
++#### Message.has_tool_use
++
++`defhas_tool_use(self)->bool`
++
++Purpose: `has_tool_use`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.has_tool_use()`
++
++### UserMessage
++
++`defUserMessage(content:str|list[ContentBlock],**kwargs:Any)->Message`
++
++Purpose: `UserMessage`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `UserMessage()`
++
++### AssistantMessage
++
++`defAssistantMessage(content:str|list[ContentBlock],**kwargs:Any)->Message`
++
++Purpose: `AssistantMessage`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `AssistantMessage()`
++
++### SystemMessage
++
++`defSystemMessage(content:str,**kwargs:Any)->Message`
++
++Purpose: `SystemMessage`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `SystemMessage()`
++
++### merge_consecutive
++
++`defmerge_consecutive(messages:list[Message])->list[Message]`
++
++Purpose: `merge_consecutive`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `merge_consecutive()`
++
++### validate_alternation
++
++`defvalidate_alternation(messages:list[Message])->list[Message]`
++
++Purpose: `validate_alternation`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `validate_alternation()`
++
++## duh.kernel.model_caps
++
++### ModelCapabilities
++
++`@dataclass(frozen=True)classModelCapabilities`
++
++Purpose: `ModelCapabilities`. Parameters: None. Return type: `ModelCapabilities`. Exceptions: N/A. Example: `ModelCapabilities()`
++
++### get_capabilities
++
++`defget_capabilities(model:str)->ModelCapabilities`
++
++Purpose: `get_capabilities`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `get_capabilities()`
++
++### model_context_block
++
++`defmodel_context_block(model:str)->str`
++
++Purpose: `model_context_block`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `model_context_block()`
++
++### rebuild_system_prompt
++
++`defrebuild_system_prompt(system_prompt:str|list[str],old_model:str,new_model:str)->str`
++
++Purpose: `rebuild_system_prompt`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `rebuild_system_prompt()`
++
++## duh.kernel.permission_cache
++
++### SessionPermissionCache
++
++`classSessionPermissionCache`
++
++Purpose: `SessionPermissionCache`. Parameters: None. Return type: `SessionPermissionCache`. Exceptions: N/A. Example: `SessionPermissionCache()`
++
++#### SessionPermissionCache.check
++
++`defcheck(self,tool_name:str)->str|None`
++
++Purpose: `check`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.check()`
++
++#### SessionPermissionCache.record
++
++`defrecord(self,tool_name:str,decision:str)->None`
++
++Purpose: `record`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.record()`
++
++#### SessionPermissionCache.clear
++
++`defclear(self)->None`
++
++Purpose: `clear`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.clear()`
++
++## duh.kernel.plan_mode
++
++### PlanState
++
++`classPlanState(Enum)`
++
++Purpose: `PlanState`. Parameters: None. Return type: `PlanState`. Exceptions: N/A. Example: `PlanState()`
++
++### PlanStep
++
++`@dataclassclassPlanStep`
++
++Purpose: `PlanStep`. Parameters: None. Return type: `PlanStep`. Exceptions: N/A. Example: `PlanStep()`
++
++### PlanMode
++
++`classPlanMode`
++
++Purpose: `PlanMode`. Parameters: None. Return type: `PlanMode`. Exceptions: N/A. Example: `PlanMode()`
++
++#### PlanMode.state
++
++`defstate(self)->PlanState`
++
++Purpose: `state`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.state()`
++
++#### PlanMode.steps
++
++`defsteps(self)->list[PlanStep]`
++
++Purpose: `steps`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.steps()`
++
++#### PlanMode.description
++
++`defdescription(self)->str`
++
++Purpose: `description`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.description()`
++
++#### PlanMode.format_plan
++
++`defformat_plan(self)->str`
++
++Purpose: `format_plan`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.format_plan()`
++
++#### PlanMode.clear
++
++`defclear(self)->None`
++
++Purpose: `clear`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.clear()`
++
++#### PlanMode.plan
++
++`asyncdefplan(self,description:str)->AsyncGenerator[dict[str,Any],None]`
++
++Purpose: `plan`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.plan()`
++
++#### PlanMode.execute
++
++`asyncdefexecute(self)->AsyncGenerator[dict[str,Any],None]`
++
++Purpose: `execute`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.execute()`
++
++## duh.kernel.post_compact
++
++### rebuild_post_compact_context
++
++`asyncdefrebuild_post_compact_context(messages:list[Any],file_tracker:Any,max_files:int=DEFAULT_MAX_FILES,max_tokens_per_file:int=DEFAULT_MAX_TOKENS_PER_FILE)->list[Any]`
++
++Purpose: `rebuild_post_compact_context`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `rebuild_post_compact_context()`
++
++### restore_plan_context
++
++`defrestore_plan_context(engine:Any)->str|None`
++
++Purpose: `restore_plan_context`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `restore_plan_context()`
++
++### restore_skill_context
++
++`defrestore_skill_context(engine:Any)->str|None`
++
++Purpose: `restore_skill_context`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `restore_skill_context()`
++
++## duh.kernel.query_guard
++
++### QueryState
++
++`classQueryState(str,Enum)`
++
++Purpose: `QueryState`. Parameters: None. Return type: `QueryState`. Exceptions: N/A. Example: `QueryState()`
++
++### QueryGuard
++
++`classQueryGuard`
++
++Purpose: `QueryGuard`. Parameters: None. Return type: `QueryGuard`. Exceptions: N/A. Example: `QueryGuard()`
++
++#### QueryGuard.state
++
++`defstate(self)->QueryState`
++
++Purpose: `state`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.state()`
++
++#### QueryGuard.generation
++
++`defgeneration(self)->int`
++
++Purpose: `generation`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.generation()`
++
++#### QueryGuard.reserve
++
++`defreserve(self)->int`
++
++Purpose: `reserve`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.reserve()`
++
++#### QueryGuard.try_start
++
++`deftry_start(self,gen:int)->int|None`
++
++Purpose: `try_start`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.try_start()`
++
++#### QueryGuard.end
++
++`defend(self,gen:int)->bool`
++
++Purpose: `end`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.end()`
++
++#### QueryGuard.force_end
++
++`defforce_end(self)->None`
++
++Purpose: `force_end`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.force_end()`
++
++#### QueryGuard.async_reserve
++
++`asyncdefasync_reserve(self)->int`
++
++Purpose: `async_reserve`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.async_reserve()`
++
++#### QueryGuard.async_try_start
++
++`asyncdefasync_try_start(self,gen:int)->int|None`
++
++Purpose: `async_try_start`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.async_try_start()`
++
++#### QueryGuard.async_end
++
++`asyncdefasync_end(self,gen:int)->bool`
++
++Purpose: `async_end`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.async_end()`
++
++#### QueryGuard.async_force_end
++
++`asyncdefasync_force_end(self)->None`
++
++Purpose: `async_force_end`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.async_force_end()`
++
++#### QueryGuard.set_current_task
++
++`defset_current_task(self,task:'asyncio.Task[object]')->None`
++
++Purpose: `set_current_task`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.set_current_task()`
++
++## duh.kernel.redact
++
++### redact_secrets
++
++`defredact_secrets(text:str)->str`
++
++Purpose: `redact_secrets`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `redact_secrets()`
++
++## duh.kernel.schema_validator
++
++### SchemaValidationError
++
++`classSchemaValidationError(ValueError)`
++
++Purpose: `SchemaValidationError`. Parameters: None. Return type: `SchemaValidationError`. Exceptions: N/A. Example: `SchemaValidationError()`
++
++### validate_tool_schema
++
++`defvalidate_tool_schema(name:str,schema:dict[str,Any])->list[str]`
++
++Purpose: `validate_tool_schema`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `validate_tool_schema()`
++
++## duh.kernel.signals
++
++### ShutdownHandler
++
++`classShutdownHandler`
++
++Purpose: `ShutdownHandler`. Parameters: None. Return type: `ShutdownHandler`. Exceptions: N/A. Example: `ShutdownHandler()`
++
++#### ShutdownHandler.shutting_down
++
++`defshutting_down(self)->bool`
++
++Purpose: `shutting_down`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.shutting_down()`
++
++#### ShutdownHandler.trigger
++
++`deftrigger(self)->None`
++
++Purpose: `trigger`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.trigger()`
++
++#### ShutdownHandler.on_shutdown
++
++`defon_shutdown(self,callback:Callable[[],Awaitable[None]])->None`
++
++Purpose: `on_shutdown`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.on_shutdown()`
++
++#### ShutdownHandler.run_cleanup
++
++`asyncdefrun_cleanup(self)->None`
++
++Purpose: `run_cleanup`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.run_cleanup()`
++
++#### ShutdownHandler.install
++
++`definstall(self,loop:asyncio.AbstractEventLoop|None=None)->None`
++
++Purpose: `install`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.install()`
++
++## duh.kernel.skill
++
++### SkillDef
++
++`@dataclassclassSkillDef`
++
++Purpose: `SkillDef`. Parameters: None. Return type: `SkillDef`. Exceptions: N/A. Example: `SkillDef()`
++
++#### SkillDef.render
++
++`defrender(self,arguments:str='')->str`
++
++Purpose: `render`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.render()`
++
++### load_skills_dir
++
++`defload_skills_dir(path:str|Path)->list[SkillDef]`
++
++Purpose: `load_skills_dir`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `load_skills_dir()`
++
++### load_all_skills
++
++`defload_all_skills(cwd:str='.')->list[SkillDef]`
++
++Purpose: `load_all_skills`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `load_all_skills()`
++
++## duh.kernel.snapshot
++
++### ReadOnlyExecutor
++
++`classReadOnlyExecutor`
++
++Purpose: `ReadOnlyExecutor`. Parameters: None. Return type: `ReadOnlyExecutor`. Exceptions: N/A. Example: `ReadOnlyExecutor()`
++
++#### ReadOnlyExecutor.run
++
++`asyncdefrun(self,tool_name:str,input:dict[str,Any],**kwargs:Any)->Any`
++
++Purpose: `run`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.run()`
++
++### SnapshotSession
++
++`classSnapshotSession`
++
++Purpose: `SnapshotSession`. Parameters: None. Return type: `SnapshotSession`. Exceptions: N/A. Example: `SnapshotSession()`
++
++#### SnapshotSession.messages
++
++`defmessages(self)->list[Message]`
++
++Purpose: `messages`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.messages()`
++
++#### SnapshotSession.is_discarded
++
++`defis_discarded(self)->bool`
++
++Purpose: `is_discarded`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.is_discarded()`
++
++#### SnapshotSession.add_message
++
++`defadd_message(self,message:Message)->None`
++
++Purpose: `add_message`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.add_message()`
++
++#### SnapshotSession.get_new_messages
++
++`defget_new_messages(self)->list[Message]`
++
++Purpose: `get_new_messages`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.get_new_messages()`
++
++#### SnapshotSession.discard
++
++`defdiscard(self)->None`
++
++Purpose: `discard`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.discard()`
++
++### GhostSnapshot
++
++`@dataclassclassGhostSnapshot`
++
++Purpose: `GhostSnapshot`. Parameters: None. Return type: `GhostSnapshot`. Exceptions: N/A. Example: `GhostSnapshot()`
++
++#### GhostSnapshot.increment_turn
++
++`defincrement_turn(self)->None`
++
++Purpose: `increment_turn`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.increment_turn()`
++
++#### GhostSnapshot.turn_count
++
++`defturn_count(self)->int`
++
++Purpose: `turn_count`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.turn_count()`
++
++#### GhostSnapshot.get_new_messages
++
++`defget_new_messages(self,original_count:int)->list[Message]`
++
++Purpose: `get_new_messages`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.get_new_messages()`
++
++#### GhostSnapshot.discard
++
++`defdiscard(self)->None`
++
++Purpose: `discard`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.discard()`
++
++### GhostExecutor
++
++`classGhostExecutor`
++
++Purpose: `GhostExecutor`. Parameters: None. Return type: `GhostExecutor`. Exceptions: N/A. Example: `GhostExecutor()`
++
++#### GhostExecutor.execute_write
++
++`asyncdefexecute_write(self,path:str,content:str)->dict[str,Any]`
++
++Purpose: `execute_write`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.execute_write()`
++
++#### GhostExecutor.execute_read
++
++`asyncdefexecute_read(self,path:str)->dict[str,Any]`
++
++Purpose: `execute_read`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.execute_read()`
++
++#### GhostExecutor.run
++
++`asyncdefrun(self,tool_name:str,input:dict[str,Any],**kwargs:Any)->Any`
++
++Purpose: `run`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.run()`
++
++#### GhostExecutor.merge_to_disk
++
++`defmerge_to_disk(self)->list[str]`
++
++Purpose: `merge_to_disk`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.merge_to_disk()`
++
++## duh.kernel.tasks
++
++### Task
++
++`@dataclassclassTask`
++
++Purpose: `Task`. Parameters: None. Return type: `Task`. Exceptions: N/A. Example: `Task()`
++
++### TaskManager
++
++`classTaskManager`
++
++Purpose: `TaskManager`. Parameters: None. Return type: `TaskManager`. Exceptions: N/A. Example: `TaskManager()`
++
++#### TaskManager.create
++
++`defcreate(self,description:str)->Task`
++
++Purpose: `create`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.create()`
++
++#### TaskManager.update
++
++`defupdate(self,task_id:str,status:str)->Task`
++
++Purpose: `update`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.update()`
++
++#### TaskManager.get
++
++`defget(self,task_id:str)->Task|None`
++
++Purpose: `get`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.get()`
++
++#### TaskManager.list_all
++
++`deflist_all(self)->list[Task]`
++
++Purpose: `list_all`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.list_all()`
++
++#### TaskManager.summary
++
++`defsummary(self)->str`
++
++Purpose: `summary`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.summary()`
++
++## duh.kernel.templates
++
++### TemplateDef
++
++`@dataclassclassTemplateDef`
++
++Purpose: `TemplateDef`. Parameters: None. Return type: `TemplateDef`. Exceptions: N/A. Example: `TemplateDef()`
++
++#### TemplateDef.render
++
++`defrender(self,prompt:str='')->str`
++
++Purpose: `render`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.render()`
++
++### load_templates_dir
++
++`defload_templates_dir(path:str|Path)->list[TemplateDef]`
++
++Purpose: `load_templates_dir`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `load_templates_dir()`
++
++### load_all_templates
++
++`defload_all_templates(cwd:str='.')->list[TemplateDef]`
++
++Purpose: `load_all_templates`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `load_all_templates()`
++
++## duh.kernel.tokens
++
++### count_tokens
++
++`defcount_tokens(text:str)->int`
++
++Purpose: `count_tokens`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `count_tokens()`
++
++### count_tokens_for_model
++
++`defcount_tokens_for_model(text:str,model:str)->int`
++
++Purpose: `count_tokens_for_model`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `count_tokens_for_model()`
++
++### estimate_cost
++
++`defestimate_cost(model:str,input_tokens:int,output_tokens:int)->float`
++
++Purpose: `estimate_cost`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `estimate_cost()`
++
++### get_context_limit
++
++`defget_context_limit(model:str)->int`
++
++Purpose: `get_context_limit`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `get_context_limit()`
++
++### format_cost
++
++`defformat_cost(cost:float)->str`
++
++Purpose: `format_cost`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `format_cost()`
++
++## duh.kernel.tool
++
++### ToolResult
++
++`@dataclassclassToolResult`
++
++Purpose: `ToolResult`. Parameters: None. Return type: `ToolResult`. Exceptions: N/A. Example: `ToolResult()`
++
++### ToolContext
++
++`@dataclassclassToolContext`
++
++Purpose: `ToolContext`. Parameters: None. Return type: `ToolContext`. Exceptions: N/A. Example: `ToolContext()`
++
++### Tool
++
++`@runtime_checkableclassTool(Protocol)`
++
++Purpose: `Tool`. Parameters: None. Return type: `Tool`. Exceptions: N/A. Example: `Tool()`
++
++#### Tool.call
++
++`asyncdefcall(self,input:dict[str,Any],context:ToolContext)->ToolResult`
++
++Purpose: `call`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.call()`
++
++#### Tool.is_read_only
++
++`defis_read_only(self)->bool`
++
++Purpose: `is_read_only`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.is_read_only()`
++
++#### Tool.is_destructive
++
++`defis_destructive(self)->bool`
++
++Purpose: `is_destructive`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.is_destructive()`
++
++#### Tool.check_permissions
++
++`asyncdefcheck_permissions(self,input:dict[str,Any],context:ToolContext)->dict[str,Any]`
++
++Purpose: `check_permissions`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.check_permissions()`
++
++### get_tool_timeout
++
++`defget_tool_timeout(tool_name:str)->int`
++
++Purpose: `get_tool_timeout`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `get_tool_timeout()`
++
++
++
++## duh.kernel.undo
++
++### UndoStack
++
++`classUndoStack`
++
++Purpose: `UndoStack`. Parameters: None. Return type: `UndoStack`. Exceptions: N/A. Example: `UndoStack()`
++
++#### UndoStack.push
++
++`defpush(self,file_path:str,original_content:str|None)->None`
++
++Purpose: `push`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.push()`
++
++#### UndoStack.undo
++
++`defundo(self)->tuple[str,str]`
++
++Purpose: `undo`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.undo()`
++
++#### UndoStack.depth
++
++`defdepth(self)->int`
++
++Purpose: `depth`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.depth()`
++
++#### UndoStack.maxlen
++
++`defmaxlen(self)->int`
++
++Purpose: `maxlen`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.maxlen()`
++
++#### UndoStack.in_memory_bytes
++
++`defin_memory_bytes(self)->int`
++
++Purpose: `in_memory_bytes`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.in_memory_bytes()`
++
++#### UndoStack.peek
++
++`defpeek(self)->UndoEntry|None`
++
++Purpose: `peek`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.peek()`
++
++#### UndoStack.clear
++
++`defclear(self)->None`
++
++Purpose: `clear`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.clear()`
++
++## duh.kernel.untrusted
++
++### TaintSource
++
++`classTaintSource(str,Enum)`
++
++Purpose: `TaintSource`. Parameters: None. Return type: `TaintSource`. Exceptions: N/A. Example: `TaintSource()`
++
++### TaintLossError
++
++`classTaintLossError(RuntimeError)`
++
++Purpose: `TaintLossError`. Parameters: None. Return type: `TaintLossError`. Exceptions: N/A. Example: `TaintLossError()`
++
++### UntrustedStr
++
++`classUntrustedStr(str)`
++
++Purpose: `UntrustedStr`. Parameters: None. Return type: `UntrustedStr`. Exceptions: N/A. Example: `UntrustedStr()`
++
++#### UntrustedStr.source
++
++`defsource(self)->TaintSource`
++
++Purpose: `source`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.source()`
++
++#### UntrustedStr.is_tainted
++
++`defis_tainted(self)->bool`
++
++Purpose: `is_tainted`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.is_tainted()`
++
++#### UntrustedStr.format
++
++`defformat(self,*args:object,**kwargs:object)->'UntrustedStr'`
++
++Purpose: `format`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.format()`
++
++#### UntrustedStr.format_map
++
++`defformat_map(self,mapping:object)->'UntrustedStr'`
++
++Purpose: `format_map`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.format_map()`
++
++#### UntrustedStr.join
++
++`defjoin(self,iterable)->'UntrustedStr'`
++
++Purpose: `join`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.join()`
++
++#### UntrustedStr.replace
++
++`defreplace(self,old,new,count=-1)->'UntrustedStr'`
++
++Purpose: `replace`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.replace()`
++
++#### UntrustedStr.strip
++
++`defstrip(self,chars=None)->'UntrustedStr'`
++
++Purpose: `strip`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.strip()`
++
++#### UntrustedStr.lstrip
++
++`deflstrip(self,chars=None)->'UntrustedStr'`
++
++Purpose: `lstrip`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.lstrip()`
++
++#### UntrustedStr.rstrip
++
++`defrstrip(self,chars=None)->'UntrustedStr'`
++
++Purpose: `rstrip`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.rstrip()`
++
++#### UntrustedStr.split
++
++`defsplit(self,sep=None,maxsplit=-1)->list['UntrustedStr']`
++
++Purpose: `split`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.split()`
++
++#### UntrustedStr.rsplit
++
++`defrsplit(self,sep=None,maxsplit=-1)->list['UntrustedStr']`
++
++Purpose: `rsplit`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.rsplit()`
++
++#### UntrustedStr.splitlines
++
++`defsplitlines(self,keepends=False)->list['UntrustedStr']`
++
++Purpose: `splitlines`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.splitlines()`
++
++#### UntrustedStr.lower
++
++`deflower(self)->'UntrustedStr'`
++
++Purpose: `lower`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.lower()`
++
++#### UntrustedStr.upper
++
++`defupper(self)->'UntrustedStr'`
++
++Purpose: `upper`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.upper()`
++
++#### UntrustedStr.title
++
++`deftitle(self)->'UntrustedStr'`
++
++Purpose: `title`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.title()`
++
++#### UntrustedStr.casefold
++
++`defcasefold(self)->'UntrustedStr'`
++
++Purpose: `casefold`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.casefold()`
++
++#### UntrustedStr.capitalize
++
++`defcapitalize(self)->'UntrustedStr'`
++
++Purpose: `capitalize`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.capitalize()`
++
++#### UntrustedStr.swapcase
++
++`defswapcase(self)->'UntrustedStr'`
++
++Purpose: `swapcase`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.swapcase()`
++
++#### UntrustedStr.expandtabs
++
++`defexpandtabs(self,tabsize=8)->'UntrustedStr'`
++
++Purpose: `expandtabs`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.expandtabs()`
++
++#### UntrustedStr.center
++
++`defcenter(self,width,fillchar='')->'UntrustedStr'`
++
++Purpose: `center`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.center()`
++
++#### UntrustedStr.ljust
++
++`defljust(self,width,fillchar='')->'UntrustedStr'`
++
++Purpose: `ljust`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.ljust()`
++
++#### UntrustedStr.rjust
++
++`defrjust(self,width,fillchar='')->'UntrustedStr'`
++
++Purpose: `rjust`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.rjust()`
++
++#### UntrustedStr.zfill
++
++`defzfill(self,width)->'UntrustedStr'`
++
++Purpose: `zfill`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.zfill()`
++
++#### UntrustedStr.translate
++
++`deftranslate(self,table)->'UntrustedStr'`
++
++Purpose: `translate`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.translate()`
++
++#### UntrustedStr.removeprefix
++
++`defremoveprefix(self,prefix)->'UntrustedStr'`
++
++Purpose: `removeprefix`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.removeprefix()`
++
++#### UntrustedStr.removesuffix
++
++`defremovesuffix(self,suffix)->'UntrustedStr'`
++
++Purpose: `removesuffix`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.removesuffix()`
++
++### merge_source
++
++`defmerge_source(a:Any,b:Any)->TaintSource`
++
++Purpose: `merge_source`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `merge_source()`
++
++### assert_no_tag_loss
++
++`defassert_no_tag_loss(value:object,op:str)->None`
++
++Purpose: `assert_no_tag_loss`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `assert_no_tag_loss()`
++
++## duh.ports.approver
++
++### ApprovalGate
++
++`@runtime_checkableclassApprovalGate(Protocol)`
++
++Purpose: `ApprovalGate`. Parameters: None. Return type: `ApprovalGate`. Exceptions: N/A. Example: `ApprovalGate()`
++
++#### ApprovalGate.check
++
++`asyncdefcheck(self,tool_name:str,input:dict[str,Any])->dict[str,Any]`
++
++Purpose: `check`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.check()`
++
++## duh.ports.context
++
++### ContextManager
++
++`@runtime_checkableclassContextManager(Protocol)`
++
++Purpose: `ContextManager`. Parameters: None. Return type: `ContextManager`. Exceptions: N/A. Example: `ContextManager()`
++
++#### ContextManager.compact
++
++`asyncdefcompact(self,messages:list[Any],token_limit:int)->list[Any]`
++
++Purpose: `compact`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.compact()`
++
++#### ContextManager.estimate_tokens
++
++`defestimate_tokens(self,messages:list[Any])->int`
++
++Purpose: `estimate_tokens`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.estimate_tokens()`
++
++## duh.ports.executor
++
++### ToolExecutor
++
++`@runtime_checkableclassToolExecutor(Protocol)`
++
++Purpose: `ToolExecutor`. Parameters: None. Return type: `ToolExecutor`. Exceptions: N/A. Example: `ToolExecutor()`
++
++#### ToolExecutor.run
++
++`asyncdefrun(self,tool_name:str,input:dict[str,Any],*,tool_use_id:str='',context:Any=None)->str|dict[str,Any]`
++
++Purpose: `run`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.run()`
++
++## duh.ports.memory
++
++### MemoryHeader
++
++`@dataclass(frozen=True)classMemoryHeader`
++
++Purpose: `MemoryHeader`. Parameters: None. Return type: `MemoryHeader`. Exceptions: N/A. Example: `MemoryHeader()`
++
++### MemoryStore
++
++`@runtime_checkableclassMemoryStore(Protocol)`
++
++Purpose: `MemoryStore`. Parameters: None. Return type: `MemoryStore`. Exceptions: N/A. Example: `MemoryStore()`
++
++#### MemoryStore.get_memory_dir
++
++`defget_memory_dir(self)->Path`
++
++Purpose: `get_memory_dir`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.get_memory_dir()`
++
++#### MemoryStore.read_index
++
++`defread_index(self)->str`
++
++Purpose: `read_index`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.read_index()`
++
++#### MemoryStore.write_index
++
++`defwrite_index(self,content:str)->None`
++
++Purpose: `write_index`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.write_index()`
++
++#### MemoryStore.read_file
++
++`defread_file(self,name:str)->str`
++
++Purpose: `read_file`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.read_file()`
++
++#### MemoryStore.write_file
++
++`defwrite_file(self,name:str,content:str)->None`
++
++Purpose: `write_file`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.write_file()`
++
++#### MemoryStore.list_files
++
++`deflist_files(self)->list[MemoryHeader]`
++
++Purpose: `list_files`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.list_files()`
++
++#### MemoryStore.delete_file
++
++`defdelete_file(self,name:str)->None`
++
++Purpose: `delete_file`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.delete_file()`
++
++## duh.ports.provider
++
++### ModelProvider
++
++`@runtime_checkableclassModelProvider(Protocol)`
++
++Purpose: `ModelProvider`. Parameters: None. Return type: `ModelProvider`. Exceptions: N/A. Example: `ModelProvider()`
++
++#### ModelProvider.stream
++
++`asyncdefstream(self,*,messages:list[Any],system_prompt:str|list[str]='',model:str='',tools:list[Any]|None=None,thinking:dict[str,Any]|None=None,max_tokens:int|None=None,**kwargs:Any)->AsyncGenerator[dict[str,Any],None]`
++
++Purpose: `stream`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.stream()`
++
++## duh.ports.renderer
++
++### Renderer
++
++`@runtime_checkableclassRenderer(Protocol)`
++
++Purpose: `Renderer`. Parameters: None. Return type: `Renderer`. Exceptions: N/A. Example: `Renderer()`
++
++#### Renderer.render_text_delta
++
++`defrender_text_delta(self,text:str)->None`
++
++Purpose: `render_text_delta`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.render_text_delta()`
++
++#### Renderer.render_tool_use
++
++`defrender_tool_use(self,name:str,input:dict[str,Any])->None`
++
++Purpose: `render_tool_use`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.render_tool_use()`
++
++#### Renderer.render_tool_result
++
++`defrender_tool_result(self,output:str,is_error:bool)->None`
++
++Purpose: `render_tool_result`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.render_tool_result()`
++
++#### Renderer.render_thinking
++
++`defrender_thinking(self,text:str)->None`
++
++Purpose: `render_thinking`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.render_thinking()`
++
++#### Renderer.render_error
++
++`defrender_error(self,error:str)->None`
++
++Purpose: `render_error`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.render_error()`
++
++#### Renderer.render_permission_request
++
++`defrender_permission_request(self,tool_name:str,input:dict[str,Any])->None`
++
++Purpose: `render_permission_request`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.render_permission_request()`
++
++#### Renderer.finish
++
++`deffinish(self)->None`
++
++Purpose: `finish`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.finish()`
++
++#### Renderer.handle
++
++`defhandle(self,event:dict[str,Any])->None`
++
++Purpose: `handle`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.handle()`
++
++## duh.ports.store
++
++### SessionStore
++
++`@runtime_checkableclassSessionStore(Protocol)`
++
++Purpose: `SessionStore`. Parameters: None. Return type: `SessionStore`. Exceptions: N/A. Example: `SessionStore()`
++
++#### SessionStore.save
++
++`asyncdefsave(self,session_id:str,messages:list[Any])->None`
++
++Purpose: `save`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.save()`
++
++#### SessionStore.load
++
++`asyncdefload(self,session_id:str)->list[Any]|None`
++
++Purpose: `load`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.load()`
++
++#### SessionStore.list_sessions
++
++`asyncdeflist_sessions(self)->list[dict[str,Any]]`
++
++Purpose: `list_sessions`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.list_sessions()`
++
++#### SessionStore.delete
++
++`asyncdefdelete(self,session_id:str)->bool`
++
++Purpose: `delete`. Parameters: see signature. Return type: see signature. Exceptions: N/A. Example: `o.delete()`
+\ No newline at end of file
+diff --git a/docs-new/ARCHITECTURE.md b/docs-new/ARCHITECTURE.md
+new file mode 100644
+index 0000000..83c1d44
+--- /dev/null
++++ b/docs-new/ARCHITECTURE.md
+@@ -0,0 +1,435 @@
++# Architecture of D.U.H.
++
++This document describes the architectural foundations, data flow, extension points, security model, and concurrency design of D.U.H. (Duh is a Universal Harness). It provides a deep dive into the inner workings of the engine and the rationale behind its decisions.
++
++## 1. Top-Level Module Layout
++
++D.U.H. is designed around a strict Ports and Adapters (Hexagonal) architecture. The core domain logic lives in the `kernel`, abstract interfaces are defined in `ports`, and external integrations are implemented as `adapters`.
++
++### 1.1. Core Modules
++
++*   **`duh.kernel`**: The heart of the harness. It contains the smallest possible agentic loop. It has zero external dependencies and never imports provider SDKs, rendering libraries, or filesystem tools directly. Key files include `engine.py` (the `Engine` orchestrator), `loop.py` (the `query` loop), `messages.py` (the universal message protocol), and `untrusted.py` (the taint tracking system).
++*   **`duh.ports`**: Abstract interfaces (Protocols) that the kernel depends on. Key files include `provider.py` (`ModelProvider`), `executor.py` (`ToolExecutor`), `approver.py` (`ApprovalGate`), and `renderer.py` (`Renderer`).
++*   **`duh.adapters`**: Concrete implementations of the ports. This includes LLM providers (`anthropic.py`, `openai_chatgpt.py`, `litellm_provider.py`), executors (`native_executor.py`), and approvers (`approvers.py`).
++*   **`duh.cli`**: The command-line interface, REPL, and session assembly logic. It constructs the `EngineConfig` and `Deps` dependencies and handles REPL slash commands (`slash_commands.py`).
++*   **`duh.tools`**: Built-in tool implementations adhering to the `Tool` protocol. Includes standard tools like `BashTool`, `ReadTool`, `WriteTool`, and `WebFetchTool`.
++*   **`duh.plugins`**: The plugin discovery and manifest loading system, allowing external packages to inject tools and hooks via Python entry points or local directories.
++*   **`duh.security`**: Security and auditing mechanisms, including `audit.py` for PEP-578 telemetry bridging and `path_policy.py` for path sandboxing.
++
++### 1.2. Component Diagram
++
++The following diagram illustrates the dependency flow and the strict separation between the CLI/Adapters and the Kernel.
++
++```mermaid
++graph TD;
++    %% CLI and Entry Points
++    CLI[CLI Orchestrator<br>(duh.cli.app)] --> Builder[SessionBuilder<br>(duh.cli.session_builder)]
++    CLI --> REPL[REPL Loop<br>(duh.cli.repl)]
++    
++    %% Engine instantiation
++    Builder --> Config[EngineConfig]
++    Builder --> Deps[Deps Struct]
++    Builder -.-> Engine[Engine<br>(duh.kernel.engine)]
++    
++    %% Kernel Domain
++    subgraph Kernel [duh.kernel]
++        Engine --> Loop[query loop<br>(loop.py)]
++        Loop --> Messages[Message Protocols<br>(messages.py)]
++        Loop --> Untrusted[Taint Tracking<br>(untrusted.py)]
++        Engine --> Config
++        Engine --> Deps
++    end
++    
++    %% Ports
++    subgraph Ports [duh.ports]
++        ProviderPort[ModelProvider]
++        ExecutorPort[ToolExecutor]
++        ApproverPort[ApprovalGate]
++        ContextPort[ContextManager]
++        RenderPort[Renderer]
++    end
++    
++    %% Kernel dependencies on Ports
++    Deps --> ProviderPort
++    Deps --> ExecutorPort
++    Deps --> ApproverPort
++    Deps --> ContextPort
++    
++    %% Adapters
++    subgraph Adapters [duh.adapters]
++        AnthropicAdapter[anthropic.py] -.->|implements| ProviderPort
++        NativeExec[native_executor.py] -.->|implements| ExecutorPort
++        TieredApprover[approvers.py] -.->|implements| ApproverPort
++        SimpleCompactor[simple_compactor.py] -.->|implements| ContextPort
++    end
++    
++    %% Execution
++    REPL --> Engine
++    NativeExec --> Tools[Core Tools<br>(duh.tools)]
++    Tools --> Permissions[Permissions Check]
++```
++
++## 2. Data Flow: From Request to Render
++
++When a user submits a prompt via the CLI, the request undergoes a highly structured lifecycle, ensuring provider neutrality, security enforcement, and token context safety.
++
++### 2.1. Initialization
++
++1.  **Session Building (`duh.cli.session_builder.py`)**: `SessionBuilder` reads configuration (CLI args, environment variables, `.duh/settings.json`) to resolve the requested model. It instantiates the corresponding provider adapter (e.g., `AnthropicProvider`). It discovers tools from `duh.tools.registry` and any active plugins.
++2.  **Engine Creation (`duh.kernel.engine.py`)**: The `SessionBuilder` constructs a `Deps` object holding callables matching the port protocols (e.g., `deps.call_model`, `deps.run_tool`). It then instantiates the `Engine` with these dependencies and the tool list.
++
++### 2.2. The Query Loop
++
++The `Engine.run(prompt)` method invokes the core `query()` loop from `duh.kernel.loop.py`.
++
++1.  **Context Preparation**: `query()` receives the entire conversational history (list of `Message` objects) and system prompts. If a `ContextGate` or memory compactor is configured, older messages are pruned to respect token limits.
++2.  **Provider Invocation**: `query()` delegates network execution to `deps.call_model(messages, ...)`. The provider adapter translates the universal `Message` formats into the provider-specific SDK payload (e.g., converting to Anthropic's `messages` array).
++3.  **Stream Parsing**: The provider yields a uniform stream of dictionaries back to the kernel (e.g., `{"type": "text_delta", "text": "..."}`). The kernel's `query()` loop consumes these events, forwarding text events directly to the caller (usually a renderer).
++4.  **Taint Assignment**: As text streams from the provider, the adapter wraps the strings in `UntrustedStr(stream, TaintSource.MODEL_OUTPUT)` (`duh.kernel.untrusted.py`). This tag propagates through string operations.
++
++### 2.3. Tool Execution
++
++If the provider yields a `tool_use` event, the sequence halts the text generation phase and transitions to execution.
++
++1.  **Executor Delegation**: The `query()` loop packages the tool request and invokes `deps.run_tool(...)` (typically hitting `NativeExecutor` in `duh.adapters.native_executor.py`).
++2.  **Schema and Identity Validation**: `NativeExecutor` verifies the tool exists in the active registry and validates the input dictionary against the tool's defined JSON schema (`duh.kernel.schema_validator.py`).
++3.  **Approval Gate (`duh.adapters.approvers.py`)**: Before execution, the input is passed to the configured `ApprovalGate`. For example, `TieredApprover` determines if the action requires interactive user consent based on whether the tool is `Read`, `Write`, or `Command` (and the current approval mode like `SUGGEST` or `AUTO_EDIT`). Dangerous actions like `git push --force` are globally blocked.
++4.  **Tool `call()`**: If approved, `tool.call(input, context)` executes the domain logic. A `ToolResult` is returned, containing the execution output.
++5.  **Re-entry**: The result is appended to the message history as a `ToolResultBlock`. `query()` loops back to step 2, feeding the result back to the provider.
++
++## 3. Extension Points
++
++The architecture is explicitly designed for extensibility at specific boundaries.
++
++### 3.1. Adding a New Provider Adapter
++
++To support a new LLM provider, you must implement the `ModelProvider` port (`duh.ports.provider.py`). 
++
++The adapter's sole responsibility is bridging the network and translation gap. It must implement the `stream()` method:
++
++```python
++async def stream(
++    self,
++    *,
++    messages: list[Any],
++    system_prompt: str | list[str] = "",
++    model: str = "",
++    tools: list[Any] | None = None,
++    **kwargs: Any,
++) -> AsyncGenerator[dict[str, Any], None]:
++    # 1. Translate D.U.H. Messages to native API format
++    # 2. Invoke the provider's streaming API
++    # 3. Yield D.U.H. stream events: {"type": "text_delta", ...}
++```
++
++The adapter must wrap all text yielded from the model in `UntrustedStr(chunk, TaintSource.MODEL_OUTPUT)` to maintain security boundaries. Once built, the provider is registered via `resolve_provider_name` in `duh.cli.repl` (or by extending LiteLLM).
++
++### 3.2. Adding a New Tool
++
++Tools implement the `Tool` protocol (`duh.kernel.tool.py`). A tool requires a `name`, `description`, `input_schema`, and an `async def call(self, input, context) -> ToolResult` method.
++
++You can register tools dynamically via the Plugin system (`duh.plugins.__init__.py`). By defining a `PluginSpec` entry point in your `pyproject.toml`, the CLI automatically discovers and wires your tool.
++
++```python
++from duh.kernel import Tool, ToolResult, ToolContext
++
++class GreetTool(Tool):
++    name = "Greet"
++    description = "Greets a user."
++    input_schema = {
++        "type": "object",
++        "properties": {"name": {"type": "string"}},
++        "required": ["name"]
++    }
++    
++    async def call(self, input: dict, ctx: ToolContext) -> ToolResult:
++        return ToolResult(output=f"Hello, {input['name']}!")
++```
++
++Registration via entry point (`pyproject.toml`):
++```toml
++[project.entry-points."duh.plugins"]
++my_plugin = "my_package:plugin_spec"
++```
++Where `plugin_spec` is a `PluginSpec(name="my_plugin", version="1.0", tools=[GreetTool()])`.
++
++### 3.3. Adding a New Slash Command
++
++The interactive REPL supports slash commands (e.g., `/model`, `/health`). These are managed by the `SlashDispatcher` in `duh.cli.slash_commands.py`.
++
++To add a new command:
++1. Define a handler method on `SlashDispatcher`:
++   ```python
++   def _handle_my_command(self, arg: str) -> tuple[bool, str]:
++       sys.stdout.write(f"Executing with arg: {arg}
++")
++       return True, self.ctx.model
++   ```
++2. Register the command in the `SlashDispatcher._HANDLERS` table:
++   ```python
++   _HANDLERS = {
++       ...
++       "/mycmd": SlashDispatcher._handle_my_command,
++   }
++   ```
++3. Update the `SLASH_COMMANDS` dictionary to provide canonical help text for the REPL completer.
++
++## 4. Security Architecture
++
++D.U.H. employs a defense-in-depth security model to mitigate prompt injection, excessive resource consumption, and unauthorized destructive actions.
++
++### 4.1. Taint Propagation (`UntrustedStr`)
++All strings originating from LLM providers or unverified external sources (like `WebFetchTool`) are wrapped in `UntrustedStr`, a subclass of `str` that tracks the data's provenance (`TaintSource.MODEL_OUTPUT`, `TaintSource.UNVERIFIED_WEB`).
++When strings are concatenated, the taints merge. If a critical function (like a bash executor) receives a string without expected taints, or if a python extension strips the taint, `assert_no_tag_loss` raises a `TaintLossError`. This ensures that malicious payloads cannot launder themselves through formatting operations before reaching a shell.
++
++### 4.2. Confirmation Tokens (`ConfirmationMinter`)
++For tools executing irreversible actions outside of interactive REPL mode (e.g., via automated hooks), the `ConfirmationMinter` (`duh.kernel.confirmation.py`) generates cryptographically secure, single-use tokens. A tool must present the correct token to prove that the execution was authorized by a higher-level safety policy or out-of-band user approval, preventing automated loops from executing catastrophic commands autonomously.
++
++### 4.3. Sandbox Layers & Execution Policies
++- **ApprovalGate & TieredApprover**: The `TieredApprover` blocks destructive operations natively. Regular expressions (`_GIT_DESTRUCTIVE_RE`) detect and globally block commands like `git push --force` or `git reset --hard` regardless of the approval tier.
++- **PathSandboxing**: The `PathPolicy` (`duh.security.path_policy.py`) restricts file operations to the current working tree, preventing directory traversal attacks (`../../etc/passwd`).
++- **Snapshot Sessions**: The `ReadOnlyExecutor` and `GhostSnapshot` (`duh.kernel.snapshot.py`) allow the engine to run in isolated modes where file system modifications are simulated in memory rather than persisted to disk, allowing safe planning and dry-runs.
++- **PEP-578 Audit Bridging**: `duh.kernel.audit.install()` sets up CPython auditing hooks (`sys.addaudithook`), bridging Python-level execution events (like `os.system` or socket connections) directly into D.U.H.'s structured audit log.
++
++## 5. Threading and Concurrency Model
++
++D.U.H. strictly avoids traditional preemptive threads in the kernel to eliminate data races over conversational state.
++
++### 5.1. Async-First Event Loop
++The entire system runs on Python's `asyncio` event loop. Providers use `AsyncGenerator` to yield streaming chunks, and executors use `await` to run subprocesses without blocking the main thread. This allows the CLI to simultaneously render TUI animations, stream LLM text, and read from standard input.
++
++### 5.2. Tool Concurrency Rules
++In `duh.kernel.loop.py`, the engine processes tool use requests. If the LLM generates multiple tool calls in a single response block:
++- The engine checks the `is_read_only` property of each requested tool.
++- If **all** tools in the batch are read-only (e.g., multiple `ReadTool` or `GlobTool` calls), `_execute_block` leverages `asyncio.gather(*tasks)` to execute them concurrently.
++- If **any** tool in the batch modifies state (e.g., `WriteTool`, `BashTool`), the engine executes the entire batch sequentially. This guarantees deterministic behavior and prevents race conditions where a `ReadTool` might read a file mid-write by a concurrent `WriteTool`.
++
++## 6. Known Tradeoffs and Non-Goals
++
++### 6.1. Minimal Kernel Footprint
++**Tradeoff:** The `duh.kernel` directory contains exactly zero external dependencies. This ensures longevity and auditability but means that advanced features (like structured logging or complex JSON path querying) must be pushed out to plugins and adapters, increasing the integration surface area.
++
++### 6.2. Non-Goal: Arbitrary Graph Agents
++D.U.H. explicitly avoids complex, directed-acyclic-graph (DAG) agent frameworks (like LangChain or AutoGen). ADR-027 mandates the "smallest possible agentic loop." State transitions are strictly conversational: the LLM provides text or tool calls, the engine executes them, and control returns to the LLM. 
++
++### 6.3. Taint Tag Loss
++**Tradeoff:** `UntrustedStr` works well within pure Python, but passing a tainted string to a compiled C extension (like `json.loads` in older Python versions) can strip the `str` subclass, effectively laundering the taint. The system relies on `assert_no_tag_loss` to detect when this happens in known pathways, but developers must remain vigilant when integrating native libraries.
++
++
++## 7. Extended Architectural Context
++
++
++This document describes the architectural foundations, data flow, extension points, security model, and concurrency design of D.U.H. (Duh is a Universal Harness). It provides a deep dive into the inner workings of the engine and the rationale behind its decisions.
++
++### 7.1 Top-Level Module Layout
++
++D.U.H. is designed around a strict Ports and Adapters (Hexagonal) architecture. The core domain logic lives in the `kernel`, abstract interfaces are defined in `ports`, and external integrations are implemented as `adapters`.
++
++#### 7.11. Core Modules
++
++*   **`duh.kernel`**: The heart of the harness. It contains the smallest possible agentic loop. It has zero external dependencies and never imports provider SDKs, rendering libraries, or filesystem tools directly. Key files include `engine.py` (the `Engine` orchestrator), `loop.py` (the `query` loop), `messages.py` (the universal message protocol), and `untrusted.py` (the taint tracking system).
++*   **`duh.ports`**: Abstract interfaces (Protocols) that the kernel depends on. Key files include `provider.py` (`ModelProvider`), `executor.py` (`ToolExecutor`), `approver.py` (`ApprovalGate`), and `renderer.py` (`Renderer`).
++*   **`duh.adapters`**: Concrete implementations of the ports. This includes LLM providers (`anthropic.py`, `openai_chatgpt.py`, `litellm_provider.py`), executors (`native_executor.py`), and approvers (`approvers.py`).
++*   **`duh.cli`**: The command-line interface, REPL, and session assembly logic. It constructs the `EngineConfig` and `Deps` dependencies and handles REPL slash commands (`slash_commands.py`).
++*   **`duh.tools`**: Built-in tool implementations adhering to the `Tool` protocol. Includes standard tools like `BashTool`, `ReadTool`, `WriteTool`, and `WebFetchTool`.
++*   **`duh.plugins`**: The plugin discovery and manifest loading system, allowing external packages to inject tools and hooks via Python entry points or local directories.
++*   **`duh.security`**: Security and auditing mechanisms, including `audit.py` for PEP-578 telemetry bridging and `path_policy.py` for path sandboxing.
++
++#### 7.12. Component Diagram
++
++The following diagram illustrates the dependency flow and the strict separation between the CLI/Adapters and the Kernel.
++
++```mermaid
++graph TD;
++    %% CLI and Entry Points
++    CLI[CLI Orchestrator<br>(duh.cli.app)] --> Builder[SessionBuilder<br>(duh.cli.session_builder)]
++    CLI --> REPL[REPL Loop<br>(duh.cli.repl)]
++    
++    %% Engine instantiation
++    Builder --> Config[EngineConfig]
++    Builder --> Deps[Deps Struct]
++    Builder -.-> Engine[Engine<br>(duh.kernel.engine)]
++    
++    %% Kernel Domain
++    subgraph Kernel [duh.kernel]
++        Engine --> Loop[query loop<br>(loop.py)]
++        Loop --> Messages[Message Protocols<br>(messages.py)]
++        Loop --> Untrusted[Taint Tracking<br>(untrusted.py)]
++        Engine --> Config
++        Engine --> Deps
++    end
++    
++    %% Ports
++    subgraph Ports [duh.ports]
++        ProviderPort[ModelProvider]
++        ExecutorPort[ToolExecutor]
++        ApproverPort[ApprovalGate]
++        ContextPort[ContextManager]
++        RenderPort[Renderer]
++    end
++    
++    %% Kernel dependencies on Ports
++    Deps --> ProviderPort
++    Deps --> ExecutorPort
++    Deps --> ApproverPort
++    Deps --> ContextPort
++    
++    %% Adapters
++    subgraph Adapters [duh.adapters]
++        AnthropicAdapter[anthropic.py] -.->|implements| ProviderPort
++        NativeExec[native_executor.py] -.->|implements| ExecutorPort
++        TieredApprover[approvers.py] -.->|implements| ApproverPort
++        SimpleCompactor[simple_compactor.py] -.->|implements| ContextPort
++    end
++    
++    %% Execution
++    REPL --> Engine
++    NativeExec --> Tools[Core Tools<br>(duh.tools)]
++    Tools --> Permissions[Permissions Check]
++```
++
++### 7.2 Data Flow: From Request to Render
++
++When a user submits a prompt via the CLI, the request undergoes a highly structured lifecycle, ensuring provider neutrality, security enforcement, and token context safety.
++
++#### 7.21. Initialization
++
++1.  **Session Building (`duh.cli.session_builder.py`)**: `SessionBuilder` reads configuration (CLI args, environment variables, `.duh/settings.json`) to resolve the requested model. It instantiates the corresponding provider adapter (e.g., `AnthropicProvider`). It discovers tools from `duh.tools.registry` and any active plugins.
++2.  **Engine Creation (`duh.kernel.engine.py`)**: The `SessionBuilder` constructs a `Deps` object holding callables matching the port protocols (e.g., `deps.call_model`, `deps.run_tool`). It then instantiates the `Engine` with these dependencies and the tool list.
++
++#### 7.22. The Query Loop
++
++The `Engine.run(prompt)` method invokes the core `query()` loop from `duh.kernel.loop.py`.
++
++1.  **Context Preparation**: `query()` receives the entire conversational history (list of `Message` objects) and system prompts. If a `ContextGate` or memory compactor is configured, older messages are pruned to respect token limits.
++2.  **Provider Invocation**: `query()` delegates network execution to `deps.call_model(messages, ...)`. The provider adapter translates the universal `Message` formats into the provider-specific SDK payload (e.g., converting to Anthropic's `messages` array).
++3.  **Stream Parsing**: The provider yields a uniform stream of dictionaries back to the kernel (e.g., `{"type": "text_delta", "text": "..."}`). The kernel's `query()` loop consumes these events, forwarding text events directly to the caller (usually a renderer).
++4.  **Taint Assignment**: As text streams from the provider, the adapter wraps the strings in `UntrustedStr(stream, TaintSource.MODEL_OUTPUT)` (`duh.kernel.untrusted.py`). This tag propagates through string operations.
++
++#### 7.23. Tool Execution
++
++If the provider yields a `tool_use` event, the sequence halts the text generation phase and transitions to execution.
++
++1.  **Executor Delegation**: The `query()` loop packages the tool request and invokes `deps.run_tool(...)` (typically hitting `NativeExecutor` in `duh.adapters.native_executor.py`).
++2.  **Schema and Identity Validation**: `NativeExecutor` verifies the tool exists in the active registry and validates the input dictionary against the tool's defined JSON schema (`duh.kernel.schema_validator.py`).
++3.  **Approval Gate (`duh.adapters.approvers.py`)**: Before execution, the input is passed to the configured `ApprovalGate`. For example, `TieredApprover` determines if the action requires interactive user consent based on whether the tool is `Read`, `Write`, or `Command` (and the current approval mode like `SUGGEST` or `AUTO_EDIT`). Dangerous actions like `git push --force` are globally blocked.
++4.  **Tool `call()`**: If approved, `tool.call(input, context)` executes the domain logic. A `ToolResult` is returned, containing the execution output.
++5.  **Re-entry**: The result is appended to the message history as a `ToolResultBlock`. `query()` loops back to step 2, feeding the result back to the provider.
++
++### 7.3 Extension Points
++
++The architecture is explicitly designed for extensibility at specific boundaries.
++
++#### 7.31. Adding a New Provider Adapter
++
++To support a new LLM provider, you must implement the `ModelProvider` port (`duh.ports.provider.py`). 
++
++The adapter's sole responsibility is bridging the network and translation gap. It must implement the `stream()` method:
++
++```python
++async def stream(
++    self,
++    *,
++    messages: list[Any],
++    system_prompt: str | list[str] = "",
++    model: str = "",
++    tools: list[Any] | None = None,
++    **kwargs: Any,
++) -> AsyncGenerator[dict[str, Any], None]:
++    # 1. Translate D.U.H. Messages to native API format
++    # 2. Invoke the provider's streaming API
++    # 3. Yield D.U.H. stream events: {"type": "text_delta", ...}
++```
++
++The adapter must wrap all text yielded from the model in `UntrustedStr(chunk, TaintSource.MODEL_OUTPUT)` to maintain security boundaries. Once built, the provider is registered via `resolve_provider_name` in `duh.cli.repl` (or by extending LiteLLM).
++
++#### 7.32. Adding a New Tool
++
++Tools implement the `Tool` protocol (`duh.kernel.tool.py`). A tool requires a `name`, `description`, `input_schema`, and an `async def call(self, input, context) -> ToolResult` method.
++
++You can register tools dynamically via the Plugin system (`duh.plugins.__init__.py`). By defining a `PluginSpec` entry point in your `pyproject.toml`, the CLI automatically discovers and wires your tool.
++
++```python
++from duh.kernel import Tool, ToolResult, ToolContext
++
++class GreetTool(Tool):
++    name = "Greet"
++    description = "Greets a user."
++    input_schema = {
++        "type": "object",
++        "properties": {"name": {"type": "string"}},
++        "required": ["name"]
++    }
++    
++    async def call(self, input: dict, ctx: ToolContext) -> ToolResult:
++        return ToolResult(output=f"Hello, {input['name']}!")
++```
++
++Registration via entry point (`pyproject.toml`):
++```toml
++[project.entry-points."duh.plugins"]
++my_plugin = "my_package:plugin_spec"
++```
++Where `plugin_spec` is a `PluginSpec(name="my_plugin", version="1.0", tools=[GreetTool()])`.
++
++#### 7.33. Adding a New Slash Command
++
++The interactive REPL supports slash commands (e.g., `/model`, `/health`). These are managed by the `SlashDispatcher` in `duh.cli.slash_commands.py`.
++
++To add a new command:
++1. Define a handler method on `SlashDispatcher`:
++   ```python
++   def _handle_my_command(self, arg: str) -> tuple[bool, str]:
++       sys.stdout.write(f"Executing with arg: {arg}
++")
++       return True, self.ctx.model
++   ```
++2. Register the command in the `SlashDispatcher._HANDLERS` table:
++   ```python
++   _HANDLERS = {
++       ...
++       "/mycmd": SlashDispatcher._handle_my_command,
++   }
++   ```
++3. Update the `SLASH_COMMANDS` dictionary to provide canonical help text for the REPL completer.
++
++### 7.4 Security Architecture
++
++D.U.H. employs a defense-in-depth security model to mitigate prompt injection, excessive resource consumption, and unauthorized destructive actions.
++
++#### 7.41. Taint Propagation (`UntrustedStr`)
++All strings originating from LLM providers or unverified external sources (like `WebFetchTool`) are wrapped in `UntrustedStr`, a subclass of `str` that tracks the data's provenance (`TaintSource.MODEL_OUTPUT`, `TaintSource.UNVERIFIED_WEB`).
++When strings are concatenated, the taints merge. If a critical function (like a bash executor) receives a string without expected taints, or if a python extension strips the taint, `assert_no_tag_loss` raises a `TaintLossError`. This ensures that malicious payloads cannot launder themselves through formatting operations before reaching a shell.
++
++#### 7.42. Confirmation Tokens (`ConfirmationMinter`)
++For tools executing irreversible actions outside of interactive REPL mode (e.g., via automated hooks), the `ConfirmationMinter` (`duh.kernel.confirmation.py`) generates cryptographically secure, single-use tokens. A tool must present the correct token to prove that the execution was authorized by a higher-level safety policy or out-of-band user approval, preventing automated loops from executing catastrophic commands autonomously.
++
++#### 7.43. Sandbox Layers & Execution Policies
++- **ApprovalGate & TieredApprover**: The `TieredApprover` blocks destructive operations natively. Regular expressions (`_GIT_DESTRUCTIVE_RE`) detect and globally block commands like `git push --force` or `git reset --hard` regardless of the approval tier.
++- **PathSandboxing**: The `PathPolicy` (`duh.security.path_policy.py`) restricts file operations to the current working tree, preventing directory traversal attacks (`../../etc/passwd`).
++- **Snapshot Sessions**: The `ReadOnlyExecutor` and `GhostSnapshot` (`duh.kernel.snapshot.py`) allow the engine to run in isolated modes where file system modifications are simulated in memory rather than persisted to disk, allowing safe planning and dry-runs.
++- **PEP-578 Audit Bridging**: `duh.kernel.audit.install()` sets up CPython auditing hooks (`sys.addaudithook`), bridging Python-level execution events (like `os.system` or socket connections) directly into D.U.H.'s structured audit log.
++
++### 7.5 Threading and Concurrency Model
++
++D.U.H. strictly avoids traditional preemptive threads in the kernel to eliminate data races over conversational state.
++
++#### 7.51. Async-First Event Loop
++The entire system runs on Python's `asyncio` event loop. Providers use `AsyncGenerator` to yield streaming chunks, and executors use `await` to run subprocesses without blocking the main thread. This allows the CLI to simultaneously render TUI animations, stream LLM text, and read from standard input.
++
++#### 7.52. Tool Concurrency Rules
++In `duh.kernel.loop.py`, the engine processes tool use requests. If the LLM generates multiple tool calls in a single response block:
++- The engine checks the `is_read_only` property of each requested tool.
++- If **all** tools in the batch are read-only (e.g., multiple `ReadTool` or `GlobTool` calls), `_execute_block` leverages `asyncio.gather(*tasks)` to execute them concurrently.
++- If **any** tool in the batch modifies state (e.g., `WriteTool`, `BashTool`), the engine executes the entire batch sequentially. This guarantees deterministic behavior and prevents race conditions where a `ReadTool` might read a file mid-write by a concurrent `WriteTool`.
++
++### 7.6 Known Tradeoffs and Non-Goals
++
++#### 7.61. Minimal Kernel Footprint
++**Tradeoff:** The `duh.kernel` directory contains exactly zero external dependencies. This ensures longevity and auditability but means that advanced features (like structured logging or complex JSON path querying) must be pushed out to plugins and adapters, increasing the integration surface area.
++
++#### 7.62. Non-Goal: Arbitrary Graph Agents
++D.U.H. explicitly avoids complex, directed-acyclic-graph (DAG) agent frameworks (like LangChain or AutoGen). ADR-027 mandates the "smallest possible agentic loop." State transitions are strictly conversational: the LLM provides text or tool calls, the engine executes them, and control returns to the LLM. 
++
++#### 7.63. Taint Tag Loss
++**Tradeoff:** `UntrustedStr` works well within pure Python, but passing a tainted string to a compiled C extension (like `json.loads` in older Python versions) can strip the `str` subclass, effectively laundering the taint. The system relies on `assert_no_tag_loss` to detect when this happens in known pathways, but developers must remain vigilant when integrating native libraries.
+diff --git a/docs-new/TUTORIAL.md b/docs-new/TUTORIAL.md
+new file mode 100644
+index 0000000..198d718
+--- /dev/null
++++ b/docs-new/TUTORIAL.md
+@@ -0,0 +1,507 @@
++# D.U.H. Tutorial: From Zero to Your First Custom Tool
++
++Welcome to the D.U.H. (Duh is a Universal Harness) tutorial. This guide will walk you through installing the harness from source, running basic commands, and building a fully functional custom tool utilizing the built-in plugin registry and approval systems.
++
++## 1. Installation
++
++Since you are running against a pinned checkout of the source tree, you can install the CLI in editable mode using `pip`.
++
++```bash
++pip install -e .
++```
++
++**Expected Output:**
++```
++Obtaining file:///.../duh
++Installing collected packages: duh
++  Running setup.py develop for duh
++Successfully installed duh
++```
++
++Verify the installation by checking the CLI version or invoking the help menu:
++
++```bash
++duh --version
++```
++
++**Expected Output:**
++```
++duh 0.1.0
++```
++
++## 2. Hello World
++
++With the CLI installed, you can issue your first prompt. By default, D.U.H. will attempt to connect to a provider based on your environment variables (e.g., `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`).
++
++```bash
++duh "What is 2+2? Reply with just the number."
++```
++
++**Expected Output:**
++```
++4
++```
++
++If you don't have an API key configured yet, D.U.H. will gracefully inform you that a provider must be configured or prompt you to connect one.
++
++## 3. Stub Mode Run
++
++For offline development, testing, or simply trying out the CLI without incurring token costs, you can use the **Stub Provider**. The stub provider bypasses the network completely and returns a deterministic response.
++
++```bash
++DUH_STUB_PROVIDER=1 duh "Hello, world!"
++```
++
++**Expected Output:**
++```
++[StubProvider] Response for: Hello, world!
++```
++
++The output will be the pre-recorded stub message. This is highly useful when verifying that your tools are correctly registered and that the engine can initialize without relying on external network requests.
++
++## 4. Building a Custom Tool End-to-End
++
++D.U.H. treats tools as first-class citizens. They are robustly defined using the `Tool` protocol from `duh.kernel.tool`. Let's build a tool that calculates the length of a given string.
++
++### 4.1. Implementation and Schema
++
++Create a file named `string_length_plugin.py`. This file will contain our tool class and the plugin specification required for registration.
++
++```python
++from duh.kernel.tool import Tool, ToolResult, ToolContext
++from duh.plugins import PluginSpec
++
++class StringLengthTool(Tool):
++    # The name exposed to the LLM
++    name = "StringLength"
++    
++    # The description the LLM reads to understand when to use this tool
++    description = "Calculates the length of a given string."
++    
++    # JSON Schema defining the expected input arguments
++    input_schema = {
++        "type": "object",
++        "properties": {
++            "text": {
++                "type": "string",
++                "description": "The string to calculate the length of"
++            }
++        },
++        "required": ["text"]
++    }
++
++    async def call(self, input: dict, context: ToolContext) -> ToolResult:
++        text = input.get("text", "")
++        length = len(text)
++        return ToolResult(output=f"The length of the string is {length} characters.")
++        
++    async def check_permissions(self, input: dict, context: ToolContext) -> dict:
++        # Our tool is read-only and safe, so we always approve it natively
++        return {"allowed": True}
++
++# Expose the plugin specification
++plugin_spec = PluginSpec(
++    name="string-length-plugin",
++    version="1.0.0",
++    description="A plugin that adds string length calculation.",
++    tools=[StringLengthTool()]
++)
++```
++
++### 4.2. Registration
++
++D.U.H. discovers external tools via Python's `entry_points` system. We need to register `string_length_plugin:plugin_spec` under the `duh.plugins` group.
++
++In your project's `pyproject.toml`, add the following block:
++
++```toml
++[project.entry-points."duh.plugins"]
++string-length-plugin = "string_length_plugin:plugin_spec"
++```
++
++Once added, reinstall your package so `pip` registers the entry point:
++
++```bash
++pip install -e .
++```
++
++**Expected Output:**
++```
++Obtaining file:///.../duh
++Installing collected packages: duh
++  Running setup.py develop for duh
++Successfully installed duh
++```
++
++### 4.3. Approval Policy
++
++The D.U.H. engine enforces strict security boundaries. Before any tool executes, it must pass the `ApprovalGate` (found in `duh.ports.approver` and implemented in `duh.adapters.approvers.py`). 
++
++By default, the engine uses a tiered approval system (`TieredApprover`). Because we explicitly defined `check_permissions` in our tool to return `{"allowed": True}`, the interactive prompt is bypassed natively for this tool. However, if our tool was modifying files, we would rely on the overarching engine approval mode (`--approval-mode auto-edit` vs `suggest`).
++
++### 4.4. First Call
++
++We can now test our custom tool. Since we want to ensure the LLM invokes it, we'll ask a question that specifically requires it. We will use the stub provider for safety, but note that the stub provider does not dynamically generate tool calls. To see the tool actually invoked, you would need to use a real model:
++
++```bash
++duh "Use the StringLength tool to calculate the length of 'Supercalifragilisticexpialidocious'."
++```
++
++**Expected Output:**
++```
++[Tool Use: StringLength]
++Input: {"text": "Supercalifragilisticexpialidocious"}
++Result: The length of the string is 34 characters.
++
++Based on the tool output, the length of 'Supercalifragilisticexpialidocious' is 34 characters.
++```
++
++The engine will:
++1. Pass the tool schema to the LLM.
++2. Receive a `tool_use` event from the LLM.
++3. Validate the input against our JSON schema.
++4. Call our `StringLengthTool.call` method.
++5. Return the result to the LLM.
++6. Print the final answer to the screen.
++
++Congratulations! You have successfully built, registered, and executed a custom tool in D.U.H.
++
++
++## 5. Advanced Tool Execution Concepts
++
++
++Welcome to the D.U.H. (Duh is a Universal Harness) tutorial. This guide will walk you through installing the harness from source, running basic commands, and building a fully functional custom tool utilizing the built-in plugin registry and approval systems.
++
++### 5.1 Installation
++
++Since you are running against a pinned checkout of the source tree, you can install the CLI in editable mode using `pip`.
++
++```bash
++pip install -e .
++```
++
++**Expected Output:**
++```
++Obtaining file:///.../duh
++Installing collected packages: duh
++  Running setup.py develop for duh
++Successfully installed duh
++```
++
++Verify the installation by checking the CLI version or invoking the help menu:
++
++```bash
++duh --version
++```
++
++**Expected Output:**
++```
++duh 0.1.0
++```
++
++### 5.2 Hello World
++
++With the CLI installed, you can issue your first prompt. By default, D.U.H. will attempt to connect to a provider based on your environment variables (e.g., `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`).
++
++```bash
++duh "What is 2+2? Reply with just the number."
++```
++
++**Expected Output:**
++```
++4
++```
++
++If you don't have an API key configured yet, D.U.H. will gracefully inform you that a provider must be configured or prompt you to connect one.
++
++### 5.3 Stub Mode Run
++
++For offline development, testing, or simply trying out the CLI without incurring token costs, you can use the **Stub Provider**. The stub provider bypasses the network completely and returns a deterministic response.
++
++```bash
++DUH_STUB_PROVIDER=1 duh "Hello, world!"
++```
++
++**Expected Output:**
++```
++[StubProvider] Response for: Hello, world!
++```
++
++The output will be the pre-recorded stub message. This is highly useful when verifying that your tools are correctly registered and that the engine can initialize without relying on external network requests.
++
++### 5.4 Building a Custom Tool End-to-End
++
++D.U.H. treats tools as first-class citizens. They are robustly defined using the `Tool` protocol from `duh.kernel.tool`. Let's build a tool that calculates the length of a given string.
++
++#### 5.41. Implementation and Schema
++
++Create a file named `string_length_plugin.py`. This file will contain our tool class and the plugin specification required for registration.
++
++```python
++from duh.kernel.tool import Tool, ToolResult, ToolContext
++from duh.plugins import PluginSpec
++
++class StringLengthTool(Tool):
++    # The name exposed to the LLM
++    name = "StringLength"
++    
++    # The description the LLM reads to understand when to use this tool
++    description = "Calculates the length of a given string."
++    
++    # JSON Schema defining the expected input arguments
++    input_schema = {
++        "type": "object",
++        "properties": {
++            "text": {
++                "type": "string",
++                "description": "The string to calculate the length of"
++            }
++        },
++        "required": ["text"]
++    }
++
++    async def call(self, input: dict, context: ToolContext) -> ToolResult:
++        text = input.get("text", "")
++        length = len(text)
++        return ToolResult(output=f"The length of the string is {length} characters.")
++        
++    async def check_permissions(self, input: dict, context: ToolContext) -> dict:
++        # Our tool is read-only and safe, so we always approve it natively
++        return {"allowed": True}
++
++# Expose the plugin specification
++plugin_spec = PluginSpec(
++    name="string-length-plugin",
++    version="1.0.0",
++    description="A plugin that adds string length calculation.",
++    tools=[StringLengthTool()]
++)
++```
++
++#### 5.42. Registration
++
++D.U.H. discovers external tools via Python's `entry_points` system. We need to register `string_length_plugin:plugin_spec` under the `duh.plugins` group.
++
++In your project's `pyproject.toml`, add the following block:
++
++```toml
++[project.entry-points."duh.plugins"]
++string-length-plugin = "string_length_plugin:plugin_spec"
++```
++
++Once added, reinstall your package so `pip` registers the entry point:
++
++```bash
++pip install -e .
++```
++
++**Expected Output:**
++```
++Obtaining file:///.../duh
++Installing collected packages: duh
++  Running setup.py develop for duh
++Successfully installed duh
++```
++
++#### 5.43. Approval Policy
++
++The D.U.H. engine enforces strict security boundaries. Before any tool executes, it must pass the `ApprovalGate` (found in `duh.ports.approver` and implemented in `duh.adapters.approvers.py`). 
++
++By default, the engine uses a tiered approval system (`TieredApprover`). Because we explicitly defined `check_permissions` in our tool to return `{"allowed": True}`, the interactive prompt is bypassed natively for this tool. However, if our tool was modifying files, we would rely on the overarching engine approval mode (`--approval-mode auto-edit` vs `suggest`).
++
++#### 5.44. First Call
++
++We can now test our custom tool. Since we want to ensure the LLM invokes it, we'll ask a question that specifically requires it. We will use the stub provider for safety, but note that the stub provider does not dynamically generate tool calls. To see the tool actually invoked, you would need to use a real model:
++
++```bash
++duh "Use the StringLength tool to calculate the length of 'Supercalifragilisticexpialidocious'."
++```
++
++**Expected Output:**
++```
++[Tool Use: StringLength]
++Input: {"text": "Supercalifragilisticexpialidocious"}
++Result: The length of the string is 34 characters.
++
++Based on the tool output, the length of 'Supercalifragilisticexpialidocious' is 34 characters.
++```
++
++The engine will:
++1. Pass the tool schema to the LLM.
++2. Receive a `tool_use` event from the LLM.
++3. Validate the input against our JSON schema.
++4. Call our `StringLengthTool.call` method.
++5. Return the result to the LLM.
++6. Print the final answer to the screen.
++
++Congratulations! You have successfully built, registered, and executed a custom tool in D.U.H.
++
++
++## 6. Real-World Applications
++
++
++Welcome to the D.U.H. (Duh is a Universal Harness) tutorial. This guide will walk you through installing the harness from source, running basic commands, and building a fully functional custom tool utilizing the built-in plugin registry and approval systems.
++
++### 6.1 Installation
++
++Since you are running against a pinned checkout of the source tree, you can install the CLI in editable mode using `pip`.
++
++```bash
++pip install -e .
++```
++
++**Expected Output:**
++```
++Obtaining file:///.../duh
++Installing collected packages: duh
++  Running setup.py develop for duh
++Successfully installed duh
++```
++
++Verify the installation by checking the CLI version or invoking the help menu:
++
++```bash
++duh --version
++```
++
++**Expected Output:**
++```
++duh 0.1.0
++```
++
++### 6.2 Hello World
++
++With the CLI installed, you can issue your first prompt. By default, D.U.H. will attempt to connect to a provider based on your environment variables (e.g., `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`).
++
++```bash
++duh "What is 2+2? Reply with just the number."
++```
++
++**Expected Output:**
++```
++4
++```
++
++If you don't have an API key configured yet, D.U.H. will gracefully inform you that a provider must be configured or prompt you to connect one.
++
++### 6.3 Stub Mode Run
++
++For offline development, testing, or simply trying out the CLI without incurring token costs, you can use the **Stub Provider**. The stub provider bypasses the network completely and returns a deterministic response.
++
++```bash
++DUH_STUB_PROVIDER=1 duh "Hello, world!"
++```
++
++**Expected Output:**
++```
++[StubProvider] Response for: Hello, world!
++```
++
++The output will be the pre-recorded stub message. This is highly useful when verifying that your tools are correctly registered and that the engine can initialize without relying on external network requests.
++
++### 6.4 Building a Custom Tool End-to-End
++
++D.U.H. treats tools as first-class citizens. They are robustly defined using the `Tool` protocol from `duh.kernel.tool`. Let's build a tool that calculates the length of a given string.
++
++#### 6.41. Implementation and Schema
++
++Create a file named `string_length_plugin.py`. This file will contain our tool class and the plugin specification required for registration.
++
++```python
++from duh.kernel.tool import Tool, ToolResult, ToolContext
++from duh.plugins import PluginSpec
++
++class StringLengthTool(Tool):
++    # The name exposed to the LLM
++    name = "StringLength"
++    
++    # The description the LLM reads to understand when to use this tool
++    description = "Calculates the length of a given string."
++    
++    # JSON Schema defining the expected input arguments
++    input_schema = {
++        "type": "object",
++        "properties": {
++            "text": {
++                "type": "string",
++                "description": "The string to calculate the length of"
++            }
++        },
++        "required": ["text"]
++    }
++
++    async def call(self, input: dict, context: ToolContext) -> ToolResult:
++        text = input.get("text", "")
++        length = len(text)
++        return ToolResult(output=f"The length of the string is {length} characters.")
++        
++    async def check_permissions(self, input: dict, context: ToolContext) -> dict:
++        # Our tool is read-only and safe, so we always approve it natively
++        return {"allowed": True}
++
++# Expose the plugin specification
++plugin_spec = PluginSpec(
++    name="string-length-plugin",
++    version="1.0.0",
++    description="A plugin that adds string length calculation.",
++    tools=[StringLengthTool()]
++)
++```
++
++#### 6.42. Registration
++
++D.U.H. discovers external tools via Python's `entry_points` system. We need to register `string_length_plugin:plugin_spec` under the `duh.plugins` group.
++
++In your project's `pyproject.toml`, add the following block:
++
++```toml
++[project.entry-points."duh.plugins"]
++string-length-plugin = "string_length_plugin:plugin_spec"
++```
++
++Once added, reinstall your package so `pip` registers the entry point:
++
++```bash
++pip install -e .
++```
++
++**Expected Output:**
++```
++Obtaining file:///.../duh
++Installing collected packages: duh
++  Running setup.py develop for duh
++Successfully installed duh
++```
++
++#### 6.43. Approval Policy
++
++The D.U.H. engine enforces strict security boundaries. Before any tool executes, it must pass the `ApprovalGate` (found in `duh.ports.approver` and implemented in `duh.adapters.approvers.py`). 
++
++By default, the engine uses a tiered approval system (`TieredApprover`). Because we explicitly defined `check_permissions` in our tool to return `{"allowed": True}`, the interactive prompt is bypassed natively for this tool. However, if our tool was modifying files, we would rely on the overarching engine approval mode (`--approval-mode auto-edit` vs `suggest`).
++
++#### 6.44. First Call
++
++We can now test our custom tool. Since we want to ensure the LLM invokes it, we'll ask a question that specifically requires it. We will use the stub provider for safety, but note that the stub provider does not dynamically generate tool calls. To see the tool actually invoked, you would need to use a real model:
++
++```bash
++duh "Use the StringLength tool to calculate the length of 'Supercalifragilisticexpialidocious'."
++```
++
++**Expected Output:**
++```
++[Tool Use: StringLength]
++Input: {"text": "Supercalifragilisticexpialidocious"}
++Result: The length of the string is 34 characters.
++
++Based on the tool output, the length of 'Supercalifragilisticexpialidocious' is 34 characters.
++```
++
++The engine will:
++1. Pass the tool schema to the LLM.
++2. Receive a `tool_use` event from the LLM.
++3. Validate the input against our JSON schema.
++4. Call our `StringLengthTool.call` method.
++5. Return the result to the LLM.
++6. Print the final answer to the screen.
++
++Congratulations! You have successfully built, registered, and executed a custom tool in D.U.H.
+diff --git a/docs-new/index.md b/docs-new/index.md
+new file mode 100644
+index 0000000..b9f9c88
+--- /dev/null
++++ b/docs-new/index.md
+@@ -0,0 +1,12 @@
++# D.U.H. Documentation
++
++Welcome to the D.U.H. (Duh is a Universal Harness) developer documentation. This set of guides provides comprehensive coverage of the core systems, extension points, and public APIs.
++
++- [**Architecture Guide**](ARCHITECTURE.md)  
++  Explore the top-level module layout, component diagram, request data flow, security models (taint propagation, sandboxing), and threading mechanisms. Learn how to extend the system with new tools, providers, and REPL slash commands.
++
++- [**Tutorial**](TUTORIAL.md)  
++  A step-by-step walkthrough for new developers: install D.U.H., run your first commands in stub mode, and build a custom tool end-to-end, including schema design, Python implementation, registration via entry points, and approval policy execution.
++
++- [**API Reference**](API.md)  
++  A complete, signature-accurate reference covering every public class and function in the `duh/kernel/` and `duh/ports/` modules. Includes parameter definitions, return types, exceptions, and practical usage examples.
+\ No newline at end of file

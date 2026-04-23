@@ -1,0 +1,6 @@
+{
+  "target": "codex-gpt54",
+  "judge": "j-opus",
+  "error": "Judge unavailable: Anthropic credit exhausted (j-opus) / Gemini daily quota (j-g31). Re-judge when restored.",
+  "one_line_summary": "Judge blocked by provider limit — pending re-run."
+}

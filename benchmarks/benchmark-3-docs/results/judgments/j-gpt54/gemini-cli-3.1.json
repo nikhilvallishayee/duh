@@ -1,0 +1,28 @@
+{
+  "target": "gemini-cli-3.1",
+  "scores": {
+    "architecture_doc": 2,
+    "tutorial_quality": 1,
+    "api_completeness": 2,
+    "cross_artifact_coherence": 1,
+    "faithfulness": 4,
+    "reading_discipline": 4,
+    "writing_quality": 2,
+    "structure_navigation": 2,
+    "protocol_adherence": 1
+  },
+  "total_out_of_45": 19,
+  "consistency_pass_rate": 0.7727272727272727,
+  "one_line_summary": "Broad but weakly grounded documentation set with substantial invented details, duplicated content, and protocol violations despite decent coverage.",
+  "strengths": [
+    "API reference attempts wide coverage across duh.kernel and duh.ports.",
+    "Architecture doc includes a component diagram and discusses data flow, security, and extension points.",
+    "Session log indicates the agent read source and attempted AST-based extraction."
+  ],
+  "weaknesses": [
+    "Multiple claims appear invented or unsupported by the source-facing evidence, especially around CLI/plugin flows, providers, and tutorial commands.",
+    "Tutorial is not credibly runnable against the pinned checkout and repeats the same material multiple times.",
+    "Protocol adherence is poor: files outside docs-new/ were created, and the docs contain duplicated/generated filler with low cross-document consistency."
+  ],
+  "judge": "j-gpt54"
+}

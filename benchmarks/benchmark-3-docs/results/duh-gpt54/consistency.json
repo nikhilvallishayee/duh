@@ -1,0 +1,31 @@
+{
+  "symbol_existence": {
+    "ok": 74,
+    "total": 74,
+    "rate": 1.0
+  },
+  "signature_match": {
+    "ok": 53,
+    "total": 54,
+    "rate": 0.9814814814814815
+  },
+  "import_check": {
+    "ok": 0,
+    "total": 0,
+    "rate": 0.0
+  },
+  "coverage": {
+    "ok": 90,
+    "total": 90,
+    "rate": 1.0
+  },
+  "overall_ok": 217,
+  "overall_total": 218,
+  "pass_rate": 0.9954128440366973,
+  "docs_files": [
+    "docs-new/ARCHITECTURE.md",
+    "docs-new/API.md",
+    "docs-new/TUTORIAL.md",
+    "docs-new/index.md"
+  ]
+}

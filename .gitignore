@@ -12,3 +12,8 @@ build/
 .coverage.*
 .hypothesis/
 uv.lock
+
+# Benchmark worktrees (live git worktrees, not content)
+benchmarks/benchmark-2-ratelimit/worktrees/
+benchmarks/benchmark-3-docs/worktrees/
+benchmarks/double-agent-tdd/worktrees/

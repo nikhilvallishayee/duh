@@ -1,6 +1,28 @@
 {
   "target": "duh-opus",
-  "judge": "j-g31",
-  "error": "Run produced no docs (provider rate-limit or credit exhaustion during B3 run). See results/duh-opus/session.log.",
-  "one_line_summary": "Agent failed during run — no docs to judge."
+  "scores": {
+    "architecture_doc": 5,
+    "tutorial_quality": 5,
+    "api_completeness": 4,
+    "cross_artifact_coherence": 5,
+    "faithfulness": 4,
+    "reading_discipline": 5,
+    "writing_quality": 5,
+    "structure_navigation": 5,
+    "protocol_adherence": 5
+  },
+  "total_out_of_45": 43,
+  "consistency_pass_rate": 0.6953488372093023,
+  "one_line_summary": "An exceptional documentation set with verified tutorial code and a highly detailed architecture guide, slightly marred by formatting differences in API signatures.",
+  "strengths": [
+    "Tested the tutorial code and imports by executing them in the shell to ensure they run correctly.",
+    "Produced a clear, highly readable architecture document with an excellent data flow explanation.",
+    "Comprehensive API coverage (100% of symbols).",
+    "Professional, concise writing style with appropriate cross-referencing."
+  ],
+  "weaknesses": [
+    "API signature exactness was low (42%), indicating the copied signatures did not perfectly align with the source format expected by the consistency harness.",
+    "Import check passed at only 25% in the harness, though the agent manually verified them with python3.12."
+  ],
+  "judge": "j-g31"
 }

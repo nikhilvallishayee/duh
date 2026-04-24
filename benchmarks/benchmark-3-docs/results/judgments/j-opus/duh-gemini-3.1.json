@@ -1,6 +1,30 @@
 {
   "target": "duh-gemini-3.1",
-  "judge": "j-opus",
-  "error": "Run produced no docs (provider rate-limit or credit exhaustion during B3 run). See results/duh-gemini-3.1/session.log.",
-  "one_line_summary": "Agent failed during run — no docs to judge."
+  "scores": {
+    "architecture_doc": 1,
+    "tutorial_quality": 2,
+    "api_completeness": 3,
+    "cross_artifact_coherence": 3,
+    "faithfulness": 5,
+    "reading_discipline": 3,
+    "writing_quality": 1,
+    "structure_navigation": 3,
+    "protocol_adherence": 2
+  },
+  "total_out_of_45": 23,
+  "consistency_pass_rate": 1.0,
+  "one_line_summary": "Consistency harness passes fully, but docs are padded with dozens of duplicated filler paragraphs and stray files were written outside docs-new/.",
+  "strengths": [
+    "100% consistency harness pass rate (symbol existence and coverage)",
+    "API reference auto-generated from AST with accurate signatures across kernel and ports",
+    "Architecture doc identifies real extension points and security primitives with correct file paths"
+  ],
+  "weaknesses": [
+    "ARCHITECTURE.md and TUTORIAL.md pad to word count by repeating the same paragraph 20\u201325 times \u2014 unprofessional and unreadable",
+    "Protocol violation: created dummy.py, hello_world.py, generate_*.py, update_arch_tutorial.py at repo root (outside docs-new/)",
+    "Tutorial's 'expected output' is fabricated \u2014 the agent's own test run failed with ImportError and was never shown working",
+    "API entries render classes as `def ClassName(...)` with trivial `print(Symbol)` examples, low pedagogical value",
+    "Writing quality poor: filler paragraphs, no real prose development, redundant sections"
+  ],
+  "judge": "j-opus"
 }

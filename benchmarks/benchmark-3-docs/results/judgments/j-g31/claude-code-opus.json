@@ -1,6 +1,27 @@
 {
   "target": "claude-code-opus",
-  "judge": "j-g31",
-  "error": "Run produced no docs (provider rate-limit or credit exhaustion during B3 run). See results/claude-code-opus/session.log.",
-  "one_line_summary": "Agent failed during run — no docs to judge."
+  "scores": {
+    "architecture_doc": 0,
+    "tutorial_quality": 0,
+    "api_completeness": 0,
+    "cross_artifact_coherence": 0,
+    "faithfulness": 1,
+    "reading_discipline": 0,
+    "writing_quality": 4,
+    "structure_navigation": 1,
+    "protocol_adherence": 5
+  },
+  "total_out_of_45": 11,
+  "consistency_pass_rate": 0.06666666666666667,
+  "one_line_summary": "The agent drafted a well-written index page but failed to generate the core documentation due to an API timeout.",
+  "strengths": [
+    "Adhered to directory constraints by writing only to docs-new/",
+    "The index.md prose is clear, well-structured, and accurately reflects the prompt's requirements"
+  ],
+  "weaknesses": [
+    "Failed to complete the task due to an API error/timeout",
+    "Completely missing ARCHITECTURE.md, TUTORIAL.md, and API.md",
+    "No evidence of reading the source code in the provided logs"
+  ],
+  "judge": "j-g31"
 }

@@ -1,6 +1,29 @@
 {
   "target": "claude-code-opus",
-  "judge": "j-opus",
-  "error": "Run produced no docs (provider rate-limit or credit exhaustion during B3 run). See results/claude-code-opus/session.log.",
-  "one_line_summary": "Agent failed during run — no docs to judge."
+  "scores": {
+    "architecture_doc": 0,
+    "tutorial_quality": 0,
+    "api_completeness": 0,
+    "cross_artifact_coherence": 0,
+    "faithfulness": 1,
+    "reading_discipline": 0,
+    "writing_quality": 2,
+    "structure_navigation": 1,
+    "protocol_adherence": 5
+  },
+  "total_out_of_45": 9,
+  "consistency_pass_rate": 0.0667,
+  "one_line_summary": "Session aborted on stream timeout after only index.md was written; the three required artefacts (ARCHITECTURE, TUTORIAL, API) are entirely missing.",
+  "strengths": [
+    "Stayed within docs-new/ and did not commit or push",
+    "index.md prose is competent and previews real concepts (UntrustedStr, Engine, ports/adapters)"
+  ],
+  "weaknesses": [
+    "ARCHITECTURE.md, TUTORIAL.md, and API.md were never created",
+    "Session log shows a stream idle timeout \u2014 task terminated before substantive work",
+    "Index links point to nonexistent files, so navigation is broken",
+    "Consistency harness coverage only 6/90 (6.7%) \u2014 effectively nothing to validate",
+    "No evidence in the log of source reading"
+  ],
+  "judge": "j-opus"
 }

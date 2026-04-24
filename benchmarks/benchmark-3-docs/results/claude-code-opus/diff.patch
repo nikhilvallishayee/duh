@@ -5,3 +5,49 @@ index 0000000..b78bf80
 +++ b/docs-new/.gitkeep
 @@ -0,0 +1 @@
 +# docs-new — agent writes documentation here
+diff --git a/docs-new/index.md b/docs-new/index.md
+new file mode 100644
+index 0000000..82c1858
+--- /dev/null
++++ b/docs-new/index.md
+@@ -0,0 +1,40 @@
++# D.U.H. Documentation
++
++**D.U.H.** (D.U.H. is a Universal Harness) is an open-source, provider-agnostic
++AI coding agent. The codebase organizes itself around a minimal agentic kernel
++that knows nothing about which LLM it talks to, how tools execute, how output
++gets rendered, or how conversations persist — every such concern is a **port**
++(a runtime-checkable Protocol in `duh/ports/`) that concrete **adapters**
++satisfy. The documents below describe the same codebase from three different
++heights.
++
++## [ARCHITECTURE.md](./ARCHITECTURE.md)
++
++The architect's view: module layout, component diagram, how a request flows
++from `duh -p "..."` through CLI parsing, system-prompt construction, the
++`Engine` session wrapper, the `query()` loop, provider adapters, tool
++executors, and back to a rendered stream. Covers the extension points you'd
++touch to add a provider, tool, or slash command; the security architecture
++(taint propagation via `UntrustedStr`, HMAC confirmation tokens, PEP 578
++audit bridge, platform sandboxing); the asyncio-based concurrency model;
++and the tradeoffs the design deliberately accepts.
++
++## [TUTORIAL.md](./TUTORIAL.md)
++
++The practitioner's view: a hands-on walkthrough from first install to a
++working custom tool, using only APIs that exist in this checkout. You'll
++install the package, verify the stub provider works offline, instantiate an
++`Engine` against it, then build a `WordCountTool` end-to-end — JSON Schema,
++async `call()`, registration with `NativeExecutor`, an `AutoApprover`,
++wiring it all into `Deps`, and observing tool-use events streaming from
++`engine.run()`. Every code block is runnable against commit `645d91a`.
++
++## [API.md](./API.md)
++
++The reference: every public class, function, protocol, and constant
++exported from `duh/kernel/` and `duh/ports/`. Each entry lists the exact
++signature as it appears in source, the parameter and return types, the
++exceptions raised, and one short example. Use this when you want to know
++what `Engine.run()` actually yields, what fields `Deps` carries, what
++`UntrustedStr.__add__` does to taint, or which methods a `MemoryStore`
++implementation must provide.

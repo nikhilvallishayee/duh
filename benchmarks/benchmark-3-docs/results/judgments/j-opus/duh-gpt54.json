@@ -1,6 +1,28 @@
 {
   "target": "duh-gpt54",
-  "judge": "j-opus",
-  "error": "Judge unavailable: Anthropic credit exhausted (j-opus) / Gemini daily quota (j-g31). Re-judge when restored.",
-  "one_line_summary": "Judge blocked by provider limit — pending re-run."
+  "scores": {
+    "architecture_doc": 5,
+    "tutorial_quality": 5,
+    "api_completeness": 5,
+    "cross_artifact_coherence": 5,
+    "faithfulness": 5,
+    "reading_discipline": 5,
+    "writing_quality": 5,
+    "structure_navigation": 4,
+    "protocol_adherence": 5
+  },
+  "total_out_of_45": 44,
+  "consistency_pass_rate": 0.9954128440366973,
+  "one_line_summary": "Exceptionally thorough, source-grounded docs set with near-perfect consistency and strong pedagogical flow.",
+  "strengths": [
+    "Near-perfect faithfulness (99.5% pass rate) with accurate signatures copied from source",
+    "Architecture doc traces full request flow with precise file references and covers security/concurrency/tradeoffs",
+    "Tutorial uses real symbols, shows expected outputs, and honestly notes StubProvider limitations"
+  ],
+  "weaknesses": [
+    "Index page is minimal; lacks per-section anchors or TOC within long docs",
+    "Some API entries (HealthChecker, JobQueue, UndoStack) skip method-level signatures",
+    "Tutorial relies on ad-hoc provider stubs rather than a single coherent runnable script"
+  ],
+  "judge": "j-opus"
 }

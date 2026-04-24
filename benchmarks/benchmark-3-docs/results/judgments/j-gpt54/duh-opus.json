@@ -1,6 +1,30 @@
 {
   "target": "duh-opus",
-  "judge": "j-gpt54",
-  "error": "Run produced no docs (provider rate-limit or credit exhaustion during B3 run). See results/duh-opus/session.log.",
-  "one_line_summary": "Agent failed during run — no docs to judge."
+  "scores": {
+    "architecture_doc": 4,
+    "tutorial_quality": 3,
+    "api_completeness": 3,
+    "cross_artifact_coherence": 3,
+    "faithfulness": 4,
+    "reading_discipline": 5,
+    "writing_quality": 4,
+    "structure_navigation": 4,
+    "protocol_adherence": 5
+  },
+  "total_out_of_45": 35,
+  "consistency_pass_rate": 0.6953488372093023,
+  "one_line_summary": "Well-read, well-structured docs set with strong architectural coverage, but the tutorial contains some non-runnable or misleading steps and the API reference overstates signature fidelity relative to the harness results.",
+  "strengths": [
+    "Architecture doc is organized, concrete, and covers flow-of-control, extension points, security layers, concurrency, and non-goals with useful specificity.",
+    "Session log clearly shows substantial source reading and live verification of imports and several tutorial snippets before finalizing the docs.",
+    "Index and cross-links make the set navigable, and the prose is generally clear, technical, and professional.",
+    "API reference has broad module coverage across duh/kernel and duh/ports, meeting the coverage goal substantially."
+  ],
+  "weaknesses": [
+    "Consistency harness shows only 42.6% signature match and 25% import-check success, so the claim that signatures were copied verbatim is not fully borne out.",
+    "Tutorial is weakened by inaccurate or non-runnable guidance such as creating files outside docs-new, using placeholder expected outputs like XX/Y.Ys, and an unresolved CLI help snippet mismatch at the end of the session.",
+    "Cross-artefact coherence is only moderate because some architecture/tutorial claims are more confident than the API faithfulness results justify.",
+    "API examples and behavioral descriptions sometimes go beyond what the harness could validate, increasing risk of drift or invented details."
+  ],
+  "judge": "j-gpt54"
 }

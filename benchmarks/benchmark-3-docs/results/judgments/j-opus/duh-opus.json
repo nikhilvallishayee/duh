@@ -1,6 +1,28 @@
 {
   "target": "duh-opus",
-  "judge": "j-opus",
-  "error": "Run produced no docs (provider rate-limit or credit exhaustion during B3 run). See results/duh-opus/session.log.",
-  "one_line_summary": "Agent failed during run — no docs to judge."
+  "scores": {
+    "architecture_doc": 5,
+    "tutorial_quality": 5,
+    "api_completeness": 5,
+    "cross_artifact_coherence": 5,
+    "faithfulness": 4,
+    "reading_discipline": 5,
+    "writing_quality": 5,
+    "structure_navigation": 5,
+    "protocol_adherence": 5
+  },
+  "total_out_of_45": 44,
+  "consistency_pass_rate": 0.6953488372093023,
+  "one_line_summary": "Exceptional documentation set with verified runnable tutorial and comprehensive API coverage; signature/import check failures drag faithfulness modestly.",
+  "strengths": [
+    "Tutorial code blocks were actually executed and verified against the pinned checkout, including a mid-task correction of the --print vs -p flag",
+    "Architecture doc is thorough: component diagram, data flow per turn, four extension points, four-layer security model, concurrency, observability, honest tradeoffs/non-goals",
+    "API reference has excellent coverage (100% coverage rate) and 96.7% symbol existence, organized cleanly by module with a working TOC"
+  ],
+  "weaknesses": [
+    "Signature match rate only 42.6% \u2014 signatures are sometimes lightly paraphrased or include attributes/methods not exactly matching source",
+    "Import check 1/4 \u2014 some documented import paths fail to resolve cleanly",
+    "A few symbols mentioned (e.g. NativeExecutor.tool_names, some helper constants) may not exist exactly as described"
+  ],
+  "judge": "j-opus"
 }

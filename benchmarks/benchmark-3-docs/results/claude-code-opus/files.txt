@@ -1,1 +1,2 @@
  A docs-new/.gitkeep
+ A docs-new/index.md

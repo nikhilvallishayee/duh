@@ -1,6 +1,30 @@
 {
   "target": "gemini-cli-3.1",
-  "judge": "j-opus",
-  "error": "Judge unavailable: Anthropic credit exhausted (j-opus) / Gemini daily quota (j-g31). Re-judge when restored.",
-  "one_line_summary": "Judge blocked by provider limit — pending re-run."
+  "scores": {
+    "architecture_doc": 3,
+    "tutorial_quality": 2,
+    "api_completeness": 2,
+    "cross_artifact_coherence": 3,
+    "faithfulness": 4,
+    "reading_discipline": 3,
+    "writing_quality": 1,
+    "structure_navigation": 2,
+    "protocol_adherence": 5
+  },
+  "total_out_of_45": 25,
+  "consistency_pass_rate": 0.7727272727272727,
+  "one_line_summary": "Solid architecture content and good coverage, but API reference is mechanically templated and all three docs contain duplicated sections that destroy writing quality.",
+  "strengths": [
+    "Architecture doc has clear mermaid diagram, extension points, and security/concurrency sections",
+    "High coverage of kernel/ports symbols via AST extraction",
+    "Protocol adherence: all writes inside docs-new/, no commits"
+  ],
+  "weaknesses": [
+    "API.md uses boilerplate 'Purpose: X. Parameters: see signature' for every symbol \u2014 no real descriptions",
+    "Signatures rendered without spaces (e.g. 'defsize(self)->int') \u2014 ugly and signature_match harness fails 0/2",
+    "ARCHITECTURE.md and TUTORIAL.md contain entire duplicated sections (sections 5/6/7 repeat earlier content verbatim) \u2014 clear padding artifact",
+    "Stray helper scripts (gen_*.py, parse_kernel.py, API_RAW.md) left in worktree root outside docs-new/ (untracked but violates spirit)",
+    "Tutorial 'expected output' for stub/hello-world is invented, not verified against actual CLI behavior"
+  ],
+  "judge": "j-opus"
 }

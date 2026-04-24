@@ -1,6 +1,28 @@
 {
   "target": "codex-gpt54",
-  "judge": "j-opus",
-  "error": "Judge unavailable: Anthropic credit exhausted (j-opus) / Gemini daily quota (j-g31). Re-judge when restored.",
-  "one_line_summary": "Judge blocked by provider limit — pending re-run."
+  "scores": {
+    "architecture_doc": 5,
+    "tutorial_quality": 5,
+    "api_completeness": 4,
+    "cross_artifact_coherence": 5,
+    "faithfulness": 3,
+    "reading_discipline": 5,
+    "writing_quality": 5,
+    "structure_navigation": 4,
+    "protocol_adherence": 5
+  },
+  "total_out_of_45": 41,
+  "consistency_pass_rate": 0.5239520958083832,
+  "one_line_summary": "Exceptionally well-written, source-grounded docs with full symbol coverage but weak signature-match rate drags faithfulness.",
+  "strengths": [
+    "Architecture doc is thorough with real file references, extension points, non-goals, and mermaid diagram",
+    "Tutorial is runnable, honest about stub limitations, and includes expected output plus troubleshooting",
+    "Full symbol existence and coverage (100%) across kernel/ports"
+  ],
+  "weaknesses": [
+    "Signature match rate only 19% \u2014 signatures often paraphrased or abbreviated rather than exact",
+    "API reference uses a repetitive boilerplate template (\"Exceptions: none special...\") that reduces precision",
+    "Some methods listed inline as prose rather than formal signature blocks, hurting signature verification"
+  ],
+  "judge": "j-opus"
 }

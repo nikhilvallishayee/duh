@@ -15,12 +15,14 @@
     "rate": 0.0
   },
   "coverage": {
-    "ok": 0,
+    "ok": 6,
     "total": 90,
-    "rate": 0.0
+    "rate": 0.06666666666666667
   },
-  "overall_ok": 0,
+  "overall_ok": 6,
   "overall_total": 90,
-  "pass_rate": 0.0,
-  "docs_files": []
+  "pass_rate": 0.06666666666666667,
+  "docs_files": [
+    "docs-new/index.md"
+  ]
 }

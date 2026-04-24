@@ -4,14 +4,27 @@
 
 D.U.H. is an open-source, provider-agnostic AI coding agent. It connects any LLM provider to your codebase through a single, clean interface — no vendor lock-in, no 500K-line codebases, no proprietary extensions. It speaks the Claude Agent SDK NDJSON protocol, so it can serve as a drop-in replacement wherever the `claude` binary is expected.
 
-## New: head-to-head benchmark vs first-party CLIs
+## New: three head-to-head benchmarks vs first-party CLIs
 
 D.U.H. v0.8.0 was benchmarked against Claude Code, Codex CLI, and
-Gemini CLI on the same task, same baseline commit, same 3-judge
-rubric. Matched-model deltas: **Opus −0.3, GPT-5.4 −0.6, Gemini +2.0**
-(/35). At parity on two frontier models, ahead on the third. Full
-methodology + raw artifacts reproducible via `./run_all.sh`. See
-**[Benchmarks](Benchmarks)** for the scoreboard, rubric, and caveats.
+Gemini CLI on three tasks of increasing reading-intensity — feature
+(B1 /35), rate limiter (B2 /50), docs over D.U.H. source (B3 /45) —
+scored by three heterogeneous LLM judges plus automated ground-truth
+harnesses. Same-model deltas (D.U.H. − first-party):
+
+| Model      | B1 Δ  | B2 Δ | B3 Δ |
+|------------|------:|-----:|-----:|
+| Opus 4.7   | −0.3  | −0.3 | +31.4 *|
+| GPT-5.4    | −0.6  |  0.0 | **+6.6** |
+| Gemini 3.1 | +2.0  |  0.0 | +0.3   |
+
+*claude-code-opus B3 stream-timed-out at 43 min; duh-opus finished in 16.
+
+B1 + B2 → parity at matched models. B3 → D.U.H. wins at GPT-5.4, with
+a judge-independent consistency harness confirming (100% vs 52% of
+cited symbols resolve against source). Full methodology + raw
+artifacts reproducible via `./run_all.sh`. See
+**[Benchmarks](Benchmarks)** for scoreboards, rubrics, and caveats.
 
 ## What's new in v0.8.0
 

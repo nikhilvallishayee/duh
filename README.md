@@ -55,28 +55,40 @@ A universal, open-source AI coding agent. One harness, any provider — Anthropi
 
 ## Benchmarks
 
-Head-to-head, same model, same task, three LLM judges. Mean score /35:
+Head-to-head, same model, same task, three LLM judges. Three
+benchmarks of increasing reading-intensity. Same-model deltas
+(D.U.H. minus first-party CLI):
 
-| Agent              | Mean | Δ vs first-party CLI |
-|--------------------|-----:|---------------------:|
-| `claude-code-opus` | 33.3 | —                    |
-| `codex-gpt54`      | 33.3 | —                    |
-| `duh-opus`         | 33.0 | −0.3                 |
-| `duh-gpt54`        | 32.7 | −0.6                 |
-| `duh-gemini-3.1`   | 27.0 | **+2.0**             |
-| `gemini-cli-3.1`   | 25.0 | —                    |
+| Model      | B1 feature /35 | B2 rate limiter /50 | B3 docs /45 |
+|------------|---------------:|--------------------:|------------:|
+| Opus 4.7   | −0.3           | −0.3                | +31.4 *     |
+| GPT-5.4    | −0.6           |  0.0                | **+6.6**    |
+| Gemini 3.1 | +2.0           |  0.0                | +0.3        |
 
-At parity on Opus 4.7 + GPT-5.4, ahead on Gemini 3.1. Three additional
-D.U.H. runs benched open models (`llama-4-scout`, `gpt-oss-120b`,
-`qwen3-32b`) that have no first-party CLI at all.
+*claude-code-opus B3 hit a stream-idle timeout at 43 min with only
+an index page; duh-opus at the same model produced the full docs set.
 
-Pre-registered hypotheses, full methodology, and raw artefacts live in
-[`benchmarks/double-agent-tdd/`](benchmarks/double-agent-tdd/) — see
-its [README](benchmarks/double-agent-tdd/README.md), the exact
-[TASK.md](benchmarks/double-agent-tdd/TASK.md) prompt every agent
-received, and the [rubric](benchmarks/double-agent-tdd/JUDGE.md) every
-judge used. Reproduce with
-`cd benchmarks/double-agent-tdd && ./run_all.sh && ./judge_all.sh && python3 aggregate.py`.
+**B1 + B2** (single-session feature, multi-file rate limiter) → harness
+parity at matched models. **B3** (docs over D.U.H.'s own 30K-LOC
+source tree) → D.U.H. wins at matched models, corroborated by an
+automated consistency harness that resolves every cited symbol,
+signature, and import against source: D.U.H. docs are 100% faithful
+vs Codex's 52% at the same GPT-5.4.
+
+Three D.U.H. runs additionally benched open models (`llama-4-scout`,
+`gpt-oss-120b`, `qwen3-32b`) that have no first-party CLI at all.
+
+Full methodology, pre-registered hypotheses, rubrics, and raw
+artefacts (diffs, session logs, judge JSONs, adversarial + consistency
+outputs) in [`benchmarks/`](benchmarks/):
+
+- [`double-agent-tdd/`](benchmarks/double-agent-tdd/) — B1
+- [`benchmark-2-ratelimit/`](benchmarks/benchmark-2-ratelimit/) — B2
+- [`benchmark-3-docs/`](benchmarks/benchmark-3-docs/) — B3
+
+Reproduce B1 with `cd benchmarks/double-agent-tdd && ./run_all.sh && ./judge_all.sh && python3 aggregate.py`.
+Analogous `./run.sh <agent>` / `./adversarial_all.sh` /
+`./consistency_all.sh` / `python3 aggregate.py` flows for B2 and B3.
 
 ## Install
 

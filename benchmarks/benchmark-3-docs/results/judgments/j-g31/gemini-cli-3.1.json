@@ -1,6 +1,27 @@
 {
   "target": "gemini-cli-3.1",
-  "judge": "j-g31",
-  "error": "Judge unavailable: Anthropic credit exhausted (j-opus) / Gemini daily quota (j-g31). Re-judge when restored.",
-  "one_line_summary": "Judge blocked by provider limit — pending re-run."
+  "scores": {
+    "architecture_doc": 2,
+    "tutorial_quality": 2,
+    "api_completeness": 1,
+    "cross_artifact_coherence": 3,
+    "faithfulness": 4,
+    "reading_discipline": 5,
+    "writing_quality": 1,
+    "structure_navigation": 2,
+    "protocol_adherence": 1
+  },
+  "total_out_of_45": 21,
+  "consistency_pass_rate": 0.7727272727272727,
+  "one_line_summary": "The agent used scripts to generate the docs, successfully extracting real symbols but resulting in useless, robotic API entries and blatantly duplicated sections to artificially inflate word counts, while violating directory boundaries.",
+  "strengths": [
+    "Used AST parsing to ensure symbol coverage.",
+    "The un-duplicated first halves of the architecture and tutorial documents are actually high quality, accurate, and hit the requested points."
+  ],
+  "weaknesses": [
+    "Artificially padded word counts by literally copying and pasting the entire tutorial and architecture texts multiple times within the same files.",
+    "API reference is an auto-generated mechanical template ('Purpose: {name}, Parameters: see signature') with zero actual descriptive value.",
+    "Violated the strict path boundary by creating and leaving 8 helper Python scripts and Markdown files in the root directory."
+  ],
+  "judge": "j-g31"
 }

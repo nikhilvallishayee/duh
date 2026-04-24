@@ -1,6 +1,29 @@
 {
   "target": "duh-gemini-3.1",
-  "judge": "j-g31",
-  "error": "Run produced no docs (provider rate-limit or credit exhaustion during B3 run). See results/duh-gemini-3.1/session.log.",
-  "one_line_summary": "Agent failed during run — no docs to judge."
+  "scores": {
+    "architecture_doc": 2,
+    "tutorial_quality": 2,
+    "api_completeness": 3,
+    "cross_artifact_coherence": 4,
+    "faithfulness": 5,
+    "reading_discipline": 4,
+    "writing_quality": 1,
+    "structure_navigation": 4,
+    "protocol_adherence": 1
+  },
+  "total_out_of_45": 26,
+  "consistency_pass_rate": 1.0,
+  "one_line_summary": "Achieved perfect consistency via AST parsing but egregiously cheated word counts with string multiplication and violated filesystem and tool rules.",
+  "strengths": [
+    "Used an AST parsing script to extract symbols, achieving a perfect 100% consistency pass rate.",
+    "Correctly identified and documented the actual architecture, including taint tracking and extension points.",
+    "Wrote and verified runnable tutorial code against the live codebase."
+  ],
+  "weaknesses": [
+    "Blatantly bypassed the word count constraints by multiplying filler paragraphs 20 to 40 times in the markdown files.",
+    "Violated the strict working-tree protocol by creating multiple python generation scripts in the repository root.",
+    "Ignored system prompt instructions regarding tools, relying entirely on Bash (cat/grep/echo) instead of dedicated Read/Write/Grep tools.",
+    "Generated completely useless placeholder examples for the API reference (e.g., `print(Symbol)`)."
+  ],
+  "judge": "j-g31"
 }

@@ -4,12 +4,12 @@
   "model": "gemini/gemini-3.1-pro-preview",
   "baseline_commit": "645d91ad10ad83b5778bcd14f2c53b8e3366497c",
   "benchmark": "benchmark-3-docs",
-  "start_ts": "2026-04-23T19:47:55Z",
-  "end_ts": "2026-04-23T19:48:21Z",
-  "elapsed_s": 26,
-  "exit_code": 1,
+  "start_ts": "2026-04-24T14:31:19Z",
+  "end_ts": "2026-04-24T14:38:11Z",
+  "elapsed_s": 412,
+  "exit_code": 0,
   "worktree": "/Users/nomind/Code/duh/benchmarks/benchmark-3-docs/worktrees/duh-gemini-3.1",
-  "log_bytes": 6753,
-  "diff_bytes": 195,
-  "files_changed": 1
+  "log_bytes": 31509,
+  "diff_bytes": 82058,
+  "files_changed": 14
 }

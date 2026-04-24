@@ -1,6 +1,28 @@
 {
   "target": "codex-gpt54",
-  "judge": "j-g31",
-  "error": "Judge unavailable: Anthropic credit exhausted (j-opus) / Gemini daily quota (j-g31). Re-judge when restored.",
-  "one_line_summary": "Judge blocked by provider limit — pending re-run."
+  "scores": {
+    "architecture_doc": 5,
+    "tutorial_quality": 5,
+    "api_completeness": 2,
+    "cross_artifact_coherence": 4,
+    "faithfulness": 3,
+    "reading_discipline": 5,
+    "writing_quality": 3,
+    "structure_navigation": 4,
+    "protocol_adherence": 5
+  },
+  "total_out_of_45": 36,
+  "consistency_pass_rate": 0.5239520958083832,
+  "one_line_summary": "Excellent architecture and tutorial documents demonstrating deep codebase understanding, but the API reference is heavily templated, lacks useful examples, and suffers from poor signature matching.",
+  "strengths": [
+    "Outstanding architecture diagram and data flow description",
+    "High-quality, runnable tutorial with a realistic custom tool and offline stub provider",
+    "Thorough codebase exploration leading to an accurate mental model"
+  ],
+  "weaknesses": [
+    "API reference uses repetitive filler templates instead of useful descriptions and examples",
+    "Very low signature match rate (19%) in the API documentation",
+    "Lack of meaningful cross-references between the three documents"
+  ],
+  "judge": "j-g31"
 }

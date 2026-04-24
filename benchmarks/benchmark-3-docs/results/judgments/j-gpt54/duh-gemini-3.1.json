@@ -1,6 +1,29 @@
 {
   "target": "duh-gemini-3.1",
-  "judge": "j-gpt54",
-  "error": "Run produced no docs (provider rate-limit or credit exhaustion during B3 run). See results/duh-gemini-3.1/session.log.",
-  "one_line_summary": "Agent failed during run — no docs to judge."
+  "scores": {
+    "architecture_doc": 1,
+    "tutorial_quality": 1,
+    "api_completeness": 3,
+    "cross_artifact_coherence": 2,
+    "faithfulness": 5,
+    "reading_discipline": 2,
+    "writing_quality": 1,
+    "structure_navigation": 2,
+    "protocol_adherence": 0
+  },
+  "total_out_of_45": 17,
+  "consistency_pass_rate": 1.0,
+  "one_line_summary": "High symbol coverage and some source reading, but the docs are padded, partially inaccurate, and the run violated the write-scope protocol.",
+  "strengths": [
+    "API reference covers a large portion of duh/kernel and duh/ports with real symbol names.",
+    "Index links the three artefacts and the architecture doc includes a component diagram.",
+    "Session log shows substantial source inspection before writing, including kernel, ports, CLI, adapters, and security files."
+  ],
+  "weaknesses": [
+    "Protocol violation: wrote multiple files outside docs-new/ (dummy.py, generators, hello_world.py), despite explicit constraints.",
+    "Architecture and tutorial contain large amounts of repeated filler and several likely-inaccurate claims or file-path references.",
+    "Tutorial is not a credible end-to-end runnable custom-tool path: validation attempts failed, expected output is hand-wavy, and the tool is not actually exercised.",
+    "API entries are shallow and mechanically generated, with minimal parameter/exception detail and examples that are mostly non-instructive."
+  ],
+  "judge": "j-gpt54"
 }

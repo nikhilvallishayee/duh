@@ -1,8 +1,8 @@
 {
   "symbol_existence": {
-    "ok": 0,
-    "total": 0,
-    "rate": 0.0
+    "ok": 26,
+    "total": 26,
+    "rate": 1.0
   },
   "signature_match": {
     "ok": 0,
@@ -15,12 +15,17 @@
     "rate": 0.0
   },
   "coverage": {
-    "ok": 0,
+    "ok": 90,
     "total": 90,
-    "rate": 0.0
+    "rate": 1.0
   },
-  "overall_ok": 0,
-  "overall_total": 90,
-  "pass_rate": 0.0,
-  "docs_files": []
+  "overall_ok": 116,
+  "overall_total": 116,
+  "pass_rate": 1.0,
+  "docs_files": [
+    "docs-new/ARCHITECTURE.md",
+    "docs-new/API.md",
+    "docs-new/TUTORIAL.md",
+    "docs-new/index.md"
+  ]
 }

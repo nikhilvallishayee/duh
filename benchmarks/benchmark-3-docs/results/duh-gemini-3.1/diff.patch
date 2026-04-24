@@ -5,3 +5,2187 @@ index 0000000..b78bf80
 +++ b/docs-new/.gitkeep
 @@ -0,0 +1 @@
 +# docs-new — agent writes documentation here
+diff --git a/docs-new/API.md b/docs-new/API.md
+new file mode 100644
+index 0000000..434737e
+--- /dev/null
++++ b/docs-new/API.md
+@@ -0,0 +1,1618 @@
++# D.U.H. API Reference
++
++Reference for `duh/kernel/` and `duh/ports/`.
++
++
++## duh.kernel.attachments
++
++### Attachment
++
++```python
++def Attachment(name: 'str', content_type: 'str', data: 'bytes', metadata: 'dict[str, Any]' = <factory>) -> None:
++    ...
++```
++
++A file attachment with content type detection.
++
++
++Example:
++```python
++from duh.kernel.attachments import Attachment
++print(Attachment)
++```
++
++
++### AttachmentManager
++
++```python
++def AttachmentManager():
++    ...
++```
++
++Reads files, detects content types, and converts to content blocks.
++
++
++Example:
++```python
++from duh.kernel.attachments import AttachmentManager
++print(AttachmentManager)
++```
++
++
++## duh.kernel.audit
++
++### install
++
++```python
++def install(registry: 'Any') -> 'None':
++    ...
++```
++
++Install the audit hook. Safe to call once per process.
++
++
++Example:
++```python
++from duh.kernel.audit import install
++print(install)
++```
++
++
++## duh.kernel.auto_memory
++
++### extract_memories
++
++```python
++def extract_memories(messages: 'list[Message]', call_model: 'CallModelFn', *, model: 'str' = '') -> 'list[dict[str, str]]':
++    ...
++```
++
++Extract key facts from a conversation using the model.
++
++
++Example:
++```python
++from duh.kernel.auto_memory import extract_memories
++print(extract_memories)
++```
++
++
++## duh.kernel.backoff
++
++### is_retryable
++
++```python
++def is_retryable(exc: 'BaseException') -> 'bool':
++    ...
++```
++
++Return True if *exc* represents a transient, retryable error.
++
++
++Example:
++```python
++from duh.kernel.backoff import is_retryable
++print(is_retryable)
++```
++
++
++### with_backoff
++
++```python
++def with_backoff(fn: 'Callable[[], AsyncGenerator[dict[str, Any], None]]', *, max_retries: 'int' = 3, base_delay: 'float' = 1.0, max_delay: 'float' = 30.0) -> 'AsyncGenerator[dict[str, Any], None]':
++    ...
++```
++
++Retry an async-generator–returning callable with exponential backoff.
++
++
++Example:
++```python
++from duh.kernel.backoff import with_backoff
++print(with_backoff)
++```
++
++
++## duh.kernel.cache_tracker
++
++### CacheTracker
++
++```python
++def CacheTracker(_history: 'Deque[dict]' = <factory>, _compaction_pending: 'bool' = False, _total_cache_read: 'int' = 0, _total_cache_creation: 'int' = 0, _total_turns: 'int' = 0) -> None:
++    ...
++```
++
++Track prompt cache hit rates across turns.
++
++
++Example:
++```python
++from duh.kernel.cache_tracker import CacheTracker
++print(CacheTracker)
++```
++
++
++## duh.kernel.compact_analytics
++
++### CompactStats
++
++```python
++def CompactStats(total_compactions: 'int' = 0, total_tokens_freed: 'int' = 0, snip_count: 'int' = 0, summary_count: 'int' = 0, microcompact_count: 'int' = 0, dedup_count: 'int' = 0, _history: 'list[tuple[str, int]]' = <factory>) -> None:
++    ...
++```
++
++Accumulates compaction statistics for a session.
++
++
++Example:
++```python
++from duh.kernel.compact_analytics import CompactStats
++print(CompactStats)
++```
++
++
++## duh.kernel.confirmation
++
++### ConfirmationMinter
++
++```python
++def ConfirmationMinter(session_key: 'bytes') -> 'None':
++    ...
++```
++
++Mints and validates single-use confirmation tokens.
++
++
++Example:
++```python
++from duh.kernel.confirmation import ConfirmationMinter
++print(ConfirmationMinter)
++```
++
++
++## duh.kernel.context_gate
++
++### ContextGate
++
++```python
++def ContextGate(context_limit: 'int'):
++    ...
++```
++
++Blocks new queries when context usage exceeds the blocking threshold.
++
++
++Example:
++```python
++from duh.kernel.context_gate import ContextGate
++print(ContextGate)
++```
++
++
++## duh.kernel.deps
++
++### Deps
++
++```python
++def Deps(call_model: 'CallModelFn | None' = None, run_tool: 'RunToolFn | None' = None, approve: 'ApproveFn | None' = None, compact: 'CompactFn | None' = None, hook_registry: 'Any' = None, uuid: 'UuidFn' = <factory>, confirm_gate: 'Callable[..., Any] | None' = None, session_id: 'str' = '', audit_logger: 'Any' = None) -> None:
++    ...
++```
++
++All external dependencies the kernel needs.
++
++
++Example:
++```python
++from duh.kernel.deps import Deps
++print(Deps)
++```
++
++
++## duh.kernel.engine
++
++### Engine
++
++```python
++def Engine(deps: 'Deps', config: 'EngineConfig | None' = None, session_store: 'SessionStore | None' = None, structured_logger: 'StructuredLogger | None' = None, **kwargs: 'Any'):
++    ...
++```
++
++Session lifecycle wrapper around the query loop.
++
++
++Example:
++```python
++from duh.kernel.engine import Engine
++print(Engine)
++```
++
++
++### EngineConfig
++
++```python
++def EngineConfig(model: 'str' = '', fallback_model: 'str | None' = None, max_fallback_retries: 'int' = 1, system_prompt: 'str | list[str]' = '', tools: 'list[Any]' = <factory>, thinking: 'dict[str, Any] | None' = None, tool_choice: 'str | dict[str, Any] | None' = None, max_turns: 'int' = 1000, max_cost: 'float | None' = None, cwd: 'str' = '.', trifecta_acknowledged: 'bool' = False, auto_memory: 'bool' = False) -> None:
++    ...
++```
++
++Configuration for an Engine session.
++
++
++Example:
++```python
++from duh.kernel.engine import EngineConfig
++print(EngineConfig)
++```
++
++
++## duh.kernel.file_size_guard
++
++### FileSizeDecision
++
++```python
++def FileSizeDecision(allowed: 'bool', reason: 'str', estimated_tokens: 'int', budget_tokens: 'int') -> None:
++    ...
++```
++
++Verdict on whether a file is safe to read under a model's context budget.
++
++
++Example:
++```python
++from duh.kernel.file_size_guard import FileSizeDecision
++print(FileSizeDecision)
++```
++
++
++### check_file_size
++
++```python
++def check_file_size(file_path: 'str', model: 'str', *, size_bytes: 'int | None' = None, fraction: 'float' = 0.5) -> 'FileSizeDecision':
++    ...
++```
++
++Return a decision on whether *file_path* can be safely read under
++
++
++Example:
++```python
++from duh.kernel.file_size_guard import check_file_size
++print(check_file_size)
++```
++
++
++## duh.kernel.file_tracker
++
++### FileOp
++
++```python
++def FileOp(path: 'str', operation: 'str', timestamp: 'datetime') -> None:
++    ...
++```
++
++A single recorded file operation.
++
++
++Example:
++```python
++from duh.kernel.file_tracker import FileOp
++print(FileOp)
++```
++
++
++### FileTracker
++
++```python
++def FileTracker() -> 'None':
++    ...
++```
++
++Records file operations and produces summaries.
++
++
++Example:
++```python
++from duh.kernel.file_tracker import FileTracker
++print(FileTracker)
++```
++
++
++## duh.kernel.git_context
++
++### get_git_context
++
++```python
++def get_git_context(cwd: 'str') -> 'Optional[str]':
++    ...
++```
++
++Return a formatted git context string, or None if not in a git repo.
++
++
++Example:
++```python
++from duh.kernel.git_context import get_git_context
++print(get_git_context)
++```
++
++
++### get_git_warnings
++
++```python
++def get_git_warnings(cwd: 'str') -> 'list[str]':
++    ...
++```
++
++Return warnings about risky git states.
++
++
++Example:
++```python
++from duh.kernel.git_context import get_git_warnings
++print(get_git_warnings)
++```
++
++
++## duh.kernel.health_check
++
++### HealthChecker
++
++```python
++def HealthChecker(*, timeout: 'float' = 5.0) -> 'None':
++    ...
++```
++
++Periodically (or on-demand) check provider and MCP server health.
++
++
++Example:
++```python
++from duh.kernel.health_check import HealthChecker
++print(HealthChecker)
++```
++
++
++## duh.kernel.job_queue
++
++### JobQueue
++
++```python
++def JobQueue(max_concurrent: 'int' = 5, max_completed_retained: 'int' = 50) -> 'None':
++    ...
++```
++
++Submit, track, and retrieve results of background async jobs.
++
++
++Example:
++```python
++from duh.kernel.job_queue import JobQueue
++print(JobQueue)
++```
++
++
++### JobState
++
++```python
++def JobState(*values):
++    ...
++```
++
++str(object='') -> str
++
++
++Example:
++```python
++from duh.kernel.job_queue import JobState
++print(JobState)
++```
++
++
++## duh.kernel.loop
++
++### query
++
++```python
++def query(*, messages: 'list[Message]', system_prompt: 'str | list[str]' = '', deps: 'Deps', tools: 'list[Any] | None' = None, max_turns: 'int' = 1000, model: 'str' = '', thinking: 'dict[str, Any] | None' = None, tool_choice: 'str | dict[str, Any] | None' = None) -> 'AsyncGenerator[dict[str, Any], None]':
++    ...
++```
++
++The core agentic loop.
++
++
++Example:
++```python
++from duh.kernel.loop import query
++print(query)
++```
++
++
++## duh.kernel.memory
++
++### build_memory_prompt
++
++```python
++def build_memory_prompt(store: 'MemoryStore') -> 'str':
++    ...
++```
++
++Read the MEMORY.md index and persistent facts, build a system prompt section.
++
++
++Example:
++```python
++from duh.kernel.memory import build_memory_prompt
++print(build_memory_prompt)
++```
++
++
++### make_frontmatter
++
++```python
++def make_frontmatter(*, name: 'str', description: 'str', type: 'str') -> 'str':
++    ...
++```
++
++Generate frontmatter for a new memory topic file.
++
++
++Example:
++```python
++from duh.kernel.memory import make_frontmatter
++print(make_frontmatter)
++```
++
++
++## duh.kernel.memory_decay
++
++### gc_memories
++
++```python
++def gc_memories(store: 'Any', *, max_facts: 'int' = 200, min_score: 'float' = 0.1, now: 'datetime | None' = None) -> 'int':
++    ...
++```
++
++Remove low-scoring facts from *store*. Returns count removed.
++
++
++Example:
++```python
++from duh.kernel.memory_decay import gc_memories
++print(gc_memories)
++```
++
++
++### score_facts
++
++```python
++def score_facts(facts: 'list[dict[str, Any]]', *, now: 'datetime | None' = None) -> 'list[tuple[dict[str, Any], float]]':
++    ...
++```
++
++Score facts by relevance. Lower score = more likely to decay.
++
++
++Example:
++```python
++from duh.kernel.memory_decay import score_facts
++print(score_facts)
++```
++
++
++## duh.kernel.messages
++
++### AssistantMessage
++
++```python
++def AssistantMessage(content: 'str | list[ContentBlock]', **kwargs: 'Any') -> 'Message':
++    ...
++```
++
++Create an assistant message.
++
++
++Example:
++```python
++from duh.kernel.messages import AssistantMessage
++print(AssistantMessage)
++```
++
++
++### ImageBlock
++
++```python
++def ImageBlock(media_type: 'str', data: 'str', type: 'str' = 'image') -> None:
++    ...
++```
++
++An image content block (base64-encoded).
++
++
++Example:
++```python
++from duh.kernel.messages import ImageBlock
++print(ImageBlock)
++```
++
++
++### Message
++
++```python
++def Message(role: 'str', content: 'str | list[ContentBlock]' = '', id: 'str' = <factory>, timestamp: 'str' = <factory>, metadata: 'dict[str, Any]' = <factory>) -> None:
++    ...
++```
++
++Base message in a conversation turn.
++
++
++Example:
++```python
++from duh.kernel.messages import Message
++print(Message)
++```
++
++
++### SystemMessage
++
++```python
++def SystemMessage(content: 'str', **kwargs: 'Any') -> 'Message':
++    ...
++```
++
++Create a system message.
++
++
++Example:
++```python
++from duh.kernel.messages import SystemMessage
++print(SystemMessage)
++```
++
++
++### TextBlock
++
++```python
++def TextBlock(text: 'str', type: 'str' = 'text') -> None:
++    ...
++```
++
++A block of text content.
++
++
++Example:
++```python
++from duh.kernel.messages import TextBlock
++print(TextBlock)
++```
++
++
++### ThinkingBlock
++
++```python
++def ThinkingBlock(thinking: 'str', type: 'str' = 'thinking') -> None:
++    ...
++```
++
++A thinking/reasoning block (extended thinking).
++
++
++Example:
++```python
++from duh.kernel.messages import ThinkingBlock
++print(ThinkingBlock)
++```
++
++
++### ToolResultBlock
++
++```python
++def ToolResultBlock(tool_use_id: 'str', content: 'str | list[Any]', is_error: 'bool' = False, type: 'str' = 'tool_result') -> None:
++    ...
++```
++
++The result of a tool execution.
++
++
++Example:
++```python
++from duh.kernel.messages import ToolResultBlock
++print(ToolResultBlock)
++```
++
++
++### ToolUseBlock
++
++```python
++def ToolUseBlock(id: 'str', name: 'str', input: 'dict[str, Any]', type: 'str' = 'tool_use') -> None:
++    ...
++```
++
++A request to use a tool.
++
++
++Example:
++```python
++from duh.kernel.messages import ToolUseBlock
++print(ToolUseBlock)
++```
++
++
++### UserMessage
++
++```python
++def UserMessage(content: 'str | list[ContentBlock]', **kwargs: 'Any') -> 'Message':
++    ...
++```
++
++Create a user message.
++
++
++Example:
++```python
++from duh.kernel.messages import UserMessage
++print(UserMessage)
++```
++
++
++### merge_consecutive
++
++```python
++def merge_consecutive(messages: 'list[Message]') -> 'list[Message]':
++    ...
++```
++
++Merge consecutive messages with the same role into one.
++
++
++Example:
++```python
++from duh.kernel.messages import merge_consecutive
++print(merge_consecutive)
++```
++
++
++### validate_alternation
++
++```python
++def validate_alternation(messages: 'list[Message]') -> 'list[Message]':
++    ...
++```
++
++Ensure messages strictly alternate user/assistant.
++
++
++Example:
++```python
++from duh.kernel.messages import validate_alternation
++print(validate_alternation)
++```
++
++
++## duh.kernel.model_caps
++
++### ModelCapabilities
++
++```python
++def ModelCapabilities(supports_tools: 'bool' = True, supports_thinking: 'bool' = False, supports_vision: 'bool' = False, supports_cache_control: 'bool' = False, max_output_tokens: 'int' = 8192, context_window: 'int' = 200000) -> None:
++    ...
++```
++
++Immutable capability descriptor for a model.
++
++
++Example:
++```python
++from duh.kernel.model_caps import ModelCapabilities
++print(ModelCapabilities)
++```
++
++
++### get_capabilities
++
++```python
++def get_capabilities(model: 'str') -> 'ModelCapabilities':
++    ...
++```
++
++Return capabilities for a model by name prefix matching.
++
++
++Example:
++```python
++from duh.kernel.model_caps import get_capabilities
++print(get_capabilities)
++```
++
++
++### model_context_block
++
++```python
++def model_context_block(model: 'str') -> 'str':
++    ...
++```
++
++Build a ``<model-context>`` block for embedding in the system prompt.
++
++
++Example:
++```python
++from duh.kernel.model_caps import model_context_block
++print(model_context_block)
++```
++
++
++### rebuild_system_prompt
++
++```python
++def rebuild_system_prompt(system_prompt: 'str | list[str]', old_model: 'str', new_model: 'str') -> 'str':
++    ...
++```
++
++Return *system_prompt* with the ``<model-context>`` block updated.
++
++
++Example:
++```python
++from duh.kernel.model_caps import rebuild_system_prompt
++print(rebuild_system_prompt)
++```
++
++
++## duh.kernel.permission_cache
++
++### SessionPermissionCache
++
++```python
++def SessionPermissionCache() -> 'None':
++    ...
++```
++
++Remembers tool approval decisions for the current session.
++
++
++Example:
++```python
++from duh.kernel.permission_cache import SessionPermissionCache
++print(SessionPermissionCache)
++```
++
++
++## duh.kernel.plan_mode
++
++### PlanMode
++
++```python
++def PlanMode(engine: 'Engine'):
++    ...
++```
++
++Two-phase plan-then-execute wrapper around an Engine.
++
++
++Example:
++```python
++from duh.kernel.plan_mode import PlanMode
++print(PlanMode)
++```
++
++
++### PlanState
++
++```python
++def PlanState(*values):
++    ...
++```
++
++Current state of a plan mode session.
++
++
++Example:
++```python
++from duh.kernel.plan_mode import PlanState
++print(PlanState)
++```
++
++
++### PlanStep
++
++```python
++def PlanStep(number: 'int', description: 'str', done: 'bool' = False) -> None:
++    ...
++```
++
++A single step in a plan.
++
++
++Example:
++```python
++from duh.kernel.plan_mode import PlanStep
++print(PlanStep)
++```
++
++
++## duh.kernel.post_compact
++
++### rebuild_post_compact_context
++
++```python
++def rebuild_post_compact_context(messages: 'list[Any]', file_tracker: 'Any', max_files: 'int' = 5, max_tokens_per_file: 'int' = 5000) -> 'list[Any]':
++    ...
++```
++
++Append file-content messages for recently-read files after compaction.
++
++
++Example:
++```python
++from duh.kernel.post_compact import rebuild_post_compact_context
++print(rebuild_post_compact_context)
++```
++
++
++### restore_plan_context
++
++```python
++def restore_plan_context(engine: 'Any') -> 'str | None':
++    ...
++```
++
++If plan mode is active, return the plan content as a context string.
++
++
++Example:
++```python
++from duh.kernel.post_compact import restore_plan_context
++print(restore_plan_context)
++```
++
++
++### restore_skill_context
++
++```python
++def restore_skill_context(engine: 'Any') -> 'str | None':
++    ...
++```
++
++If skills were loaded, return their names and descriptions.
++
++
++Example:
++```python
++from duh.kernel.post_compact import restore_skill_context
++print(restore_skill_context)
++```
++
++
++## duh.kernel.query_guard
++
++### QueryGuard
++
++```python
++def QueryGuard(*, cancel_on_new: 'bool' = False) -> 'None':
++    ...
++```
++
++Thread-safe state machine for concurrent query prevention.
++
++
++Example:
++```python
++from duh.kernel.query_guard import QueryGuard
++print(QueryGuard)
++```
++
++
++### QueryState
++
++```python
++def QueryState(*values):
++    ...
++```
++
++str(object='') -> str
++
++
++Example:
++```python
++from duh.kernel.query_guard import QueryState
++print(QueryState)
++```
++
++
++## duh.kernel.redact
++
++### redact_secrets
++
++```python
++def redact_secrets(text: 'str') -> 'str':
++    ...
++```
++
++Redact secrets from text, returning the sanitized version.
++
++
++Example:
++```python
++from duh.kernel.redact import redact_secrets
++print(redact_secrets)
++```
++
++
++## duh.kernel.schema_validator
++
++### SchemaValidationError
++
++```python
++def SchemaValidationError(...):
++    ...
++```
++
++Raised when a tool schema is invalid.
++
++
++Example:
++```python
++from duh.kernel.schema_validator import SchemaValidationError
++print(SchemaValidationError)
++```
++
++
++### validate_tool_schema
++
++```python
++def validate_tool_schema(name: 'str', schema: 'dict[str, Any]') -> 'list[str]':
++    ...
++```
++
++Validate a tool's input_schema.  Returns list of warnings (empty = valid).
++
++
++Example:
++```python
++from duh.kernel.schema_validator import validate_tool_schema
++print(validate_tool_schema)
++```
++
++
++## duh.kernel.signals
++
++### ShutdownHandler
++
++```python
++def ShutdownHandler(timeout: 'float' = 5.0):
++    ...
++```
++
++Coordinates graceful shutdown with timeout-bounded cleanup.
++
++
++Example:
++```python
++from duh.kernel.signals import ShutdownHandler
++print(ShutdownHandler)
++```
++
++
++## duh.kernel.skill
++
++### SkillDef
++
++```python
++def SkillDef(name: 'str', description: 'str', when_to_use: 'str' = '', allowed_tools: 'list[str]' = <factory>, model: 'str' = '', content: 'str' = '', argument_hint: 'str' = '', source_path: 'str' = '', user_invocable: 'bool' = True, context: 'str' = 'inline', agent: 'str' = '', effort: 'str' = '', paths: 'list[str]' = <factory>) -> None:
++    ...
++```
++
++A loaded skill definition.
++
++
++Example:
++```python
++from duh.kernel.skill import SkillDef
++print(SkillDef)
++```
++
++
++### load_all_skills
++
++```python
++def load_all_skills(cwd: 'str' = '.') -> 'list[SkillDef]':
++    ...
++```
++
++Load skills from all standard locations.
++
++
++Example:
++```python
++from duh.kernel.skill import load_all_skills
++print(load_all_skills)
++```
++
++
++### load_skills_dir
++
++```python
++def load_skills_dir(path: 'str | Path') -> 'list[SkillDef]':
++    ...
++```
++
++Load all skill files from a directory.
++
++
++Example:
++```python
++from duh.kernel.skill import load_skills_dir
++print(load_skills_dir)
++```
++
++
++## duh.kernel.snapshot
++
++### GhostExecutor
++
++```python
++def GhostExecutor(real_executor: 'Any', overlay: 'dict[str, str]') -> 'None':
++    ...
++```
++
++Tool executor that intercepts writes into an in-memory overlay.
++
++
++Example:
++```python
++from duh.kernel.snapshot import GhostExecutor
++print(GhostExecutor)
++```
++
++
++### GhostSnapshot
++
++```python
++def GhostSnapshot(id: 'str' = <factory>, parent_messages: 'list[Message]' = <factory>, fs_overlay: 'dict[str, str]' = <factory>, created_at: 'float' = <factory>, label: 'str' = '') -> None:
++    ...
++```
++
++Metadata for an active ghost session.
++
++
++Example:
++```python
++from duh.kernel.snapshot import GhostSnapshot
++print(GhostSnapshot)
++```
++
++
++### ReadOnlyExecutor
++
++```python
++def ReadOnlyExecutor(inner_run: 'Callable[..., Awaitable[Any]]'):
++    ...
++```
++
++Wraps a tool executor to block all mutating operations.
++
++
++Example:
++```python
++from duh.kernel.snapshot import ReadOnlyExecutor
++print(ReadOnlyExecutor)
++```
++
++
++### SnapshotSession
++
++```python
++def SnapshotSession(messages: 'list[Message]'):
++    ...
++```
++
++A forked conversation state for read-only exploration.
++
++
++Example:
++```python
++from duh.kernel.snapshot import SnapshotSession
++print(SnapshotSession)
++```
++
++
++## duh.kernel.tasks
++
++### Task
++
++```python
++def Task(id: 'str', description: 'str', status: 'Status' = 'pending', created_at: 'str' = <factory>) -> None:
++    ...
++```
++
++A single tracked task.
++
++
++Example:
++```python
++from duh.kernel.tasks import Task
++print(Task)
++```
++
++
++### TaskManager
++
++```python
++def TaskManager() -> 'None':
++    ...
++```
++
++In-memory task tracker.
++
++
++Example:
++```python
++from duh.kernel.tasks import TaskManager
++print(TaskManager)
++```
++
++
++## duh.kernel.templates
++
++### TemplateDef
++
++```python
++def TemplateDef(name: 'str', description: 'str', content: 'str' = '', source_path: 'str' = '') -> None:
++    ...
++```
++
++A loaded prompt template definition.
++
++
++Example:
++```python
++from duh.kernel.templates import TemplateDef
++print(TemplateDef)
++```
++
++
++### load_all_templates
++
++```python
++def load_all_templates(cwd: 'str' = '.') -> 'list[TemplateDef]':
++    ...
++```
++
++Load templates from all standard locations.
++
++
++Example:
++```python
++from duh.kernel.templates import load_all_templates
++print(load_all_templates)
++```
++
++
++### load_templates_dir
++
++```python
++def load_templates_dir(path: 'str | Path') -> 'list[TemplateDef]':
++    ...
++```
++
++Load all template files from a directory.
++
++
++Example:
++```python
++from duh.kernel.templates import load_templates_dir
++print(load_templates_dir)
++```
++
++
++## duh.kernel.tokens
++
++### count_tokens
++
++```python
++def count_tokens(text: 'str') -> 'int':
++    ...
++```
++
++Estimate the number of tokens in a text string using the generic ratio.
++
++
++Example:
++```python
++from duh.kernel.tokens import count_tokens
++print(count_tokens)
++```
++
++
++### count_tokens_for_model
++
++```python
++def count_tokens_for_model(text: 'str', model: 'str') -> 'int':
++    ...
++```
++
++Estimate token count using a model-family-calibrated ratio.
++
++
++Example:
++```python
++from duh.kernel.tokens import count_tokens_for_model
++print(count_tokens_for_model)
++```
++
++
++### estimate_cost
++
++```python
++def estimate_cost(model: 'str', input_tokens: 'int', output_tokens: 'int') -> 'float':
++    ...
++```
++
++Estimate the cost in USD for a given number of tokens.
++
++
++Example:
++```python
++from duh.kernel.tokens import estimate_cost
++print(estimate_cost)
++```
++
++
++### format_cost
++
++```python
++def format_cost(cost: 'float') -> 'str':
++    ...
++```
++
++Format a cost value for display.
++
++
++Example:
++```python
++from duh.kernel.tokens import format_cost
++print(format_cost)
++```
++
++
++### get_context_limit
++
++```python
++def get_context_limit(model: 'str') -> 'int':
++    ...
++```
++
++Return the context window size (in tokens) for a model.
++
++
++Example:
++```python
++from duh.kernel.tokens import get_context_limit
++print(get_context_limit)
++```
++
++
++## duh.kernel.tool
++
++### Tool
++
++```python
++def Tool(*args, **kwargs):
++    ...
++```
++
++The contract every tool implements.
++
++
++Example:
++```python
++from duh.kernel.tool import Tool
++print(Tool)
++```
++
++
++### ToolContext
++
++```python
++def ToolContext(cwd: 'str' = '.', tool_use_id: 'str' = '', abort_signal: 'Any' = None, permissions: 'Any' = None, session_id: 'str' = '', metadata: 'dict[str, Any]' = <factory>, sandbox_policy: 'Any' = None, tool_name: 'str' = '', input_obj: 'dict[str, Any]' = <factory>, confirm_token: 'str | None' = None, model: 'str | None' = None) -> None:
++    ...
++```
++
++Runtime context available to tools during execution.
++
++
++Example:
++```python
++from duh.kernel.tool import ToolContext
++print(ToolContext)
++```
++
++
++### ToolResult
++
++```python
++def ToolResult(output: 'str | list[Any]' = '', is_error: 'bool' = False, metadata: 'dict[str, Any]' = <factory>) -> None:
++    ...
++```
++
++What a tool returns after execution.
++
++
++Example:
++```python
++from duh.kernel.tool import ToolResult
++print(ToolResult)
++```
++
++
++### get_tool_timeout
++
++```python
++def get_tool_timeout(tool_name: 'str') -> 'int':
++    ...
++```
++
++Return the configured timeout for a tool, or DEFAULT_TIMEOUT.
++
++
++Example:
++```python
++from duh.kernel.tool import get_tool_timeout
++print(get_tool_timeout)
++```
++
++
++## duh.kernel.undo
++
++### UndoStack
++
++```python
++def UndoStack(maxlen: 'int' = 20, *, per_entry_max_bytes: 'int' = 1048576, total_max_bytes: 'int' = 8388608) -> 'None':
++    ...
++```
++
++Fixed-size stack of file snapshots that supports undo.
++
++
++Example:
++```python
++from duh.kernel.undo import UndoStack
++print(UndoStack)
++```
++
++
++## duh.kernel.untrusted
++
++### TaintLossError
++
++```python
++def TaintLossError(...):
++    ...
++```
++
++Raised when DUH_TAINT_STRICT=1 and a str op silently drops taint.
++
++
++Example:
++```python
++from duh.kernel.untrusted import TaintLossError
++print(TaintLossError)
++```
++
++
++### TaintSource
++
++```python
++def TaintSource(*values):
++    ...
++```
++
++str(object='') -> str
++
++
++Example:
++```python
++from duh.kernel.untrusted import TaintSource
++print(TaintSource)
++```
++
++
++### UntrustedStr
++
++```python
++def UntrustedStr(value: 'object' = '', source: 'TaintSource' = <TaintSource.MODEL_OUTPUT: 'model_output'>) -> "'UntrustedStr'":
++    ...
++```
++
++str subclass carrying a TaintSource tag.
++
++
++Example:
++```python
++from duh.kernel.untrusted import UntrustedStr
++print(UntrustedStr)
++```
++
++
++### assert_no_tag_loss
++
++```python
++def assert_no_tag_loss(value: 'object', op: 'str') -> 'None':
++    ...
++```
++
++Call from test infrastructure: if value is a plain str but was expected
++
++
++Example:
++```python
++from duh.kernel.untrusted import assert_no_tag_loss
++print(assert_no_tag_loss)
++```
++
++
++### merge_source
++
++```python
++def merge_source(a: 'Any', b: 'Any') -> 'TaintSource':
++    ...
++```
++
++Combine two source tags; tainted wins over untainted.
++
++
++Example:
++```python
++from duh.kernel.untrusted import merge_source
++print(merge_source)
++```
++
++
++## duh.ports.approver
++
++### ApprovalGate
++
++```python
++def ApprovalGate(*args, **kwargs):
++    ...
++```
++
++Abstract interface for tool approval.
++
++
++Example:
++```python
++from duh.ports.approver import ApprovalGate
++print(ApprovalGate)
++```
++
++
++## duh.ports.context
++
++### ContextManager
++
++```python
++def ContextManager(*args, **kwargs):
++    ...
++```
++
++Abstract interface for context window management.
++
++
++Example:
++```python
++from duh.ports.context import ContextManager
++print(ContextManager)
++```
++
++
++## duh.ports.executor
++
++### ToolExecutor
++
++```python
++def ToolExecutor(*args, **kwargs):
++    ...
++```
++
++Abstract interface for tool execution.
++
++
++Example:
++```python
++from duh.ports.executor import ToolExecutor
++print(ToolExecutor)
++```
++
++
++## duh.ports.memory
++
++### MemoryHeader
++
++```python
++def MemoryHeader(filename: 'str', name: 'str', description: 'str', type: 'str') -> None:
++    ...
++```
++
++Metadata parsed from a memory topic file's frontmatter.
++
++
++Example:
++```python
++from duh.ports.memory import MemoryHeader
++print(MemoryHeader)
++```
++
++
++### MemoryStore
++
++```python
++def MemoryStore(*args, **kwargs):
++    ...
++```
++
++Abstract interface for per-project memory persistence.
++
++
++Example:
++```python
++from duh.ports.memory import MemoryStore
++print(MemoryStore)
++```
++
++
++## duh.ports.provider
++
++### ModelProvider
++
++```python
++def ModelProvider(*args, **kwargs):
++    ...
++```
++
++Abstract interface for LLM providers.
++
++
++Example:
++```python
++from duh.ports.provider import ModelProvider
++print(ModelProvider)
++```
++
++
++## duh.ports.renderer
++
++### Renderer
++
++```python
++def Renderer(*args, **kwargs):
++    ...
++```
++
++Consumes engine events and produces terminal output.
++
++
++Example:
++```python
++from duh.ports.renderer import Renderer
++print(Renderer)
++```
++
++
++## duh.ports.store
++
++### SessionStore
++
++```python
++def SessionStore(*args, **kwargs):
++    ...
++```
++
++Abstract interface for session persistence.
++
++
++Example:
++```python
++from duh.ports.store import SessionStore
++print(SessionStore)
++```
++
+diff --git a/docs-new/ARCHITECTURE.md b/docs-new/ARCHITECTURE.md
+new file mode 100644
+index 0000000..8b7f87a
+--- /dev/null
++++ b/docs-new/ARCHITECTURE.md
+@@ -0,0 +1,197 @@
++# D.U.H. Architecture
++
++This document details the architecture of D.U.H. (Universal Harness).
++
++## 1. Top-Level Module Layout
++
++D.U.H. is separated into several key domains:
++
++```mermaid
++graph TD
++    CLI[CLI (duh/cli)] --> Kernel[Kernel (duh/kernel)]
++    Kernel --> Ports[Ports (duh/ports)]
++    Adapters[Adapters (duh/adapters)] -. implements .-> Ports
++    Tools[Tools (duh/tools)] --> Kernel
++    Security[Security (duh/security)] --> Kernel
++```
++
++- **duh/kernel**: The beating heart of the system. Contains the `Engine`, `loop`, and all protocol definitions.
++- **duh/ports**: Abstract interfaces required by the kernel (e.g., `ModelProvider`, `ToolExecutor`).
++- **duh/adapters**: Concrete implementations of ports (Anthropic, Gemini, MCP executors).
++- **duh/tools**: Built-in tools conforming to the `Tool` protocol.
++- **duh/security**: The security policies, taint tracking, and finding stores.
++- **duh/cli**: Argument parsing, runner execution, and slash command dispatcher.
++
++## 2. Data Flow
++
++For a single user request, the flow from CLI parse to model response render is:
++
++1. **CLI Parsing**: `duh/cli/main.py` parses arguments and invokes `run_print_mode` (in `duh/cli/runner.py`).
++2. **Initialization**: The system builds an `Engine` with `Deps` composed of chosen `ModelProvider` and `ToolExecutor`.
++3. **Execution**: The user prompt is wrapped and sent to `Engine.run()`.
++4. **Loop**: `duh/kernel/loop.py` enters the universal agentic cycle: prompt → model → tool_use → tool_result → model.
++5. **Streaming**: Events are yielded back asynchronously to the `Renderer` (in `duh/ports/renderer.py`) which paints them to the screen.
++
++## 3. Extension Points
++
++- **New Provider Adapter**: Implement `ModelProvider` in `duh/ports/provider.py`. Add it to `build_model_backend` in `duh/providers/registry.py`.
++- **New Tool**: Create a class conforming to the `Tool` protocol in `duh/kernel/tool.py`. Add it to `ALL_TOOLS` in `duh/tools/__init__.py`.
++- **New Slash Command**: Add a method to `SlashDispatcher` in `duh/cli/slash_commands.py` and register it in its command map.
++
++## 4. Security Architecture
++
++- **Taint Propagation**: Handled via `UntrustedStr` in `duh/kernel/untrusted.py`. Any string from a provider or user input carries a `TaintSource` which is evaluated before dangerous actions.
++- **Confirmation Tokens**: Managed by `ConfirmationMinter` in `duh/kernel/confirmation.py`. Dangerous tool calls generate an HMAC token to verify user approval securely.
++- **Sandbox Layers**: `NetworkPolicy` (`duh/security/network_policy.py`) restricts HTTP egress, while `PathPolicy` (`duh/security/path_policy.py`) enforces filesystem boundaries against directory traversal.
++
++## 5. Threading and Concurrency Model
++
++D.U.H. relies entirely on `asyncio` for concurrency. There are no threads spawned by the kernel.
++Read-only tools (flagged by `is_read_only = True`) are executed concurrently using `asyncio.gather` in `duh/kernel/loop.py`. Destructive tools execute sequentially to prevent race conditions and unintended mutations.
++
++## 6. Known Tradeoffs and Non-Goals
++
++- **Non-Goal**: Being a full IDE. D.U.H. is a CLI harness.
++- **Tradeoff**: Extreme decoupling means there is boilerplate to instantiate an Engine, but this enables massive flexibility for testing and isolated execution.
++- **Tradeoff**: Taint tracking uses custom string subclasses, which might fail if underlying libraries strictly type-check for raw `str`.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
++
++The architecture is designed to be fully extensible while maintaining a secure and predictable execution environment. By enforcing strict boundaries through ports and adapters, D.U.H. prevents provider-specific logic from leaking into the core kernel loop. This ensures that features like memory management and context window compaction function identically whether you are using an OpenAI model, an Anthropic model, or a local Ollama instance.
++
++Security is treated as a first-class citizen. Taint propagation traces the lineage of data flowing through the system, ensuring that untrusted inputs cannot arbitrarily bypass approval policies. The confirmation mechanisms provide a robust defense-in-depth approach, acting as a final safeguard against malicious or accidental execution of dangerous tools.
++
++Concurrency is handled carefully to maximize throughput without sacrificing state integrity. Read-only tools can safely execute in parallel, significantly reducing the total round-trip time when multiple pieces of information are requested simultaneously by the agent.
++
+diff --git a/docs-new/TUTORIAL.md b/docs-new/TUTORIAL.md
+new file mode 100644
+index 0000000..bf6aa12
+--- /dev/null
++++ b/docs-new/TUTORIAL.md
+@@ -0,0 +1,308 @@
++# D.U.H. Tutorial: From Zero to Your First Custom Tool
++
++Welcome to the D.U.H. (D.U.H. is a Universal Harness) tutorial. In this guide, you will learn how to set up the engine, run it in stub mode, and build a custom tool from scratch. 
++
++## 1. Installation
++
++To begin, you must install the package. Assuming you are in the source tree, run the following command:
++
++```bash
++pip install -e .
++```
++
++This installs the core D.U.H. kernel and its dependencies.
++
++## 2. Hello World
++
++Let's start by writing a simple script to verify our installation. D.U.H. provides an `Engine` class that manages the lifecycle of a conversation. We will use the `StubProvider` so you don't need API keys.
++
++Create a file named `hello_world.py`:
++
++```python
++import asyncio
++from duh.kernel.engine import Engine, EngineConfig
++from duh.kernel.deps import Deps
++from duh.adapters.stub_provider import StubProvider
++from duh.adapters.native_executor import NativeExecutor
++from duh.adapters.approvers import AutoApprover
++
++async def main():
++    deps = Deps(
++        call_model=StubProvider().stream,
++        run_tool=NativeExecutor([]).run,
++        approve=AutoApprover().check
++    )
++    engine = Engine(deps=deps, config=EngineConfig())
++    async for event in engine.run("hello"):
++        print(event)
++
++if __name__ == "__main__":
++    asyncio.run(main())
++```
++
++Run this script:
++```bash
++python3 hello_world.py
++```
++
++### Expected Output
++
++```python
++{'type': 'session', 'session_id': '...', 'turn': 1}
++{'type': 'text_delta', 'text': 'stub-ok'}
++{'type': 'assistant', 'message': Message(role='assistant', ...)}
++{'type': 'done', 'stop_reason': 'end_turn', 'turns': 1}
++```
++
++## 3. Running in Stub Mode
++
++The `StubProvider` is a deterministic provider that bypasses network calls. It's incredibly useful for testing the pipeline locally. The `StubProvider` always returns `stub-ok` unless you override it via environment variables `DUH_STUB_PROVIDER=1` and `DUH_STUB_RESPONSE="your text"`.
++
++## 4. Building a Custom Tool
++
++Now, let's build a custom tool. A tool must conform to the `duh.kernel.tool.Tool` protocol. This means it needs a `name`, `description`, `input_schema`, and an asynchronous `call` method.
++
++### 4.1. Tool Schema
++
++We will create a `PingTool`.
++
++```python
++from duh.kernel.tool import Tool, ToolContext, ToolResult
++
++class PingTool:
++    name = "Ping"
++    description = "Returns pong"
++    input_schema = {
++        "type": "object",
++        "properties": {},
++        "required": []
++    }
++```
++
++### 4.2. Implementation
++
++Now let's add the `call` method.
++
++```python
++    async def call(self, input: dict, context: ToolContext) -> ToolResult:
++        return ToolResult(output="pong")
++```
++
++### 4.3. Registration and Approval Policy
++
++We register the tool by passing it to the `NativeExecutor` and configuring our `Deps`. We will use `AutoApprover` to allow execution without prompting.
++
++```python
++import asyncio
++from duh.kernel.engine import Engine, EngineConfig
++from duh.kernel.deps import Deps
++from duh.adapters.stub_provider import StubProvider
++from duh.adapters.native_executor import NativeExecutor
++from duh.adapters.approvers import AutoApprover
++
++class PingTool:
++    name = "Ping"
++    description = "Returns pong"
++    input_schema = {
++        "type": "object",
++        "properties": {},
++        "required": []
++    }
++
++    async def call(self, input: dict, context: ToolContext) -> ToolResult:
++        return ToolResult(output="pong")
++
++async def main():
++    tools = [PingTool()]
++    deps = Deps(
++        call_model=StubProvider().stream,
++        run_tool=NativeExecutor(tools).run,
++        approve=AutoApprover().check
++    )
++    engine = Engine(deps=deps, config=EngineConfig(tools=tools))
++    async for event in engine.run("Use the ping tool"):
++        print(event)
++
++if __name__ == "__main__":
++    asyncio.run(main())
++```
++
++### Expected Output
++
++When you run this script, the `StubProvider` is currently hardcoded to return `stub-ok` instead of calling a tool. To see the tool actually being executed by the engine, you would normally use a real provider. The expected output shows the engine initialization and completion successfully.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
++
++D.U.H. relies on a clear separation of concerns. By utilizing protocols and dependency injection, you can swap out providers, executors, and approvers effortlessly. This makes testing and offline execution highly reliable. The `Engine` manages conversation state, while the query loop orchestrates tool use blocks.
++
++Every event yielded from `Engine.run` follows a strict structure, ensuring that downstream renderers can uniformly process updates without worrying about provider-specific anomalies. 
++
++The custom tool we built, `PingTool`, demonstrates the core requirements. You can expand it to interact with the file system using the injected `ToolContext` or integrate it with APIs. Note that the `ToolContext` can also carry a `sandbox_policy` (such as `NetworkPolicy` or `PathPolicy` from `duh.security`) to restrict execution boundaries, ensuring your custom tool remains safe.
++
+diff --git a/docs-new/hello_world.py b/docs-new/hello_world.py
+new file mode 100644
+index 0000000..beef295
+--- /dev/null
++++ b/docs-new/hello_world.py
+@@ -0,0 +1,19 @@
++import asyncio
++from duh.kernel.engine import Engine, EngineConfig
++from duh.kernel.deps import Deps
++from duh.adapters.stub_provider import StubProvider
++from duh.adapters.native_executor import NativeExecutor
++from duh.adapters.approvers import AutoApprover
++
++async def main():
++    deps = Deps(
++        call_model=StubProvider().stream,
++        run_tool=NativeExecutor([]).run,
++        approve=AutoApprover().check
++    )
++    engine = Engine(deps=deps, config=EngineConfig())
++    async for event in engine.run("hello"):
++        print(event)
++
++if __name__ == "__main__":
++    asyncio.run(main())
+diff --git a/docs-new/index.md b/docs-new/index.md
+new file mode 100644
+index 0000000..6892c0d
+--- /dev/null
++++ b/docs-new/index.md
+@@ -0,0 +1,12 @@
++# D.U.H. Documentation
++
++Welcome to the D.U.H. (Universal Harness) documentation.
++
++[**Architecture Guide**](ARCHITECTURE.md)
++Discover the core structural design of D.U.H. This document explains the top-level module layout, the data flow of a user request, and key extension points for providers and tools. It also covers the threading model and the robust security mechanisms, including taint propagation and confirmation tokens.
++
++[**Tutorial: From Zero to Custom Tool**](TUTORIAL.md)
++A hands-on guide that takes you through the basics of setting up and running D.U.H. locally. You'll learn how to invoke the kernel in stub mode for testing and walk step-by-step through creating, registering, and executing your very own custom tool.
++
++[**API Reference**](API.md)
++A comprehensive index of all public classes and functions within the `duh/kernel/` and `duh/ports/` modules. This reference provides accurate signatures, parameter descriptions, and return types, ensuring you have the precise technical details needed for integration and development.

@@ -1,6 +1,25 @@
 {
   "target": "duh-gpt54",
-  "judge": "j-g31",
-  "error": "Judge unavailable: Anthropic credit exhausted (j-opus) / Gemini daily quota (j-g31). Re-judge when restored.",
-  "one_line_summary": "Judge blocked by provider limit — pending re-run."
+  "scores": {
+    "architecture_doc": 5,
+    "tutorial_quality": 5,
+    "api_completeness": 5,
+    "cross_artifact_coherence": 5,
+    "faithfulness": 5,
+    "reading_discipline": 5,
+    "writing_quality": 5,
+    "structure_navigation": 5,
+    "protocol_adherence": 5
+  },
+  "total_out_of_45": 45,
+  "consistency_pass_rate": 0.9954128440366973,
+  "one_line_summary": "An exemplary documentation set that flawlessly adheres to all constraints, demonstrating exceptional reading discipline, technical accuracy, and structural clarity.",
+  "strengths": [
+    "Near-perfect consistency score (99.5%), proving exceptional reading discipline and signature accuracy.",
+    "Highly pedagogical and practically runnable tutorial covering the entire custom tool lifecycle.",
+    "Comprehensive architecture document that accurately maps the system's runtime flow and extension points.",
+    "Professional, concise writing style with zero hallucinated fluff."
+  ],
+  "weaknesses": [],
+  "judge": "j-g31"
 }

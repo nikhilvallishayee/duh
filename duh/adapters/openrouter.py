@@ -63,6 +63,7 @@ class OpenRouterProvider(OpenAIProvider):
         base_url: str | None = None,
         referer: str | None = None,
         title: str | None = None,
+        tool_format: str | None = None,
     ) -> None:
         import openai
 
@@ -70,6 +71,10 @@ class OpenRouterProvider(OpenAIProvider):
         # Strip "openrouter/" prefix from default model — OpenRouter
         # expects "<vendor>/<model>" in the request body.
         self._default_model = _strip_or_prefix(model)
+        # ADR-026: tool-format adapter pin. ``None`` means auto-detect
+        # per call from the model name; a string forces a specific
+        # parser (``"hermes"``, ``"mistral"``, …).
+        self._tool_format = tool_format
         self._client = openai.AsyncOpenAI(
             api_key=resolved_key,
             base_url=base_url or _OPENROUTER_BASE,

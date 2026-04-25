@@ -48,10 +48,16 @@ class OpenAIProvider:
         base_url: str | None = None,
         timeout: float = 600.0,
         max_retries: int = 2,
+        tool_format: str | None = None,
     ):
         import openai
 
         self._default_model = model
+        # Tool-format adapter (ADR-026). ``None`` means "auto-detect from
+        # the model name on each call"; ``"passthrough"`` forces the
+        # OpenAI-native path. Subclasses (OpenRouter) can pin a specific
+        # format if their default model needs it.
+        self._tool_format = tool_format
         self._client = openai.AsyncOpenAI(
             api_key=api_key or os.environ.get("OPENAI_API_KEY", ""),
             **({"base_url": base_url} if base_url else {}),
@@ -81,16 +87,31 @@ class OpenAIProvider:
         thinking: dict[str, Any] | None = None,
         max_tokens: int | None = None,
         tool_choice: str | dict[str, Any] | None = None,
+        tool_format: str | None = None,
         **kwargs: Any,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream model responses from OpenAI, yielding D.U.H. events."""
         resolved_model = model or self._default_model
 
+        # Pick the tool-format adapter (ADR-026). Per-call kwarg wins,
+        # then the constructor pin, then auto-detect from the model name.
+        from duh.adapters.tool_format import detect_format, get_format
+        fmt_name = tool_format or self._tool_format or detect_format(resolved_model)
+        tool_fmt = get_format(fmt_name)
+
+        # When the format isn't passthrough, the model doesn't natively
+        # accept the OpenAI ``tools`` parameter. Inject schemas into the
+        # system prompt instead and drop the structured tools array.
+        if fmt_name != "passthrough" and tools:
+            base_sys = _build_system_text(system_prompt)
+            augmented = tool_fmt.inject_system(tools, base_sys)
+            system_prompt = augmented
+            api_tools = None
+        else:
+            api_tools = _to_openai_tools(tools) if tools else None
+
         # Build messages
         api_messages = _to_openai_messages(messages, system_prompt)
-
-        # Build tools
-        api_tools = _to_openai_tools(tools) if tools else None
 
         # Build request kwargs
         request: dict[str, Any] = {
@@ -191,6 +212,36 @@ class OpenAIProvider:
             # Build the complete assistant message
             content_blocks: list[dict[str, Any]] = []
             full_text = "".join(text_parts)
+
+            # Tool-format post-processing (ADR-026).  When the model is
+            # not OpenAI-native and the structured ``tool_calls`` array
+            # is empty, scan the assembled text for format-specific
+            # tool-call wrappers (``<tool_call>…``, fenced JSON, etc.)
+            # and synthesise structured calls from them.  No-op for
+            # passthrough.
+            if fmt_name != "passthrough" and not tool_calls and full_text:
+                cleaned, parsed_calls = tool_fmt.parse_response(full_text)
+                if parsed_calls:
+                    full_text = cleaned
+                    import uuid
+                    for pc in parsed_calls:
+                        tc_id = f"{pc.name}_{uuid.uuid4().hex[:24]}"
+                        # Stream the synthesised tool call so the kernel
+                        # sees it the same way it would a native one.
+                        yield {
+                            "type": "tool_use",
+                            "id": tc_id,
+                            "name": pc.name,
+                            "input": dict(pc.arguments),
+                        }
+                        # Also add to tool_calls dict so the assistant
+                        # message includes it as a content block.
+                        tool_calls[len(tool_calls)] = {
+                            "id": tc_id,
+                            "name": pc.name,
+                            "arguments": json.dumps(pc.arguments),
+                        }
+
             if full_text:
                 content_blocks.append({"type": "text", "text": full_text})
 

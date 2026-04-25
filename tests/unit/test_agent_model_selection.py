@@ -92,12 +92,6 @@ class TestResolveModel:
         # ``large`` on Gemini = 3.1-pro-preview (live-verified 2026-04-19).
         assert _resolve_model("large", "general", "gemini-2.5-flash") == "gemini-3.1-pro-preview"
 
-    def test_medium_on_groq_parent(self):
-        assert (
-            _resolve_model("medium", "general", "groq/llama-3.1-8b-instant")
-            == "llama-3.3-70b-versatile"
-        )
-
     # --- 'inherit' returns parent_model unchanged ---
 
     def test_explicit_inherit_returns_parent(self):

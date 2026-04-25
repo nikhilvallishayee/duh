@@ -63,20 +63,6 @@ class TestInferenceRouting:
         # "gemini/..." still has a slash so litellm is the fallback target.
         assert reg.infer_provider_from_model("gemini/gemini-2.5-pro") is None
 
-    def test_groq_prefixed_routes_native_when_sdk_present(self, monkeypatch):
-        monkeypatch.setattr(reg, "_groq_sdk_available", lambda: True)
-        assert (
-            reg.infer_provider_from_model("groq/llama-3.3-70b-versatile") == "groq"
-        )
-
-    def test_groq_returns_none_when_sdk_missing(self, monkeypatch):
-        monkeypatch.setattr(reg, "_groq_sdk_available", lambda: False)
-        assert reg.infer_provider_from_model("groq/llama-3.3-70b-versatile") is None
-
-
-# ---------------------------------------------------------------------------
-# build_model_backend: dispatch + startup log + LiteLLM opt-in guard
-# ---------------------------------------------------------------------------
 
 
 class TestBuildModelBackendDispatch:
@@ -99,25 +85,6 @@ class TestBuildModelBackendDispatch:
         backend = reg.build_model_backend("gemini", "gemini-2.5-pro")
         assert not backend.ok
         assert "google-genai" in backend.error
-
-    def test_groq_native_uses_injected_factory(self, monkeypatch):
-        monkeypatch.setattr(reg, "_groq_sdk_available", lambda: True)
-        factory = MagicMock(return_value=_fake_provider_factory())
-        backend = reg.build_model_backend(
-            "groq",
-            "groq/llama-3.3-70b-versatile",
-            provider_factories={"groq": factory},
-        )
-        assert backend.ok, backend.error
-        assert backend.provider == "groq"
-        factory.assert_called_once()
-
-    def test_groq_without_sdk_returns_clear_error(self, monkeypatch):
-        monkeypatch.setattr(reg, "_groq_sdk_available", lambda: False)
-        backend = reg.build_model_backend("groq", "groq/llama-3.3-70b-versatile")
-        assert not backend.ok
-        assert "groq" in backend.error.lower()
-
 
 
 
@@ -168,11 +135,10 @@ class TestDoctorAdapterSection:
         from duh.cli import doctor as doctor_mod
 
         monkeypatch.setattr(reg, "_google_genai_available", lambda: True)
-        monkeypatch.setattr(reg, "_groq_sdk_available", lambda: True)
 
         text = doctor_mod._render_adapter_section()
         assert "Providers:" in text
-        for name in ("anthropic", "openai", "ollama", "gemini", "groq",
+        for name in ("anthropic", "openai", "ollama", "gemini", "deepseek",
                      "deepseek", "mistral", "qwen", "together"):
             assert name in text
 
@@ -180,7 +146,6 @@ class TestDoctorAdapterSection:
         from duh.cli import doctor as doctor_mod
 
         monkeypatch.setattr(reg, "_google_genai_available", lambda: False)
-        monkeypatch.setattr(reg, "_groq_sdk_available", lambda: True)
         text = doctor_mod._render_adapter_section()
         # Gemini should report not-installed hint.
         assert "pip install google-genai" in text

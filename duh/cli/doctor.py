@@ -155,7 +155,6 @@ def _render_adapter_section() -> str:
     """Render the provider-adapter availability table (ADR-027)."""
     from duh.providers.registry import (
         _google_genai_available,
-        _groq_sdk_available,
     )
 
     rows: list[tuple[str, bool, str]] = [
@@ -172,13 +171,6 @@ def _render_adapter_section() -> str:
             "native (google-genai installed)"
             if _google_genai_available()
             else "not installed (pip install google-genai)",
-        ),
-        (
-            "groq",
-            _groq_sdk_available(),
-            "native (groq installed)"
-            if _groq_sdk_available()
-            else "not installed (pip install groq)",
         ),
     ]
     lines = ["\nProviders:\n"]

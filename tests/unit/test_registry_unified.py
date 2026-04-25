@@ -27,7 +27,6 @@ from duh.providers.registry import (
     get_default_model,
     infer_provider_from_model,
     is_gemini_model,
-    is_groq_model,
     strip_provider_prefix,
 )
 
@@ -42,9 +41,10 @@ class TestProviderPrefixMap:
         providers = {p for _, p in _PROVIDER_PREFIX_MAP}
         assert "gemini" in providers
 
-    def test_map_contains_groq_entries(self) -> None:
+    def test_map_contains_native_provider_entries(self) -> None:
         providers = {p for _, p in _PROVIDER_PREFIX_MAP}
-        assert "groq" in providers
+        for native in ("deepseek", "mistral", "qwen", "together"):
+            assert native in providers
 
     def test_is_gemini_model_handles_both_prefixes(self) -> None:
         assert is_gemini_model("gemini/gemini-2.5-flash")
@@ -53,33 +53,17 @@ class TestProviderPrefixMap:
         assert not is_gemini_model(None)
         assert not is_gemini_model("")
 
-    def test_is_groq_model_detects_namespace(self) -> None:
-        assert is_groq_model("groq/llama-3.3-70b")
-        assert not is_groq_model("llama-3.3-70b")
-        assert not is_groq_model(None)
-
     def test_infer_provider_uses_prefix_map_first(self) -> None:
         # Gemini should win over "/" LiteLLM fallback when SDK is present
         # (test environment has google.genai installed).
         pytest.importorskip("google.genai")
         assert infer_provider_from_model("gemini/gemini-2.5-flash") == "gemini"
 
-    def test_infer_provider_groq_uses_prefix_map(self) -> None:
-        pytest.importorskip("groq")
-        assert infer_provider_from_model("groq/llama-3.3-70b-versatile") == "groq"
-
-
-# ---------------------------------------------------------------------------
-# strip_provider_prefix
-# ---------------------------------------------------------------------------
-
 
 class TestStripProviderPrefix:
     def test_strips_gemini_namespace(self) -> None:
         assert strip_provider_prefix("gemini/gemini-2.5-pro") == "gemini-2.5-pro"
 
-    def test_strips_groq_namespace(self) -> None:
-        assert strip_provider_prefix("groq/llama-3.3-70b-versatile") == "llama-3.3-70b-versatile"
 
     def test_preserves_bare_gemini_name(self) -> None:
         # ``gemini-`` alone is NOT a namespace — the Google API accepts
@@ -111,7 +95,7 @@ class TestModelAliases:
 
     def test_default_models_keys_cover_expected_providers(self) -> None:
         expected = {
-            "anthropic", "openai", "gemini", "groq", "ollama",
+            "anthropic", "openai", "gemini", "deepseek", "ollama",
             "deepseek", "mistral", "qwen", "together",
         }
         assert expected.issubset(set(DEFAULT_MODELS))
@@ -120,7 +104,7 @@ class TestModelAliases:
         assert get_default_model("anthropic") == ModelAliases.ANTHROPIC_DEFAULT
         assert get_default_model("openai") == ModelAliases.OPENAI_DEFAULT
         assert get_default_model("gemini") == ModelAliases.GEMINI_DEFAULT
-        assert get_default_model("groq") == ModelAliases.GROQ_DEFAULT
+        assert get_default_model("deepseek") == "deepseek-chat"
         assert get_default_model("ollama") == ModelAliases.OLLAMA_DEFAULT
 
     def test_get_default_model_returns_empty_for_unknown(self) -> None:
@@ -142,7 +126,7 @@ class TestModelAliases:
 
 class TestProviderEnvVars:
     def test_map_lists_every_expected_provider(self) -> None:
-        for provider in ("anthropic", "openai", "gemini", "groq", "cerebras"):
+        for provider in ("anthropic", "openai", "gemini", "deepseek", "cerebras"):
             assert provider in PROVIDER_ENV_VARS
 
     def test_gemini_supports_google_api_key_fallback(self) -> None:

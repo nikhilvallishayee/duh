@@ -119,18 +119,8 @@ class TestGetCapabilities:
         assert caps.context_window == 1_048_576
         assert caps.supports_thinking is True
 
-    def test_groq_llama_70b(self) -> None:
-        caps = get_capabilities("groq/llama-3.3-70b-versatile")
-        assert caps.context_window == 128_000
-        assert caps.supports_tools is True
 
-    def test_groq_llama_8b(self) -> None:
-        caps = get_capabilities("groq/llama-3.1-8b-instant")
-        assert caps.context_window == 128_000
 
-    def test_groq_unknown_falls_back(self) -> None:
-        caps = get_capabilities("groq/some-new-model")
-        assert caps.context_window == 128_000
 
     def test_qwen25_coder_7b(self) -> None:
         caps = get_capabilities("qwen2.5-coder:7b")

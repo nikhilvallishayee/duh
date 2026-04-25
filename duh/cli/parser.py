@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fallback-model", type=str, default=None,
                         help="Fallback model if primary is overloaded.")
     parser.add_argument("--provider", type=str,
-                        choices=["anthropic", "deepseek", "gemini", "groq", "mistral",
+                        choices=["anthropic", "deepseek", "gemini", "mistral",
                                  "ollama", "openai", "qwen", "together"],
                         default=None,
                         help="LLM provider (default: auto-detect from model prefix or env keys).")

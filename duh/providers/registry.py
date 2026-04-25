@@ -50,7 +50,6 @@ class ModelAliases:
     ANTHROPIC_DEFAULT: str = "claude-sonnet-4-6"
     OPENAI_DEFAULT: str = "gpt-4o"
     GEMINI_DEFAULT: str = "gemini-2.5-flash"
-    GROQ_DEFAULT: str = "llama-3.3-70b-versatile"
     OLLAMA_DEFAULT: str = "qwen2.5-coder:1.5b"
 
 
@@ -70,7 +69,6 @@ DEFAULT_MODELS: dict[str, str] = {
     "anthropic": ModelAliases.ANTHROPIC_DEFAULT,
     "openai": ModelAliases.OPENAI_DEFAULT,
     "gemini": ModelAliases.GEMINI_DEFAULT,
-    "groq": ModelAliases.GROQ_DEFAULT,
     "ollama": ModelAliases.OLLAMA_DEFAULT,
     "deepseek": "deepseek-chat",
     "mistral": "mistral-medium-2505",
@@ -112,34 +110,20 @@ def get_default_model(provider: str) -> str:
 # ``curl $PROVIDER_MODELS_URL | jq`` — to bump these when newer keys exist.
 
 PROVIDER_TIER_MODELS: dict[str, dict[str, str]] = {
-    # CONSERVATIVE — verify claude-opus-4-7 / claude-haiku-4-5 via /v1/models
-    # before promoting. 4-6 entries confirmed present throughout 2026.
     "anthropic": {
         "small":  "claude-haiku-4-5",
         "medium": "claude-sonnet-4-6",
         "large":  "claude-opus-4-6",
     },
-    # CONSERVATIVE — gpt-5.4 / gpt-5.4-pro released March 2026 per OpenAI
-    # announcements but not live-verified here. Upgrade once keys are probed.
     "openai": {
         "small":  "gpt-4o-mini",
         "medium": "gpt-4o",
         "large":  "o1",
     },
-    # LIVE-VERIFIED 2026-04-19 via generativelanguage.googleapis.com/v1beta.
-    # 3.1-pro-preview reports 1M input tokens and supports generateContent.
     "gemini": {
         "small":  "gemini-2.5-flash",
         "medium": "gemini-2.5-pro",
         "large":  "gemini-3.1-pro-preview",
-    },
-    # LIVE-VERIFIED 2026-04-19 via api.groq.com/openai/v1/models.
-    # gpt-oss-120b is OpenAI's open-weights 120B hosted on Groq infra —
-    # the strongest reasoning model Groq serves.
-    "groq": {
-        "small":  "llama-3.1-8b-instant",
-        "medium": "llama-3.3-70b-versatile",
-        "large":  "openai/gpt-oss-120b",
     },
     # Local / Ollama. Pull with ``ollama pull <model>`` first.
     "ollama": {
@@ -250,7 +234,6 @@ def resolve_agent_tier(tier: str, parent_model: str) -> str:
 _PROVIDER_PREFIX_MAP: list[tuple[str, str]] = [
     ("gemini/", "gemini"),
     ("gemini-", "gemini"),
-    ("groq/", "groq"),
     ("deepseek/", "deepseek"),
     ("mistral/", "mistral"),
     ("qwen/", "qwen"),
@@ -305,7 +288,6 @@ PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
     "anthropic": ("ANTHROPIC_API_KEY",),
     "openai": ("OPENAI_API_KEY",),
     "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
-    "groq": ("GROQ_API_KEY",),
     "deepseek": ("DEEPSEEK_API_KEY",),
     "mistral": ("MISTRAL_API_KEY",),
     "qwen": ("DASHSCOPE_API_KEY", "ALIBABA_API_KEY"),
@@ -346,16 +328,12 @@ def _google_genai_available() -> bool:
     return _module_importable("google.genai") or _module_importable("google_genai")
 
 
-def _groq_sdk_available() -> bool:
-    return _module_importable("groq")
 
 
 def is_gemini_model(model: str | None) -> bool:
     return _lookup_provider_by_prefix(model) == "gemini"
 
 
-def is_groq_model(model: str | None) -> bool:
-    return _lookup_provider_by_prefix(model) == "groq"
 
 
 def is_deepseek_model(model: str | None) -> bool:
@@ -418,8 +396,6 @@ def infer_provider_from_model(model: str | None) -> str | None:
         # available. The Gemini/Groq adapters require their respective
         # Python SDKs; the rest are pure HTTP via the openai SDK.
         if prefix_provider == "gemini" and not _google_genai_available():
-            return None
-        if prefix_provider == "groq" and not _groq_sdk_available():
             return None
         return prefix_provider
     m = model.lower()
@@ -491,8 +467,6 @@ def connected_providers(check_ollama: Callable[[], bool]) -> list[str]:
         out.append("ollama")
     if _google_genai_available() and get_api_key("gemini"):
         out.append("gemini")
-    if _groq_sdk_available() and get_api_key("groq"):
-        out.append("groq")
     return list(dict.fromkeys(out))
 
 
@@ -663,15 +637,6 @@ def _try_native_gemini(model: str) -> Any | None:
     return GeminiProvider(model=model, thinking_budget=-1)
 
 
-def _try_native_groq(model: str) -> Any | None:
-    """Return a GroqProvider instance if the ``groq`` SDK is importable; else None."""
-    if not _groq_sdk_available():
-        return None
-    try:
-        from duh.adapters.groq import GroqProvider  # type: ignore[import-not-found]
-    except ImportError:
-        return None
-    return GroqProvider(model=model)
 
 
 def build_model_backend(
@@ -837,22 +802,5 @@ def build_model_backend(
             create = lambda m: TogetherProvider(api_key=api_key, model=m)
         _emit_adapter_startup_log("Using TogetherProvider (native)", resolved)
         return ProviderBackend("together", resolved, create(resolved).stream, auth_mode="api_key")
-
-    if provider_name == "groq":
-        resolved = model or f"groq/{ModelAliases.GROQ_DEFAULT}"
-        create = provider_factories.get("groq")
-        if create is not None:
-            provider = create(resolved)
-        else:
-            provider = _try_native_groq(resolved)
-        if provider is None:
-            return ProviderBackend(
-                "groq",
-                resolved,
-                None,
-                "groq SDK is not installed. Install with: pip install groq",
-            )
-        _emit_adapter_startup_log("Using GroqProvider (native)", resolved)
-        return ProviderBackend("groq", resolved, provider.stream, auth_mode="api_key")
 
     return ProviderBackend(provider_name, model or "", None, f"Unknown provider: {provider_name}")

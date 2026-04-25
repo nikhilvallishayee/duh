@@ -68,12 +68,6 @@ class TestResolveAgentTier:
         """
         assert resolve_agent_tier("large", "gemini-2.5-flash") == "gemini-3.1-pro-preview"
 
-    def test_medium_on_groq_namespaced_parent(self):
-        """Namespaced ``groq/llama-...`` parent routes to groq tier map."""
-        assert (
-            resolve_agent_tier("medium", "groq/llama-3.1-8b-instant")
-            == "llama-3.3-70b-versatile"
-        )
 
     def test_inherit_returns_parent(self):
         assert resolve_agent_tier("inherit", "any-model-name") == "any-model-name"

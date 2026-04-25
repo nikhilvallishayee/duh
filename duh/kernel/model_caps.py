@@ -147,24 +147,6 @@ _GEMINI_15_FLASH = ModelCapabilities(
     context_window=1_048_576,
 )
 
-# Groq — all models served with 128K context
-_GROQ_LLAMA_70B = ModelCapabilities(
-    supports_tools=True,
-    supports_thinking=False,
-    supports_vision=False,
-    supports_cache_control=False,
-    max_output_tokens=32_768,
-    context_window=128_000,
-)
-
-_GROQ_LLAMA_8B = ModelCapabilities(
-    supports_tools=True,
-    supports_thinking=False,
-    supports_vision=False,
-    supports_cache_control=False,
-    max_output_tokens=8192,
-    context_window=128_000,
-)
 
 # Qwen 2.5 family (Ollama local) — 128K native
 _QWEN_25 = ModelCapabilities(
@@ -251,11 +233,6 @@ _PREFIX_TABLE: list[tuple[str, ModelCapabilities]] = [
     ("gemini-1.5-pro", _GEMINI_15_PRO),
     ("gemini-1.5-flash", _GEMINI_15_FLASH),
     ("gemini", _GEMINI_20_FLASH),  # generic fallback (1M, reasonable default)
-    # Groq (via LiteLLM) — 128K context across all models
-    ("groq/llama-3.3-70b", _GROQ_LLAMA_70B),
-    ("groq/llama-3.1-70b", _GROQ_LLAMA_70B),
-    ("groq/llama-3.1-8b", _GROQ_LLAMA_8B),
-    ("groq/", _GROQ_LLAMA_70B),  # sensible default for unknown Groq models
     # Ollama-local — longer/specific prefixes before generic substrings
     ("qwen2.5-coder:1.5b", _QWEN_25_SMALL),
     ("qwen2.5-coder", _QWEN_25),

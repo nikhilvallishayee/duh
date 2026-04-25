@@ -68,7 +68,7 @@ class TestDependencyUpperBounds:
         # ``test_litellm_extras_has_safe_floor_and_upper_bound`` below).
         # The core list now includes google-genai + groq which replace
         # LiteLLM for the default install path.
-        ["anthropic", "httpx", "openai", "google-genai", "groq", "mcp"],
+        ["anthropic", "httpx", "openai", "google-genai", "mcp"],
     )
     def test_security_critical_deps_have_upper_bound(
         self, deps: list[str], dep: str

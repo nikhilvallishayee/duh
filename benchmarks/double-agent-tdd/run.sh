@@ -58,6 +58,22 @@ case "$AGENT_ID" in
     CLI="duh"
     MODEL="groq/meta-llama/llama-4-scout-17b-16e-instruct"
     ;;
+  duh-deepseek-v4-pro)
+    CLI="duh"
+    MODEL="openrouter/deepseek/deepseek-v4-pro"
+    ;;
+  duh-llama4-maverick)
+    CLI="duh"
+    MODEL="openrouter/meta-llama/llama-4-maverick"
+    ;;
+  duh-qwen3-max)
+    CLI="duh"
+    MODEL="openrouter/qwen/qwen3-max-thinking"
+    ;;
+  duh-mistral-large)
+    CLI="duh"
+    MODEL="openrouter/mistralai/mistral-large-2512"
+    ;;
   *)
     echo "unknown agent id: $AGENT_ID" >&2
     exit 2

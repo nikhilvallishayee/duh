@@ -233,6 +233,7 @@ _PROVIDER_PREFIX_MAP: list[tuple[str, str]] = [
     ("gemini/", "gemini"),
     ("gemini-", "gemini"),
     ("groq/", "groq"),
+    ("openrouter/", "openrouter"),
 ]
 
 
@@ -284,6 +285,7 @@ PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
     "openai": ("OPENAI_API_KEY",),
     "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
     "groq": ("GROQ_API_KEY",),
+    "openrouter": ("OPENROUTER_API_KEY",),
     "cerebras": ("CEREBRAS_API_KEY",),
 }
 
@@ -336,6 +338,10 @@ def is_groq_model(model: str | None) -> bool:
     return _lookup_provider_by_prefix(model) == "groq"
 
 
+def is_openrouter_model(model: str | None) -> bool:
+    return _lookup_provider_by_prefix(model) == "openrouter"
+
+
 def _emit_adapter_startup_log(adapter: str, model: str) -> None:
     """Emit a single log line per (adapter, model) per session."""
     key = f"{adapter}:{model}"
@@ -382,11 +388,15 @@ def infer_provider_from_model(model: str | None) -> str | None:
         return None
     # ADR-075: gemini/* and groq/* prefer native adapters when the SDK is
     # installed; otherwise they fall through to LiteLLM as the opt-in fallback.
+    # openrouter/* uses the openai SDK natively against OpenRouter's
+    # OpenAI-compatible endpoint — no LiteLLM hop.
     prefix_provider = _lookup_provider_by_prefix(model)
     if prefix_provider == "gemini":
         return "gemini" if _google_genai_available() else "litellm"
     if prefix_provider == "groq":
         return "groq" if _groq_sdk_available() else "litellm"
+    if prefix_provider == "openrouter":
+        return "openrouter"
     # Everything else with a "/" (e.g. "bedrock/claude-3-haiku",
     # "together_ai/…") is a LiteLLM model string. Check before native
     # providers since a litellm string like "bedrock/claude-3-haiku" would
@@ -745,6 +755,23 @@ def build_model_backend(
             )
         _emit_adapter_startup_log("Using GeminiProvider (native)", resolved)
         return ProviderBackend("gemini", resolved, provider.stream, auth_mode="api_key")
+
+    if provider_name == "openrouter":
+        api_key = get_api_key("openrouter")
+        resolved = model or "openrouter/deepseek/deepseek-v4-pro"
+        if not api_key:
+            return ProviderBackend(
+                "openrouter",
+                resolved,
+                None,
+                "OPENROUTER_API_KEY not set. Get a key at openrouter.ai.",
+            )
+        create = provider_factories.get("openrouter")
+        if create is None:
+            from duh.adapters.openrouter import OpenRouterProvider
+            create = lambda m: OpenRouterProvider(api_key=api_key, model=m)
+        _emit_adapter_startup_log("Using OpenRouterProvider (native, OpenAI-shaped)", resolved)
+        return ProviderBackend("openrouter", resolved, create(resolved).stream, auth_mode="api_key")
 
     if provider_name == "groq":
         resolved = model or f"groq/{ModelAliases.GROQ_DEFAULT}"

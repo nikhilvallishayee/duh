@@ -234,6 +234,7 @@ _PROVIDER_PREFIX_MAP: list[tuple[str, str]] = [
     ("gemini-", "gemini"),
     ("groq/", "groq"),
     ("openrouter/", "openrouter"),
+    ("deepseek/", "deepseek"),
 ]
 
 
@@ -286,6 +287,7 @@ PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
     "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
     "groq": ("GROQ_API_KEY",),
     "openrouter": ("OPENROUTER_API_KEY",),
+    "deepseek": ("DEEPSEEK_API_KEY",),
     "cerebras": ("CEREBRAS_API_KEY",),
 }
 
@@ -397,6 +399,8 @@ def infer_provider_from_model(model: str | None) -> str | None:
         return "groq" if _groq_sdk_available() else "litellm"
     if prefix_provider == "openrouter":
         return "openrouter"
+    if prefix_provider == "deepseek":
+        return "deepseek" if get_api_key("deepseek") else "openrouter"
     # Everything else with a "/" (e.g. "bedrock/claude-3-haiku",
     # "together_ai/…") is a LiteLLM model string. Check before native
     # providers since a litellm string like "bedrock/claude-3-haiku" would
@@ -755,6 +759,23 @@ def build_model_backend(
             )
         _emit_adapter_startup_log("Using GeminiProvider (native)", resolved)
         return ProviderBackend("gemini", resolved, provider.stream, auth_mode="api_key")
+
+    if provider_name == "deepseek":
+        api_key = get_api_key("deepseek")
+        resolved = model or "deepseek/deepseek-chat"
+        if not api_key:
+            return ProviderBackend(
+                "deepseek",
+                resolved,
+                None,
+                "DEEPSEEK_API_KEY not set. Get a key at platform.deepseek.com.",
+            )
+        create = provider_factories.get("deepseek")
+        if create is None:
+            from duh.adapters.deepseek import DeepSeekProvider
+            create = lambda m: DeepSeekProvider(api_key=api_key, model=m)
+        _emit_adapter_startup_log("Using DeepSeekProvider (native, OpenAI-shaped)", resolved)
+        return ProviderBackend("deepseek", resolved, create(resolved).stream, auth_mode="api_key")
 
     if provider_name == "openrouter":
         api_key = get_api_key("openrouter")

@@ -35,6 +35,58 @@ def _wrap_model_output(text: str) -> UntrustedStr:
     return UntrustedStr(text, TaintSource.MODEL_OUTPUT)
 
 
+def _normalise_usage(usage: Any) -> dict[str, int]:
+    """Pull a flat int dict out of an OpenAI streaming usage object.
+
+    Handles the live SDK shape ``CompletionUsage`` plus dict and the
+    DeepSeek / OpenRouter variations:
+
+    - OpenAI:    usage.prompt_tokens_details.cached_tokens
+    - DeepSeek:  usage.prompt_cache_hit_tokens / prompt_cache_miss_tokens
+    - OpenRouter: forwards the upstream shape; usually OpenAI-compatible
+
+    Output keys: prompt_tokens, completion_tokens, total_tokens,
+    cached_tokens, cache_creation_tokens.
+    """
+    def _attr(obj: Any, name: str, default: int = 0) -> int:
+        if isinstance(obj, dict):
+            v = obj.get(name)
+        else:
+            v = getattr(obj, name, None)
+        try:
+            return int(v) if v is not None else default
+        except (TypeError, ValueError):
+            return default
+
+    out: dict[str, int] = {
+        "prompt_tokens":     _attr(usage, "prompt_tokens"),
+        "completion_tokens": _attr(usage, "completion_tokens"),
+        "total_tokens":      _attr(usage, "total_tokens"),
+        "cached_tokens":     0,
+        "cache_creation_tokens": 0,
+    }
+
+    # OpenAI-shape: prompt_tokens_details.cached_tokens
+    details = getattr(usage, "prompt_tokens_details", None)
+    if details is None and isinstance(usage, dict):
+        details = usage.get("prompt_tokens_details")
+    if details is not None:
+        out["cached_tokens"] = _attr(details, "cached_tokens")
+        # OpenAI emits cache_creation_input_tokens for explicit cache writes
+        # on the Anthropic-via-OpenRouter path; fall back to 0 elsewhere.
+        out["cache_creation_tokens"] = (
+            _attr(details, "cache_creation_input_tokens")
+            or _attr(details, "cache_creation_tokens")
+        )
+
+    # DeepSeek-shape: prompt_cache_hit_tokens / prompt_cache_miss_tokens
+    hit = _attr(usage, "prompt_cache_hit_tokens")
+    if hit and not out["cached_tokens"]:
+        out["cached_tokens"] = hit
+
+    return out
+
+
 class OpenAIProvider:
     """Wraps the OpenAI Python SDK to produce D.U.H. uniform events.
 
@@ -113,11 +165,18 @@ class OpenAIProvider:
         # Build messages
         api_messages = _to_openai_messages(messages, system_prompt)
 
-        # Build request kwargs
+        # Build request kwargs.  ``stream_options.include_usage=True`` is
+        # what makes the OpenAI Chat Completions streaming endpoint emit
+        # a final chunk carrying ``chunk.usage`` (prompt_tokens, completion_
+        # tokens, *and* prompt_tokens_details.cached_tokens) — without it
+        # streaming responses report no usage at all.  Required for honest
+        # cache-aware cost reporting on OpenAI / OpenRouter / DeepSeek /
+        # any other OpenAI-compatible endpoint.
         request: dict[str, Any] = {
             "model": resolved_model,
             "messages": api_messages,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
         if api_tools:
             request["tools"] = api_tools
@@ -141,10 +200,27 @@ class OpenAIProvider:
             text_parts: list[str] = []
             tool_calls: dict[int, dict[str, Any]] = {}
             finish_reason = "stop"
+            usage: dict[str, int] = {}
 
             try:
                 async for chunk in response:
-                    delta = chunk.choices[0].delta if chunk.choices else None
+                    # Final chunk emitted when stream_options.include_usage
+                    # is set carries usage but no choices. Capture it.
+                    chunk_usage = getattr(chunk, "usage", None)
+                    if chunk_usage is not None:
+                        usage = _normalise_usage(chunk_usage)
+                        # Surface cache-aware token counts to the kernel.
+                        yield {
+                            "type": "usage_delta",
+                            "input_tokens": usage.get("prompt_tokens", 0),
+                            "output_tokens": usage.get("completion_tokens", 0),
+                            "cached_tokens": usage.get("cached_tokens", 0),
+                            "cache_creation_tokens": usage.get("cache_creation_tokens", 0),
+                        }
+
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
                     if not delta:
                         continue
 
@@ -264,7 +340,7 @@ class OpenAIProvider:
                 content=content_blocks,
                 metadata={
                     "stop_reason": stop_reason,
-                    "usage": {},
+                    "usage": usage,
                 },
             )
             yield {"type": "assistant", "message": assistant_msg}

@@ -1,0 +1,6 @@
+{
+  "target": "duh-llama4-maverick",
+  "judge": "j-opus",
+  "error": "Run failed at startup: OpenRouter returned 404 'No endpoints found that support tool use' for meta-llama/llama-4-maverick. The model isn't accessible via tool-calling through OpenRouter.",
+  "one_line_summary": "OpenRouter routing limitation — Llama 4 Maverick has no tool-use endpoint."
+}

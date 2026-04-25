@@ -1,0 +1,14 @@
+{
+  "agent_id": "duh-mistral-large",
+  "cli": "duh",
+  "model": "openrouter/mistralai/mistral-large-2512",
+  "baseline_commit": "645d91ad10ad83b5778bcd14f2c53b8e3366497c",
+  "start_ts": "2026-04-25T09:57:04Z",
+  "end_ts": "2026-04-25T10:14:32Z",
+  "elapsed_s": 1048,
+  "exit_code": 1,
+  "worktree": "/Users/nomind/Code/duh/benchmarks/double-agent-tdd/worktrees/duh-mistral-large",
+  "log_bytes": 68905,
+  "diff_bytes": 56472,
+  "files_changed": 10
+}

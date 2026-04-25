@@ -1,0 +1,3 @@
+[j-gpt54 ← duh-deepseek-v4-pro] -> /Users/nomind/Code/duh/benchmarks/double-agent-tdd/results/judgments/j-gpt54/duh-deepseek-v4-pro.json
+[j-gpt54 ← duh-qwen3-max] -> /Users/nomind/Code/duh/benchmarks/double-agent-tdd/results/judgments/j-gpt54/duh-qwen3-max.json
+[j-gpt54 ← duh-mistral-large] -> /Users/nomind/Code/duh/benchmarks/double-agent-tdd/results/judgments/j-gpt54/duh-mistral-large.json

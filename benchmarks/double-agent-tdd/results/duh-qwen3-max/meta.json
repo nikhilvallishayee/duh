@@ -1,0 +1,14 @@
+{
+  "agent_id": "duh-qwen3-max",
+  "cli": "duh",
+  "model": "openrouter/qwen/qwen3-max-thinking",
+  "baseline_commit": "645d91ad10ad83b5778bcd14f2c53b8e3366497c",
+  "start_ts": "2026-04-25T09:57:04Z",
+  "end_ts": "2026-04-25T10:11:26Z",
+  "elapsed_s": 862,
+  "exit_code": 0,
+  "worktree": "/Users/nomind/Code/duh/benchmarks/double-agent-tdd/worktrees/duh-qwen3-max",
+  "log_bytes": 70384,
+  "diff_bytes": 55584,
+  "files_changed": 13
+}

@@ -1,0 +1,4 @@
+[duh-deepseek-v4-pro] removing existing worktree
+Preparing worktree (detached HEAD 645d91a)
+[duh-deepseek-v4-pro] worktree ready at /Users/nomind/Code/duh/benchmarks/double-agent-tdd/worktrees/duh-deepseek-v4-pro
+[duh-deepseek-v4-pro] done  exit=1  elapsed=576s  diff=31324B

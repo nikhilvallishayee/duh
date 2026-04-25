@@ -1,0 +1,3 @@
+[j-opus ← duh-deepseek-v4-pro] -> /Users/nomind/Code/duh/benchmarks/double-agent-tdd/results/judgments/j-opus/duh-deepseek-v4-pro.json
+[j-opus ← duh-qwen3-max] -> /Users/nomind/Code/duh/benchmarks/double-agent-tdd/results/judgments/j-opus/duh-qwen3-max.json
+[j-opus ← duh-mistral-large] -> /Users/nomind/Code/duh/benchmarks/double-agent-tdd/results/judgments/j-opus/duh-mistral-large.json

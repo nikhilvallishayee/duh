@@ -1,0 +1,14 @@
+{
+  "agent_id": "duh-deepseek-v4-pro",
+  "cli": "duh",
+  "model": "openrouter/deepseek/deepseek-v4-pro",
+  "baseline_commit": "645d91ad10ad83b5778bcd14f2c53b8e3366497c",
+  "start_ts": "2026-04-25T09:57:04Z",
+  "end_ts": "2026-04-25T10:06:40Z",
+  "elapsed_s": 576,
+  "exit_code": 1,
+  "worktree": "/Users/nomind/Code/duh/benchmarks/double-agent-tdd/worktrees/duh-deepseek-v4-pro",
+  "log_bytes": 40674,
+  "diff_bytes": 31324,
+  "files_changed": 2
+}

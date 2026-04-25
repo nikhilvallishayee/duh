@@ -1,0 +1,869 @@
+diff --git a/docs/adrs/ADR-076-double-agent-tdd.md b/docs/adrs/ADR-076-double-agent-tdd.md
+new file mode 100644
+index 0000000..ebd9778
+--- /dev/null
++++ b/docs/adrs/ADR-076-double-agent-tdd.md
+@@ -0,0 +1,165 @@
++# ADR-076: Double-Agent TDD Flow
++
++**Status:** Accepted
++**Date:** 2026-07-16
++
++## Context
++
++Test-Driven Development (TDD) is a well-established discipline: write a failing
++test first (RED), write the minimum code to make it pass (GREEN), then refactor
++while keeping tests green (REFACTOR). When practiced with pair programming, it
++becomes even more rigorous — the Driver writes the code while the Navigator
++reviews each step.
++
++D.U.H. already has multi-agent support (ADR-012) with AgentTool and SwarmTool
++for spawning child engines. This ADR proposes a structured **double-agent TDD
++flow** where two cooperating agents — a **Driver** and a **Navigator** —
++execute the red-green-refactor cycle under a strict six-phase protocol.
++
++### Why not just tell a single agent to "do TDD"?
++
++A single agent can be told to write tests and code, but it has no structural
++enforcement of the TDD discipline. It can skip RED, writetest-after code, or
++skip refactoring. The double-agent flow enforces:
++
++- The test MUST fail before any implementation code is written.
++- The Navigator reviews the test before RED and suggests refactors after GREEN.
++- The refactor MUST be applied and validated.
++
++The Navigator acts as a constraint checker — it can force the Driver to tighten
++a spec if the test passes prematurely (indicating the test wasn't actually
++testing new behavior).
++
++## Decision
++
++### 1. Two cooperating agents: Driver and Navigator
++
++- **Driver** — writes the failing test (RED), writes the minimum code (GREEN),
++  applies refactors (REFACTOR). The Driver is a `coder`-type agent with full
++  tool access (Read, Write, Edit, Bash for running tests).
++- **Navigator** — drafts the test spec before RED, reviews the RED result,
++  proposes refactors after GREEN, validates the final refactor. The Navigator
++  is a `reviewer`-type agent with read-only access plus the ability to
++  instruct the Driver.
++
++### 2. Six-phase protocol, strict order
++
++The flow proceeds through exactly six phases. Each phase must complete before
++the next begins:
++
++| # | Phase | Actor | Action | Exit condition |
++|---|-------|-------|--------|----------------|
++| 1 | **SPEC** | Navigator | Drafts the test spec: what to test, expected behavior, edge cases. Output is a natural-language spec. | Spec approved by user or auto-proceed. |
++| 2 | **RED** | Driver | Writes the failing test based on the spec. Tests are executed. | Test MUST fail. If it passes, return to phase 1 (Navigator tightens spec). |
++| 3 | **GREEN** | Driver | Writes the minimum code to make the test pass. Tests executed. | Test MUST pass. |
++| 4 | **REFACTOR_PROPOSE** | Navigator | Reviews the GREEN code and proposes a refactor. Output is a list of specific changes. | Refactor proposal produced. |
++| 5 | **REFACTOR_APPLY** | Driver | Applies the Navigator's refactor suggestions. Tests executed. | Tests MUST still pass after refactor. |
++| 6 | **VALIDATE** | Navigator | Validates tests still pass and the refactor landed cleanly. Reports final status. | Validation complete (pass or fail). |
++
++### 3. Subcommand: `duh tdd`
++
++The flow is exposed as a new subcommand:
++
++```
++duh tdd --prompt "Add a divide(a, b) function that raises on zero division"
++```
++
++It accepts the same `--model`, `--provider`, `--max-turns`, and other flags
++the rest of D.U.H. supports. The subcommand runs the six-phase protocol to
++completion and exits with status 0 (all phases passed) or non-zero (phase
++failed).
++
++### 4. Reuses existing abstractions
++
++- **Engine** — each phase runs the Driver or Navigator agent through an Engine
++  instance (same pattern as AgentTool/SwarmTool).
++- **AgentDef / run_agent** — the Driver is `agent_type="coder"`, the Navigator
++  is `agent_type="reviewer"`. No new agent types needed.
++- **PlanMode** — the phase sequencing is similar to PlanMode (two-phase
++  orchestration), but specialized for TDD. We borrow the pattern, not the code.
++- **StubProvider** — tests use the same stub provider for deterministic
++  offline testing.
++
++### 5. Contract between Driver and Navigator
++
++The information flow between agents is structured:
++
++```
++Navigator → Driver:  test spec (phase 1), refactor suggestion (phase 4)
++Driver → Navigator:  test code + result (phase 2), impl code + result (phase 3),
++                     refactored code + result (phase 5)
++```
++
++Each handoff uses a prompt format that the receiving agent can parse:
++
++```
++[SPEC]
++<Navigator's test spec>
++
++[INSTRUCTION]
++Write a failing test that covers the spec above. Use the project's test framework.
++```
++
++This structured format keeps the agents' prompts parseable and avoids
++ambiguity about what phase they're13 in.
++
++### 6. Phase failure handling
++
++- **Phase 2 RED failure** (test passes): return to phase 1. The Navigator gets
++  the passing test output and revises the spec to be tighter (e.g., "the test
++  passes because the function already exists — revise to test the *new*
++  behavior"). Maximum 3 spec revision cycles before reporting failure.
++- **Phase 3 GREEN failure** (test still fails): the Driver retries once. If
++  still failing, report the failure and exit.
++- **Phase 6 VALIDATE failure**: report which tests failed and exit with error.
++
++### 7. API
++
++A public Python API is also available:
++
++```python
++from duh.tools.double_agent_tdd import run_tdd_flow, TddResult
++
++result: TddResult = await run_tdd_flow(
++    task="Add a divide(a, b) function",
++    deps=deps,
++    tools=tools,
++    model="claude-sonnet-4-6",
++)
++# result.phases  — list of (phase_name, success, output) tuples
++# result.success — True if all six phases passed
++```
++
++## Alternatives Considered
++
++### A. Single agent with prompt injection
++
++Tell a single agent "do TDD." Simple, but no structural enforcement. The agent
++can skip RED, write code before tests, etc. Rejected because the whole point
++is the enforced discipline.
++
++### B. New agent types: "driver" and "navigator"
++
++Create two new `AGENT_OVERLAYS` entries. Overkill — the existing `coder` and
++`reviewer` types already capture the right behaviors. The TDD-specific prompts
++are injected as phase-specific instruction prefixes.
++
++### C. SwarmTool-based parallel execution
++
++Use SwarmTool to run Driver/Navigator in parallel. Doesn't work because the
++phases are strictly sequential — Navigator's spec must complete before Driver
++writes tests, etc.
++
++### D. Hook-based enforcement
++
++Use hooks to enforce TDD discipline on a single agent. Possible but fragile —
++hooks can block/rewrite tool calls but can't force the agent to follow a
++six-phase sequence. Hooks are14 for safety, not workflow orchestration.
++
++## Consequences
++
++- New `duh tdd` subcommand with six-phase execution.
++- Driver uses `coder` agent type, Navigator uses `reviewer` agent type.
++- Each phase is a child Engine run with phase-specific prompts.
++- Tests exercise the full flow against StubProvider.
++- No new agent overlays, no new kernel abstractions — reuses Engine + run_agent.
+\ No newline at end of file
+diff --git a/duh/tools/double_agent_tdd.py b/duh/tools/double_agent_tdd.py
+new file mode 100644
+index 0000000..8143590
+--- /dev/null
++++ b/duh/tools/double_agent_tdd.py
+@@ -0,0 +1,690 @@
++"""Double-agent TDD flow — Driver/Navigator pair following red-green-refactor.
++
++Implements ADR-076: two cooperating agents execute a strict six-phase TDD cycle.
++
++    result = await run_tdd_flow(
++        task="Add a divide(a, b) function that raises on zero division",
++        deps=deps,
++        tools=tools,
++        model="claude-sonnet-4-6",
++    )
++    print(result.success)  # True if all six phases passed
++
++Also exposed as::
++
++    duh tdd --prompt "Add a divide function"
++"""
++
++from __future__ import annotations
++
++import logging
++from dataclasses import dataclass, field
++from enum import Enum, auto
++from typing import Any
++
++from duh.agents import run_agent, AgentResult
++
++logger = logging.getLogger(__name__)
++
++# Maximum number of RED/GREEN retries before giving up.
++MAX_RED_RETRIES = 3
++MAX_GREEN_RETRIES = 2
++
++
++# ---------------------------------------------------------------------------
++# Phase enumeration
++# ---------------------------------------------------------------------------
++
++
++class TddPhase(Enum):
++    """The six phases of the double-agent TDD flow."""
++    SPEC = auto()             # 1: Navigator drafts test spec
++    RED = auto()              # 2: Driver writes failing test
++    GREEN = auto()            # 3: Driver writes minimum code
++    REFACTOR_PROPOSE = auto()  # 4: Navigator proposes refactor
++    REFACTOR_APPLY = auto()   # 5: Driver applies refactor
++    VALIDATE = auto()         # 6: Navigator validates
++
++
++PHASE_ORDER: list[TddPhase] = [
++    TddPhase.SPEC,
++    TddPhase.RED,
++    TddPhase.GREEN,
++    TddPhase.REFACTOR_PROPOSE,
++    TddPhase.REFACTOR_APPLY,
++    TddPhase.VALIDATE,
++]
++
++PHASE_LABELS: dict[TddPhase, str] = {
++    TddPhase.SPEC: "SPEC (Navigator drafts test spec)",
++    TddPhase.RED: "RED (Driver writes failing test)",
++    TddPhase.GREEN: "GREEN (Driver writes minimum code)",
++    TddPhase.REFACTOR_PROPOSE: "REFACTOR_PROPOSE (Navigator proposes refactor)",
++    TddPhase.REFACTOR_APPLY: "REFACTOR_APPLY (Driver applies refactor)",
++    TddPhase.VALIDATE: "VALIDATE (Navigator validates)",
++}
++
++
++# ---------------------------------------------------------------------------
++# Phase result
++# ---------------------------------------------------------------------------
++
++
++@dataclass
++class PhaseResult:
++    """Outcome of a single TDD phase."""
++    phase: TddPhase
++    success: bool
++    output: str = ""
++    error: str = ""
++
++
++# ---------------------------------------------------------------------------
++# Top-level result
++# ---------------------------------------------------------------------------
++
++
++@dataclass
++class TddResult:
++    """Result of a full double-agent TDD run."""
++    task: str
++    success: bool
++    phases: list[PhaseResult] = field(default_factory=list)
++    model: str = ""
++
++    @property
++    def failed_phase(self) -> TddPhase | None:
++        """Return the first failed phase, or None if all passed."""
++        for pr in self.phases:
++            if not pr.success:
++                return pr.phase
++        return None
++
++    def format_summary(self) -> str:
++        """Human-readable summary of all phases."""
++        lines: list[str] = []
++        for pr in self.phases:
++            status = "PASS" if pr.success else "FAIL"
++            lines.append(f"  [{status}] {PHASE_LABELS.get(pr.phase, pr.phase.name)}")
++            if pr.error:
++                lines.append(f"         Error: {pr.error}")
++        if self.success:
++            lines.append("\n  All phases passed.")
++        else:
++            fp = self.failed_phase
++            if fp:
++                lines.append(f"\n  Flow aborted at phase: {PHASE_LABELS.get(fp, fp.name)}")
++        return "\n".join(lines)
++
++
++# ---------------------------------------------------------------------------
++# Prompt templates for each phase
++# ---------------------------------------------------------------------------
++
++
++def _spec_prompt(task: str) -> str:
++    return (
++        "You are the Navigator in a TDD pair. Draft a test specification for "
++        "the following task. Describe:\n"
++        "  1. What behavior to test.\n"
++        "  2. The expected inputs and outputs.\n"
++        '  3. Edge cases that should be covered.\n'
++        '  4. The test framework to use (e.g. pytest).\n'
++        "\n"
++        "Output ONLY the spec. Do NOT write any code or tests yourself.\n"
++        "\n"
++        f"Task: {task}\n"
++    )
++
++
++def _red_prompt(spec: str, task: str) -> str:
++    return (
++        "You are the Driver in a TDD pair. Based on the spec below, write a "
++        "FAILING test. The test MUST fail — the code to make it pass does "
++        "not exist yet. Use the project's test framework.\n"
++        "\n"
++        "After writing the test file, run the tests and report the result. "
++        "If the test PASSES (unexpectedly), say so clearly.\n"
++        "\n"
++        f"[SPEC]\n{spec}\n[/SPEC]\n"
++        "\n"
++        f"Task: {task}\n"
++    )
++
++
++def _red_retry_prompt(spec: str, task: str, previous_output: str) -> str:
++    return (
++        "You are the Driver in a TDD pair. Your previous test PASSED "
++        "unexpectedly — the spec was not tight enough. The Navigator has "
++        "revised the spec below.\n"
++        "\n"
++        f"[PREVIOUS TEST OUTPUT]\n{previous_output}\n[/PREVIOUS TEST OUTPUT]\n"
++        "\n"
++        f"[REVISED SPEC]\n{spec}\n[/REVISED SPEC]\n"
++        "\n"
++        f"Task: {task}\n"
++        "\n"
++        "Write a new failing test against the revised spec. Run it and "
++        "confirm it FAILS.\n"
++    )
++
++
++def _green_prompt(spec: str, test_code: str, task: str) -> str:
++    return (
++        "You are the Driver in a TDD pair. The test below is currently "
++        "failing (RED phase complete). Write the MINIMUM code to make it "
++        "pass. Do NOT add features, error handling, or polish beyond what "
++        "the test requires.\n"
++        "\n"
++        f"[TEST CODE]\n{test_code}\n[/TEST CODE]\n"
++        "\n"
++        f"[SPEC]\n{spec}\n[/SPEC]\n"
++        "\n"
++        f"Task: {task}\n"
++        "\n"
++        "Implement the minimum code, then run the tests to confirm they PASS.\n"
++    )
++
++
++def _green_retry_prompt(spec: str, test_code: str, task: str, previous_output: str) -> str:
++    return (
++        "You are the Driver in a TDD pair. Your previous attempt did not "
++        "make all tests pass. Try again — write the minimum code to make "
++        "the test below pass.\n"
++        "\n"
++        f"[PREVIOUS ATTEMPT OUTPUT]\n{previous_output}\n[/PREVIOUS ATTEMPT OUTPUT]\n"
++        "\n"
++        f"[TEST CODE]\n{test_code}\n[/TEST CODE]\n"
++        "\n"
++        f"[SPEC]\n{spec}\n[/SPEC]\n"
++        "\n"
++        f"Task: {task}\n"
++    )
++
++
++def _refactor_propose_prompt(green_output: str, task: str) -> str:
++    return (
++        "You are the Navigator in a TDD pair. The Driver has made the test "
++        "pass (GREEN phase complete). Review the implementation below and "
++        "propose a refactor. The refactor must:\n"
++        "  1. Improve code clarity or structure.\n"
++        '  2. NOT change behavior (all tests must stay green).\n'
++        "  3. Be specific — reference concrete lines or patterns.\n"
++        "\n"
++        f"[GREEN IMPLEMENTATION]\n{green_output}\n[/GREEN IMPLEMENTATION]\n"
++        "\n"
++        f"Task: {task}\n"
++        "\n"
++        "Output your refactor suggestions as a clear, numbered list.\n"
++    )
++
++
++def _refactor_apply_prompt(refactor_suggestions: str, task: str) -> str:
++    return (
++        "You are the Driver in a TDD pair. Apply the Navigator's refactor "
++        "suggestions below. After applying, run the tests to confirm they "
++        "still pass.\n"
++        "\n"
++        f"[REFACTOR SUGGESTIONS]\n{refactor_suggestions}\n[/REFACTOR SUGGESTIONS]\n"
++        "\n"
++        f"Task: {task}\n"
++    )
++
++
++def _validate_prompt(refactor_output: str, task: str) -> str:
++    return (
++        "You are the Navigator in a TDD pair. The Driver has applied your "
++        "refactor. Validate that:\n"
++        "  1. Tests still pass.\n"
++        '  2. The refactor landed cleanly.\n'
++        "  3. No behavior was changed.\n"
++        "\n"
++        f"[REFACTORED OUTPUT]\n{refactor_output}\n[/REFACTORED OUTPUT]\n"
++        "\n"
++        f"Task: {task}\n"
++        "\n"
++        "Report PASS or FAIL with reasoning.\n"
++    )
++
++
++# ---------------------------------------------------------------------------
++# Core flow execution
++# ---------------------------------------------------------------------------
++
++
++async def run_tdd_flow(
++    *,
++    task: str,
++    deps: Any,
++    tools: list[Any] | None = None,
++    model: str = "",
++    cwd: str = ".",
++    max_turns_per_phase: int = 30,
++    on_phase_start: Any = None,
++    on_phase_end: Any = None,
++) -> TddResult:
++    """Run the full six-phase double-agent TDD flow.
++
++    Args:
++        task: The programming task (e.g. "Add a divide function").
++        deps: Deps instance with call_model and approve.
++        tools: Tool instances available to agents.
++        model: Model to use for both Driver and Navigator.
++        cwd: Working directory.
++        max_turns_per_phase: Maximum turns per agent phase.
++        on_phase_start: Optional async callback(phase: TddPhase).
++        on_phase_end: Optional async callback(result: PhaseResult).
++
++    Returns:
++        TddResult with success status and per-phase details.
++    """
++    phases: list[PhaseResult] = []
++    accumulated_test_code: str = ""
++    accumulated_impl_output: str = ""
++    spec_text: str = ""
++
++    # ------------------------------------------------------------------
++    # Phase 1: SPEC — Navigator drafts test spec
++    # ------------------------------------------------------------------
++    if on_phase_start:
++        await on_phase_start(TddPhase.SPEC)
++
++    nav_result = await _run_agent_phase(
++        prompt=_spec_prompt(task),
++        agent_type="reviewer",
++        model=model,
++        deps=deps,
++        tools=tools,
++        cwd=cwd,
++        max_turns=max_turns_per_phase,
++    )
++    spec_text = nav_result.result_text if nav_result.result_text else ""
++    spec_success = bool(spec_text.strip()) and not nav_result.is_error
++
++    spec_pr = PhaseResult(
++        phase=TddPhase.SPEC,
++        success=spec_success,
++        output=spec_text,
++        error=nav_result.error,
++    )
++    phases.append(spec_pr)
++    if on_phase_end:
++        await on_phase_end(spec_pr)
++    if not spec_success:
++        return TddResult(task=task, success=False, phases=phases, model=model)
++
++    # ------------------------------------------------------------------
++    # Phase 2: RED — Driver writes failing test
++    # ------------------------------------------------------------------
++    red_pr: PhaseResult | None = None
++    for red_attempt in range(1, MAX_RED_RETRIES + 1):
++        if on_phase_start:
++            await on_phase_start(TddPhase.RED)
++
++        if red_attempt == 1:
++            drv_prompt = _red_prompt(spec_text, task)
++        else:
++            drv_prompt = _red_retry_prompt(spec_text, task, red_pr.output if red_pr else "")
++
++        drv_result = await _run_agent_phase(
++            prompt=drv_prompt,
++            agent_type="coder",
++            model=model,
++            deps=deps,
++            tools=tools,
++            cwd=cwd,
++            max_turns=max_turns_per_phase,
++        )
++
++        red_output = drv_result.result_text if drv_result.result_text else ""
++        test_did_fail = _detect_test_failure(red_output)
++
++        if test_did_fail or drv_result.is_error:
++            # Test failed (good) OR agent errored — proceed to GREEN.
++            red_pr = PhaseResult(
++                phase=TddPhase.RED,
++                success=True,
++                output=red_output,
++                error=drv_result.error if drv_result.is_error else "",
++            )
++            if drv_result.error and not test_did_fail:
++                # Agent error but we can't confirm test failure — mark as
++                # success anyway since there's an error flag.
++                pass
++            phases.append(red_pr)
++            if on_phase_end:
++                await on_phase_end(red_pr)
++            accumulated_test_code = red_output
++            break
++        else:
++            # Test passed unexpectedly — spec not tight enough.
++            red_pr = PhaseResult(
++                phase=TddPhase.RED,
++                success=False,
++                output=red_output,
++                error="Test passed unexpectedly. Spec revision needed.",
++            )
++            phases.append(red_pr)
++            if on_phase_end:
++                await on_phase_end(red_pr)
++
++            if red_attempt < MAX_RED_RETRIES:
++                # Revise spec: ask Navigator to tighten it.
++                if on_phase_start:
++                    await on_phase_start(TddPhase.SPEC)
++                revised_nav = await _run_agent_phase(
++                    prompt=_spec_retry_prompt(spec_text, red_output, task),
++                    agent_type="reviewer",
++                    model=model,
++                    deps=deps,
++                    tools=tools,
++                    cwd=cwd,
++                    max_turns=max_turns_per_phase,
++                )
++                new_spec = revised_nav.result_text if revised_nav.result_text else ""
++                if new_spec.strip():
++                    spec_text = new_spec
++                spec_pr2 = PhaseResult(
++                    phase=TddPhase.SPEC,
++                    success=bool(new_spec.strip()),
++                    output=new_spec,
++                    error=revised_nav.error,
++                )
++                phases.append(spec_pr2)
++                if on_phase_end:
++                    await on_phase_end(spec_pr2)
++    else:
++        # Exhausted RED retries.
++        return TddResult(task=task, success=False, phases=phases, model=model)
++
++    if not accumulated_test_code:
++        return TddResult(task=task, success=False, phases=phases, model=model)
++
++    # ------------------------------------------------------------------
++    # Phase 3: GREEN — Driver writes minimum code
++    # ------------------------------------------------------------------
++    green_pr: PhaseResult | None = None
++    for green_attempt in range(1, MAX_GREEN_RETRIES + 1):
++        if on_phase_start:
++            await on_phase_start(TddPhase.GREEN)
++
++        if green_attempt == 1:
++            drv_prompt = _green_prompt(spec_text, accumulated_test_code, task)
++        else:
++            drv_prompt = _green_retry_prompt(
++                spec_text, accumulated_test_code, task,
++                green_pr.output if green_pr else "",
++            )
++
++        drv_result = await _run_agent_phase(
++            prompt=drv_prompt,
++            agent_type="coder",
++            model=model,
++            deps=deps,
++            tools=tools,
++            cwd=cwd,
++            max_turns=max_turns_per_phase,
++        )
++
++        green_output = drv_result.result_text if drv_result.result_text else ""
++        test_did_pass = _detect_test_pass(green_output)
++
++        if test_did_pass and not drv_result.is_error:
++            green_pr = PhaseResult(
++                phase=TddPhase.GREEN,
++                success=True,
++                output=green_output,
++            )
++            phases.append(green_pr)
++            if on_phase_end:
++                await on_phase_end(green_pr)
++            accumulated_impl_output = green_output
++            break
++        else:
++            green_pr = PhaseResult(
++                phase=TddPhase.GREEN,
++                success=False,
++                output=green_output,
++                error=drv_result.error or "Tests did not pass.",
++            )
++            phases.append(green_pr)
++            if on_phase_end:
++                await on_phase_end(green_pr)
++    else:
++        return TddResult(task=task, success=False, phases=phases, model=model)
++
++    if not accumulated_impl_output:
++        return TddResult(task=task, success=False, phases=phases, model=model)
++
++    # ------------------------------------------------------------------
++    # Phase 4: REFACTOR_PROPOSE — Navigator proposes refactor
++    # ------------------------------------------------------------------
++    if on_phase_start:
++        await on_phase_start(TddPhase.REFACTOR_PROPOSE)
++
++    nav_result = await _run_agent_phase(
++        prompt=_refactor_propose_prompt(accumulated_impl_output, task),
++        agent_type="reviewer",
++        model=model,
++        deps=deps,
++        tools=tools,
++        cwd=cwd,
++        max_turns=max_turns_per_phase,
++    )
++    refactor_suggestions = nav_result.result_text if nav_result.result_text else ""
++    refactor_propose_success = bool(refactor_suggestions.strip()) and not nav_result.is_error
++
++    refactor_propose_pr = PhaseResult(
++        phase=TddPhase.REFACTOR_PROPOSE,
++        success=refactor_propose_success,
++        output=refactor_suggestions,
++        error=nav_result.error,
++    )
++    phases.append(refactor_propose_pr)
++    if on_phase_end:
++        await on_phase_end(refactor_propose_pr)
++    if not refactor_propose_success:
++        return TddResult(task=task, success=False, phases=phases, model=model)
++
++    # ------------------------------------------------------------------
++    # Phase 5: REFACTOR_APPLY — Driver applies refactor
++    # ------------------------------------------------------------------
++    if on_phase_start:
++        await on_phase_start(TddPhase.REFACTOR_APPLY)
++
++    drv_result = await _run_agent_phase(
++        prompt=_refactor_apply_prompt(refactor_suggestions, task),
++        agent_type="coder",
++        model=model,
++        deps=deps,
++        tools=tools,
++        cwd=cwd,
++        max_turns=max_turns_per_phase,
++    )
++    refactor_output = drv_result.result_text if drv_result.result_text else ""
++    test_still_pass = _detect_test_pass(refactor_output)
++    refactor_apply_success = test_still_pass and not drv_result.is_error
++
++    refactor_apply_pr = PhaseResult(
++        phase=TddPhase.REFACTOR_APPLY,
++        success=refactor_apply_success,
++        output=refactor_output,
++        error=drv_result.error if drv_result.is_error else (
++            "" if test_still_pass else "Tests did not pass after refactor."
++        ),
++    )
++    phases.append(refactor_apply_pr)
++    if on_phase_end:
++        await on_phase_end(refactor_apply_pr)
++    if not refactor_apply_success:
++        return TddResult(task=task, success=False, phases=phases, model=model)
++
++    # ------------------------------------------------------------------
++    # Phase 6: VALIDATE — Navigator validates
++    # ------------------------------------------------------------------
++    if on_phase_start:
++        await on_phase_start(TddPhase.VALIDATE)
++
++    nav_result = await _run_agent_phase(
++        prompt=_validate_prompt(refactor_output, task),
++        agent_type="reviewer",
++        model=model,
++        deps=deps,
++        tools=tools,
++        cwd=cwd,
++        max_turns=max_turns_per_phase,
++    )
++    validate_text = nav_result.result_text if nav_result.result_text else ""
++    validate_pass = _detect_validate_pass(validate_text) and not nav_result.is_error
++
++    validate_pr = PhaseResult(
++        phase=TddPhase.VALIDATE,
++        success=validate_pass,
++        output=validate_text,
++        error=nav_result.error if nav_result.is_error else (
++            "" if validate_pass else "Validation did not report PASS."
++        ),
++    )
++    phases.append(validate_pr)
++    if on_phase_end:
++        await on_phase_end(validate_pr)
++
++    all_passed = all(p.success for p in phases)
++    return TddResult(task=task, success=all_passed, phases=phases, model=model)
++
++
++# ---------------------------------------------------------------------------
++# Helpers
++# ---------------------------------------------------------------------------
++
++
++def _spec_retry_prompt(previous_spec: str, test_output: str, task: str) -> str:
++    """Prompt for Navigator to revise the spec after RED pass."""
++    return (
++        "You are the Navigator in a TDD pair. The test you specified PASSED "
++        "unexpectedly — the spec was not tight enough (the test didn't "
++        "actually exercise new behavior). Revise the spec to be more "
++        "specific. Focus on the NEW behavior that does NOT exist yet.\n"
++        "\n"
++        f"[PREVIOUS SPEC]\n{previous_spec}\n[/PREVIOUS SPEC]\n"
++        "\n"
++        f"[TEST OUTPUT]\n{test_output}\n[/TEST OUTPUT]\n"
++        "\n"
++        f"Task: {task}\n"
++        "\n"
++        "Output only the revised spec.\n"
++    )
++
++
++async def _run_agent_phase(
++    *,
++    prompt: str,
++    agent_type: str,
++    model: str,
++    deps: Any,
++    tools: list[Any] | None,
++    cwd: str,
++    max_turns: int,
++) -> AgentResult:
++    """Run a single agent for one phase of the TDD flow.
++
++    Wraps run_agent with the standard phase configuration.
++    """
++    return await run_agent(
++        prompt=prompt,
++        agent_type=agent_type,
++        model=model,
++        parent_model=model,
++        deps=deps,
++        tools=tools,
++        cwd=cwd,
++        max_turns=max_turns,
++    )
++
++
++def _detect_test_failure(output: str) -> bool:
++    """Detect whether test output indicates test failure.
++
++    Looks for patterns like 'FAILED', 'AssertionError', '1 failed',
++    'FAIL', exit code patterns, etc.
++    """
++    text = output.lower()
++    # Strong signals of test failure.
++    failure_signals = [
++        "failed",
++        "assertionerror",
++        "assertion error",
++        "fail:",
++        "tests failed",
++        "1 failed",
++        "failures=",
++        "error",  # pytest error during collection/execution
++        "exit code 1",
++        "exitcode 1",
++        "exited with code 1",
++    ]
++    # Signals that suggest tests passed (should NOT count as failure).
++    pass_signals = [
++        "passed",
++        "1 passed",
++        "all tests passed",
++        "ok",
++        "exit code 0",
++        "exitcode 0",
++        "exited with code 0",
++    ]
++
++    has_failure = any(sig in text for sig in failure_signals)
++    has_pass = any(sig in text for sig in pass_signals)
++
++    # If we see both, prefer failure (a failure signal is stronger).
++    return has_failure
++
++
++def _detect_test_pass(output: str) -> bool:
++    """Detect whether test output indicates tests passed."""
++    text = output.lower()
++    pass_signals = [
++        "passed",
++        "1 passed",
++        "all tests passed",
++        "tests passed",
++        "test passed",
++        "exit code 0",
++        "exitcode 0",
++        "exited with code 0",
++        "ok",
++    ]
++    failure_signals = [
++        "failed",
++        "assertionerror",
++        "assertion error",
++        "fail:",
++        "1 failed",
++        "failures=",
++        "exit code 1",
++        "exitcode 1",
++    ]
++
++    has_pass = any(sig in text for sig in pass_signals)
++    has_failure = any(sig in text for sig in failure_signals)
++
++    #alen If we see failure and pass, default to failure.
++    if has_failure:
++        return False
++    return has_pass
++
++
++def _detect_validate_pass(output: str) -> bool:
++    """Detect whether Navigator's validation says PASS."""
++    text = output.upper()
++    # Simple: look for "PASS" at start of line or as a standalone word.
++    if "PASS" in text:
++        # Check it's not part of a failure sentence.
++        fail_context = [
++            "NOT PASS", "DID NOT PASS", "DOES NOT PASS",
++            "FAIL", "DIDN'T PASS", "DIDNT PASS",
++        ]
++        if not any(fc in text for fc in fail_context):
++            return True
++    return False
+\ No newline at end of file

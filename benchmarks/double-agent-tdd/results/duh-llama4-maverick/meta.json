@@ -1,0 +1,14 @@
+{
+  "agent_id": "duh-llama4-maverick",
+  "cli": "duh",
+  "model": "openrouter/meta-llama/llama-4-maverick",
+  "baseline_commit": "645d91ad10ad83b5778bcd14f2c53b8e3366497c",
+  "start_ts": "2026-04-25T09:57:04Z",
+  "end_ts": "2026-04-25T09:57:05Z",
+  "elapsed_s": 1,
+  "exit_code": 1,
+  "worktree": "/Users/nomind/Code/duh/benchmarks/double-agent-tdd/worktrees/duh-llama4-maverick",
+  "log_bytes": 464,
+  "diff_bytes": 0,
+  "files_changed": 0
+}

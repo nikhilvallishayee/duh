@@ -18,7 +18,11 @@ AGENTS = [
     "duh-gpt54",
     "gemini-cli-3.1",
     "duh-gemini-3.1",
+    "duh-deepseek-v4-pro",
+    "duh-qwen3-max",
+    "duh-mistral-large",
     "duh-llama4-scout",
+    "duh-llama4-maverick",
     "duh-gpt-oss-120b",
     "duh-qwen3-32b",
 ]

@@ -75,8 +75,11 @@ automated consistency harness that resolves every cited symbol,
 signature, and import against source: D.U.H. docs are 100% faithful
 vs Codex's 52% at the same GPT-5.4.
 
-Three D.U.H. runs additionally benched open models (`llama-4-scout`,
-`gpt-oss-120b`, `qwen3-32b`) that have no first-party CLI at all.
+D.U.H. additionally benched seven open-weights models that have no
+first-party coding CLI at all (via OpenRouter + Groq native adapters).
+Top open-weights B1 result: `qwen3-max-thinking` at **24.0/35** — within
+judge-noise of `gemini-cli-3.1` (25.0) and ahead of three other open
+agents in the same matrix.
 
 Full methodology, pre-registered hypotheses, rubrics, and raw
 artefacts (diffs, session logs, judge JSONs, adversarial + consistency

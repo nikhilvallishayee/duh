@@ -35,11 +35,6 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    # ADR-075: warn once when LiteLLM is explicitly requested.
-    if getattr(args, "provider", None) == "litellm":
-        from duh.providers.registry import emit_litellm_deprecation_warning
-        emit_litellm_deprecation_warning()
-
     if args.command == "doctor":
         return run_doctor()
 

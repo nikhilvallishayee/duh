@@ -27,8 +27,7 @@ _MODEL_CACHE: dict[str, tuple[float, list[str]]] = {}
 
 _logger = logging.getLogger("duh.providers")
 
-# Single-shot session warnings / info (ADR-075).
-_LITELLM_DEPRECATION_WARNED = False
+# Single-shot session warnings / info.
 _ADAPTER_STARTUP_LOGGED: set[str] = set()
 
 
@@ -73,7 +72,10 @@ DEFAULT_MODELS: dict[str, str] = {
     "gemini": ModelAliases.GEMINI_DEFAULT,
     "groq": ModelAliases.GROQ_DEFAULT,
     "ollama": ModelAliases.OLLAMA_DEFAULT,
-    "litellm": f"gemini/{ModelAliases.GEMINI_DEFAULT}",
+    "deepseek": "deepseek-chat",
+    "mistral": "mistral-medium-2505",
+    "qwen": "qwen3-max",
+    "together": "meta-llama/Llama-4-Scout-17B-16E-Instruct",
     "openai_chatgpt": ModelAliases.CHATGPT_CODEX_MODEL,
 }
 
@@ -145,11 +147,27 @@ PROVIDER_TIER_MODELS: dict[str, dict[str, str]] = {
         "medium": "qwen2.5-coder:7b",
         "large":  "deepseek-coder-v2:lite",
     },
-    # litellm fallback keeps the ``gemini/`` namespace prefix.
-    "litellm": {
-        "small":  "gemini/gemini-2.5-flash",
-        "medium": "gemini/gemini-2.5-pro",
-        "large":  "gemini/gemini-3.1-pro-preview",
+    # New native providers (ADR-027). Each picks a sensible
+    # small/medium/large within the provider's own model lineup.
+    "deepseek": {
+        "small":  "deepseek-chat",
+        "medium": "deepseek-coder",
+        "large":  "deepseek-v4-pro",
+    },
+    "mistral": {
+        "small":  "mistral-small-2603",
+        "medium": "mistral-medium-2505",
+        "large":  "mistral-large-2512",
+    },
+    "qwen": {
+        "small":  "qwen3-coder-flash",
+        "medium": "qwen3-max",
+        "large":  "qwen3-max-thinking",
+    },
+    "together": {
+        "small":  "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        "medium": "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+        "large":  "deepseek-ai/DeepSeek-V3",
     },
 }
 
@@ -233,8 +251,10 @@ _PROVIDER_PREFIX_MAP: list[tuple[str, str]] = [
     ("gemini/", "gemini"),
     ("gemini-", "gemini"),
     ("groq/", "groq"),
-    ("openrouter/", "openrouter"),
     ("deepseek/", "deepseek"),
+    ("mistral/", "mistral"),
+    ("qwen/", "qwen"),
+    ("together/", "together"),
 ]
 
 
@@ -286,8 +306,10 @@ PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
     "openai": ("OPENAI_API_KEY",),
     "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
     "groq": ("GROQ_API_KEY",),
-    "openrouter": ("OPENROUTER_API_KEY",),
     "deepseek": ("DEEPSEEK_API_KEY",),
+    "mistral": ("MISTRAL_API_KEY",),
+    "qwen": ("DASHSCOPE_API_KEY", "ALIBABA_API_KEY"),
+    "together": ("TOGETHER_API_KEY",),
     "cerebras": ("CEREBRAS_API_KEY",),
 }
 
@@ -328,10 +350,6 @@ def _groq_sdk_available() -> bool:
     return _module_importable("groq")
 
 
-def _litellm_available() -> bool:
-    return _module_importable("litellm")
-
-
 def is_gemini_model(model: str | None) -> bool:
     return _lookup_provider_by_prefix(model) == "gemini"
 
@@ -340,8 +358,20 @@ def is_groq_model(model: str | None) -> bool:
     return _lookup_provider_by_prefix(model) == "groq"
 
 
-def is_openrouter_model(model: str | None) -> bool:
-    return _lookup_provider_by_prefix(model) == "openrouter"
+def is_deepseek_model(model: str | None) -> bool:
+    return _lookup_provider_by_prefix(model) == "deepseek"
+
+
+def is_mistral_model(model: str | None) -> bool:
+    return _lookup_provider_by_prefix(model) == "mistral"
+
+
+def is_qwen_model(model: str | None) -> bool:
+    return _lookup_provider_by_prefix(model) == "qwen"
+
+
+def is_together_model(model: str | None) -> bool:
+    return _lookup_provider_by_prefix(model) == "together"
 
 
 def _emit_adapter_startup_log(adapter: str, model: str) -> None:
@@ -353,22 +383,8 @@ def _emit_adapter_startup_log(adapter: str, model: str) -> None:
     _logger.info("%s for %s", adapter, model)
 
 
-def emit_litellm_deprecation_warning() -> None:
-    """Emit the deprecation stderr notice once per session."""
-    global _LITELLM_DEPRECATION_WARNED
-    if _LITELLM_DEPRECATION_WARNED:
-        return
-    _LITELLM_DEPRECATION_WARNED = True
-    sys.stderr.write(
-        "[duh] LiteLLM adapter is opt-in fallback. Prefer native providers "
-        "when available (ADR-075).\n"
-    )
-
-
 def _reset_session_state_for_tests() -> None:
     """Test helper: clear the one-shot session flags."""
-    global _LITELLM_DEPRECATION_WARNED
-    _LITELLM_DEPRECATION_WARNED = False
     _ADAPTER_STARTUP_LOGGED.clear()
 
 
@@ -386,27 +402,26 @@ class ProviderBackend:
 
 
 def infer_provider_from_model(model: str | None) -> str | None:
+    """Map a model id to a registered native provider, or ``None``.
+
+    ADR-027: D.U.H. uses native adapters per provider. Every supported
+    upstream gets its own thin OpenAI-compatible wrapper (deepseek/,
+    mistral/, qwen/, together/, …). No OpenRouter, no LiteLLM —
+    they were generic OpenAI-shape proxies and lost native features
+    (caching shapes, function-calling formats) along the way.
+    """
     if not model:
         return None
-    # ADR-075: gemini/* and groq/* prefer native adapters when the SDK is
-    # installed; otherwise they fall through to LiteLLM as the opt-in fallback.
-    # openrouter/* uses the openai SDK natively against OpenRouter's
-    # OpenAI-compatible endpoint — no LiteLLM hop.
     prefix_provider = _lookup_provider_by_prefix(model)
-    if prefix_provider == "gemini":
-        return "gemini" if _google_genai_available() else "litellm"
-    if prefix_provider == "groq":
-        return "groq" if _groq_sdk_available() else "litellm"
-    if prefix_provider == "openrouter":
-        return "openrouter"
-    if prefix_provider == "deepseek":
-        return "deepseek" if get_api_key("deepseek") else "openrouter"
-    # Everything else with a "/" (e.g. "bedrock/claude-3-haiku",
-    # "together_ai/…") is a LiteLLM model string. Check before native
-    # providers since a litellm string like "bedrock/claude-3-haiku" would
-    # otherwise match the "haiku" keyword for anthropic.
-    if "/" in model:
-        return "litellm"
+    if prefix_provider:
+        # Native adapters are always preferred when their SDK / key is
+        # available. The Gemini/Groq adapters require their respective
+        # Python SDKs; the rest are pure HTTP via the openai SDK.
+        if prefix_provider == "gemini" and not _google_genai_available():
+            return None
+        if prefix_provider == "groq" and not _groq_sdk_available():
+            return None
+        return prefix_provider
     m = model.lower()
     if any(k in m for k in ("claude", "haiku", "sonnet", "opus")):
         return "anthropic"
@@ -777,22 +792,51 @@ def build_model_backend(
         _emit_adapter_startup_log("Using DeepSeekProvider (native, OpenAI-shaped)", resolved)
         return ProviderBackend("deepseek", resolved, create(resolved).stream, auth_mode="api_key")
 
-    if provider_name == "openrouter":
-        api_key = get_api_key("openrouter")
-        resolved = model or "openrouter/deepseek/deepseek-v4-pro"
+    if provider_name == "mistral":
+        api_key = get_api_key("mistral")
+        resolved = model or "mistral/mistral-medium-2505"
         if not api_key:
             return ProviderBackend(
-                "openrouter",
-                resolved,
-                None,
-                "OPENROUTER_API_KEY not set. Get a key at openrouter.ai.",
+                "mistral", resolved, None,
+                "MISTRAL_API_KEY not set. Get a key at console.mistral.ai.",
             )
-        create = provider_factories.get("openrouter")
+        create = provider_factories.get("mistral")
         if create is None:
-            from duh.adapters.openrouter import OpenRouterProvider
-            create = lambda m: OpenRouterProvider(api_key=api_key, model=m)
-        _emit_adapter_startup_log("Using OpenRouterProvider (native, OpenAI-shaped)", resolved)
-        return ProviderBackend("openrouter", resolved, create(resolved).stream, auth_mode="api_key")
+            from duh.adapters.mistral import MistralProvider
+            create = lambda m: MistralProvider(api_key=api_key, model=m)
+        _emit_adapter_startup_log("Using MistralProvider (native)", resolved)
+        return ProviderBackend("mistral", resolved, create(resolved).stream, auth_mode="api_key")
+
+    if provider_name == "qwen":
+        api_key = get_api_key("qwen")
+        resolved = model or "qwen/qwen3-max"
+        if not api_key:
+            return ProviderBackend(
+                "qwen", resolved, None,
+                "DASHSCOPE_API_KEY (or ALIBABA_API_KEY) not set. "
+                "Get a key at bailian.console.alibabacloud.com.",
+            )
+        create = provider_factories.get("qwen")
+        if create is None:
+            from duh.adapters.qwen import QwenProvider
+            create = lambda m: QwenProvider(api_key=api_key, model=m)
+        _emit_adapter_startup_log("Using QwenProvider (native, DashScope)", resolved)
+        return ProviderBackend("qwen", resolved, create(resolved).stream, auth_mode="api_key")
+
+    if provider_name == "together":
+        api_key = get_api_key("together")
+        resolved = model or "together/meta-llama/Llama-4-Scout-17B-16E-Instruct"
+        if not api_key:
+            return ProviderBackend(
+                "together", resolved, None,
+                "TOGETHER_API_KEY not set. Get a key at api.together.xyz.",
+            )
+        create = provider_factories.get("together")
+        if create is None:
+            from duh.adapters.together import TogetherProvider
+            create = lambda m: TogetherProvider(api_key=api_key, model=m)
+        _emit_adapter_startup_log("Using TogetherProvider (native)", resolved)
+        return ProviderBackend("together", resolved, create(resolved).stream, auth_mode="api_key")
 
     if provider_name == "groq":
         resolved = model or f"groq/{ModelAliases.GROQ_DEFAULT}"
@@ -810,26 +854,5 @@ def build_model_backend(
             )
         _emit_adapter_startup_log("Using GroqProvider (native)", resolved)
         return ProviderBackend("groq", resolved, provider.stream, auth_mode="api_key")
-
-    if provider_name == "litellm":
-        resolved = model or get_default_model("litellm")
-        create = provider_factories.get("litellm")
-        if create is None:
-            # ADR-075: litellm is opt-in. Produce a clear error if it's not
-            # installed instead of letting the import explode at stream time.
-            if not _litellm_available():
-                return ProviderBackend(
-                    "litellm",
-                    resolved,
-                    None,
-                    (
-                        f"LiteLLM is required for provider {resolved!r}. "
-                        "Install with: pip install 'duh-cli[litellm]'"
-                    ),
-                )
-            from duh.adapters.litellm_provider import LiteLLMProvider
-            create = lambda m: LiteLLMProvider(model=m)  # noqa: E731
-        _emit_adapter_startup_log("Using LiteLLM fallback", resolved)
-        return ProviderBackend("litellm", resolved, create(resolved).stream, auth_mode="env_vars")
 
     return ProviderBackend(provider_name, model or "", None, f"Unknown provider: {provider_name}")

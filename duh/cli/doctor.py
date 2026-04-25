@@ -152,17 +152,20 @@ def run_doctor() -> int:
 
 
 def _render_adapter_section() -> str:
-    """Render the provider-adapter availability table (ADR-075)."""
+    """Render the provider-adapter availability table (ADR-027)."""
     from duh.providers.registry import (
         _google_genai_available,
         _groq_sdk_available,
-        _litellm_available,
     )
 
     rows: list[tuple[str, bool, str]] = [
         ("anthropic", True, "native (always)"),
         ("openai", True, "native (always)"),
         ("ollama", True, "native (always)"),
+        ("deepseek", True, "native (api.deepseek.com)"),
+        ("mistral", True, "native (api.mistral.ai)"),
+        ("qwen", True, "native (DashScope)"),
+        ("together", True, "native (api.together.xyz)"),
         (
             "gemini",
             _google_genai_available(),
@@ -176,13 +179,6 @@ def _render_adapter_section() -> str:
             "native (groq installed)"
             if _groq_sdk_available()
             else "not installed (pip install groq)",
-        ),
-        (
-            "litellm",
-            _litellm_available(),
-            "opt-in extras (installed)"
-            if _litellm_available()
-            else "opt-in extras (install with: pip install 'duh-cli[litellm]')",
         ),
     ]
     lines = ["\nProviders:\n"]

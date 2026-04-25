@@ -110,7 +110,10 @@ class TestModelAliases:
         assert OPENAI_CODEX_MODEL_HINTS == ModelAliases.CHATGPT_CODEX_HINTS
 
     def test_default_models_keys_cover_expected_providers(self) -> None:
-        expected = {"anthropic", "openai", "gemini", "groq", "ollama", "litellm"}
+        expected = {
+            "anthropic", "openai", "gemini", "groq", "ollama",
+            "deepseek", "mistral", "qwen", "together",
+        }
         assert expected.issubset(set(DEFAULT_MODELS))
 
     def test_get_default_model_returns_canonical_names(self) -> None:
@@ -123,10 +126,13 @@ class TestModelAliases:
     def test_get_default_model_returns_empty_for_unknown(self) -> None:
         assert get_default_model("nonsense-provider") == ""
 
-    def test_litellm_default_uses_gemini_namespace(self) -> None:
-        # LiteLLM uses its own namespace-prefix convention; its default
-        # therefore wraps the raw Gemini default with the ``gemini/`` prefix.
-        assert get_default_model("litellm") == f"gemini/{ModelAliases.GEMINI_DEFAULT}"
+    def test_native_provider_defaults(self) -> None:
+        # Each native provider declares a default model in DEFAULT_MODELS.
+        # ADR-027: D.U.H. uses native adapters per provider.
+        assert get_default_model("deepseek") == "deepseek-chat"
+        assert get_default_model("mistral").startswith("mistral-")
+        assert get_default_model("qwen").startswith("qwen3")
+        assert get_default_model("together").startswith("meta-llama/")
 
 
 # ---------------------------------------------------------------------------

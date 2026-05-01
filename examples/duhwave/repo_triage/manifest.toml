@@ -1,0 +1,10 @@
+[bundle]
+name           = "repo-triage"
+version        = "0.1.0"
+description    = "A persistent triage swarm: researcher + implementer + coordinator watching a repository for issues and file changes."
+author         = "duhwave examples"
+format_version = 1
+created_at     = 1745625600.0
+
+[signing]
+signed         = false

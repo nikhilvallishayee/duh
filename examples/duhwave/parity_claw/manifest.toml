@@ -1,0 +1,10 @@
+[bundle]
+name           = "parity-claw"
+version        = "0.1.0"
+description    = "OpenClaw-shape feature-parity sketch for duhwave: persistent multi-channel coding-agent harness."
+author         = "duhwave examples"
+format_version = 1
+created_at     = 1745625600.0
+
+[signing]
+signed         = false

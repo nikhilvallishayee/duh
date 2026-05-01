@@ -1,0 +1,19 @@
+# Minimal envelope for the parity-claw demo bundle.
+#
+# This sketch never makes real model calls and never reads outside
+# the demo's tempdir, so the envelope is intentionally narrow. The
+# kernel permission gate (ADR-005) enforces this at runtime.
+
+[filesystem]
+read  = ["${PWD}"]
+write = ["${PWD}"]
+
+[network]
+allow = []
+
+[tools]
+require = [
+  "Read", "Edit", "Write", "Glob", "Grep",
+  "Spawn", "SendMessage", "Stop",
+  "Peek", "Search", "Slice",
+]

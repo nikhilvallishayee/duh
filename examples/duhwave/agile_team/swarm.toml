@@ -1,0 +1,115 @@
+# swarm.toml — agile-team
+#
+# Declarative topology for the agile-team headless demo. This file is
+# documentation and inspection only — the demo runs via main.py without
+# the daemon, to keep the showpiece simple. A real deployment would
+# install this bundle (`duh wave install`) and the host daemon would
+# orchestrate workers from it.
+#
+# Spec: ADR-032 (topology DSL).
+
+[swarm]
+name           = "agile-team"
+version        = "0.1.0"
+description    = "Five-agent agile delivery: PM → Architect → Engineer → Tester → Reviewer."
+format_version = 1
+
+# ─── Agents ─────────────────────────────────────────────────────────
+#
+# Six agents form a depth-1 swarm:
+#
+#   coordinator ──spawn──▶ pm
+#               ──spawn──▶ architect
+#               ──spawn──▶ engineer
+#               ──spawn──▶ tester
+#               ──spawn──▶ reviewer
+#
+# Workers do not spawn workers. Each stage's output is bound back into
+# the coordinator's REPL and then re-exposed to later stages.
+
+[[agents]]
+id            = "coordinator"
+role          = "coordinator"
+model         = "anthropic/claude-opus-4-7"
+tools         = ["Spawn", "SendMessage", "Stop", "Peek", "Search", "Slice"]
+expose        = ["spec", "codebase"]
+
+[[agents]]
+id            = "pm"
+role          = "pm"
+model         = "anthropic/claude-haiku-4-5"
+tools         = ["Peek", "Search", "Slice", "Read", "Glob", "Grep"]
+
+[[agents]]
+id            = "architect"
+role          = "architect"
+model         = "anthropic/claude-sonnet-4-6"
+tools         = ["Peek", "Search", "Slice", "Read", "Glob", "Grep"]
+
+[[agents]]
+id            = "engineer"
+role          = "engineer"
+model         = "anthropic/claude-sonnet-4-6"
+tools         = ["Peek", "Search", "Slice", "Read", "Glob", "Grep", "Edit", "Write", "Bash"]
+
+[[agents]]
+id            = "tester"
+role          = "tester"
+model         = "anthropic/claude-haiku-4-5"
+tools         = ["Peek", "Search", "Slice", "Read", "Glob", "Grep", "Edit", "Write", "Bash"]
+
+[[agents]]
+id            = "reviewer"
+role          = "reviewer"
+model         = "anthropic/claude-opus-4-7"
+tools         = ["Peek", "Search", "Slice", "Read", "Glob", "Grep"]
+
+# ─── Edges ──────────────────────────────────────────────────────────
+#
+# The depth-1 invariant: only the coordinator spawns workers. The
+# kernel enforces this via each role's tool whitelist (no Spawn tool in
+# any worker's allowlist); the edges below are the documented contract.
+
+[[edges]]
+from_agent_id = "coordinator"
+to_agent_id   = "pm"
+kind          = "spawn"
+
+[[edges]]
+from_agent_id = "coordinator"
+to_agent_id   = "architect"
+kind          = "spawn"
+
+[[edges]]
+from_agent_id = "coordinator"
+to_agent_id   = "engineer"
+kind          = "spawn"
+
+[[edges]]
+from_agent_id = "coordinator"
+to_agent_id   = "tester"
+kind          = "spawn"
+
+[[edges]]
+from_agent_id = "coordinator"
+to_agent_id   = "reviewer"
+kind          = "spawn"
+
+# ─── Pipeline (handle dataflow) ─────────────────────────────────────
+#
+# Documents the sequential dataflow each stage adds to the REPL. Not
+# parsed by the host; serves as the canonical reference for what each
+# stage can read and what it produces.
+#
+#   stage 1  pm         expose=[spec, codebase]                      bind_as=refined_spec
+#   stage 2  architect  expose=[spec, refined_spec, codebase]        bind_as=adr_draft
+#   stage 3  engineer   expose=[refined_spec, adr_draft, codebase]   bind_as=implementation
+#   stage 4  tester     expose=[refined_spec, implementation]        bind_as=test_suite
+#   stage 5  reviewer   expose=[adr_draft, implementation, test_suite] bind_as=review_notes
+
+# ─── Budget ─────────────────────────────────────────────────────────
+
+[budget]
+max_concurrent_tasks = 1
+max_tokens_per_hour  = 250_000
+max_usd_per_day      = 2.50

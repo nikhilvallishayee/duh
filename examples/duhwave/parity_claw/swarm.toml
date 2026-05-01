@@ -1,0 +1,89 @@
+# swarm.toml — parity-claw
+#
+# A persistent four-channel swarm. One agent per ingress channel; one
+# trigger row per channel pointing at its dedicated agent. Whole
+# topology lives in this single file (ADR-032).
+#
+# Channels demonstrated:
+#
+#   webhook    POST /github/issue          → issue_agent
+#   filewatch  ./watch                     → file_agent     (mocked listener)
+#   cron       "*/5 * * * *"               → cron_agent     (mocked listener)
+#   manual     manual:nudge                → manual_agent
+#
+# All four agents are coordinator-role: each owns its own channel and
+# would, in a real deployment, fan out to workers under it. For this
+# sketch the agents themselves are the routing endpoints — the demo
+# is about the ingress shape, not the orchestration shape (which the
+# repo-triage example covers).
+
+[swarm]
+name           = "parity-claw"
+version        = "0.1.0"
+description    = "Multi-channel persistent assistant: four ingress channels, four agents, one daemon."
+format_version = 1
+
+# ─── Agents ─────────────────────────────────────────────────────────
+
+[[agents]]
+id            = "issue_agent"
+role          = "coordinator"
+model         = "anthropic/claude-haiku-4-5"
+tools         = ["Spawn", "SendMessage", "Stop", "Peek", "Search", "Slice"]
+system_prompt = "You handle inbound GitHub issue webhooks."
+
+[[agents]]
+id            = "file_agent"
+role          = "coordinator"
+model         = "anthropic/claude-haiku-4-5"
+tools         = ["Spawn", "SendMessage", "Stop", "Peek", "Search", "Slice"]
+system_prompt = "You react to filesystem changes under the watched directory."
+
+[[agents]]
+id            = "cron_agent"
+role          = "coordinator"
+model         = "anthropic/claude-haiku-4-5"
+tools         = ["Spawn", "SendMessage", "Stop", "Peek", "Search", "Slice"]
+system_prompt = "You wake on a schedule and run periodic maintenance."
+
+[[agents]]
+id            = "manual_agent"
+role          = "coordinator"
+model         = "anthropic/claude-haiku-4-5"
+tools         = ["Spawn", "SendMessage", "Stop", "Peek", "Search", "Slice"]
+system_prompt = "You handle nudges fired by hand from the manual seam."
+
+# ─── Triggers ───────────────────────────────────────────────────────
+#
+# One row per channel. Each kind/source pair routes to its dedicated
+# agent. SubscriptionMatcher uses fnmatch on `source`, so the cron
+# pattern is treated literally — it isn't expanded into a schedule by
+# the matcher itself; the cron listener owns that.
+
+[[triggers]]
+kind            = "webhook"
+source          = "/github/issue"
+target_agent_id = "issue_agent"
+
+[[triggers]]
+kind            = "filewatch"
+source          = "./watch"
+target_agent_id = "file_agent"
+debounce_ms     = 500
+
+[[triggers]]
+kind            = "cron"
+source          = "*/5 * * * *"
+target_agent_id = "cron_agent"
+
+[[triggers]]
+kind            = "manual"
+source          = "manual:nudge"
+target_agent_id = "manual_agent"
+
+# ─── Budget ─────────────────────────────────────────────────────────
+
+[budget]
+max_concurrent_tasks = 4
+max_tokens_per_hour  = 200_000
+max_usd_per_day      = 2.00

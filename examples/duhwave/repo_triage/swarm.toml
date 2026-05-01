@@ -1,0 +1,97 @@
+# swarm.toml — repo-triage
+#
+# A persistent multi-agent swarm. The whole topology lives in this one
+# file: who the agents are, which models they use, what tools they
+# have, what events wake them up, who can spawn whom, and the cost
+# ceiling for the day.
+#
+# Spec: ADR-032 (topology DSL).
+
+secrets = ["GITHUB_TOKEN"]
+
+[swarm]
+name           = "repo-triage"
+version        = "0.1.0"
+description    = "Watch a repo. Triage on new issues. React to file changes."
+format_version = 1
+
+# ─── Agents ─────────────────────────────────────────────────────────
+#
+# Three agents form a depth-1 swarm:
+#
+#   coordinator  ──spawn──▶  researcher
+#                ──spawn──▶  implementer
+#
+# Workers do not spawn workers. Cross-worker data flows go through the
+# coordinator, which exposes a researcher's result handle to the
+# implementer on the next Spawn (ADR-029, "Worker-to-worker via the
+# coordinator only").
+
+[[agents]]
+id            = "coordinator"
+role          = "coordinator"
+model         = "anthropic/claude-opus-4-7"
+tools         = ["Spawn", "SendMessage", "Stop", "Peek", "Search", "Slice"]
+expose        = ["repo_handle", "spec_handle"]
+system_prompt = "prompts/coordinator.md"
+
+[[agents]]
+id            = "researcher"
+role          = "worker"
+model         = "anthropic/claude-haiku-4-5"
+tools         = ["Read", "Grep", "Glob", "Peek", "Search", "Slice"]
+system_prompt = "prompts/researcher.md"
+
+[[agents]]
+id            = "implementer"
+role          = "worker"
+model         = "anthropic/claude-sonnet-4-6"
+tools         = ["Read", "Edit", "Write", "Bash", "Glob", "Grep", "Peek", "Search", "Slice"]
+system_prompt = "prompts/implementer.md"
+
+# ─── Triggers ───────────────────────────────────────────────────────
+#
+# Two ingress sources spawn coordinator Tasks:
+#
+#   webhook   POST /github/issue          (GitHub issue events)
+#   filewatch ./watch_dir/**              (local stand-in for git hooks)
+
+[[triggers]]
+kind            = "webhook"
+source          = "/github/issue"
+target_agent_id = "coordinator"
+
+[[triggers]]
+kind            = "filewatch"
+source          = "./watch_dir"
+target_agent_id = "coordinator"
+debounce_ms     = 500
+
+# ─── Edges ──────────────────────────────────────────────────────────
+#
+# Spawn edges declare the depth-1 invariant: only the coordinator may
+# spawn workers. The kernel enforces this via the role's tool
+# whitelist; these edges are the documented contract.
+
+[[edges]]
+from_agent_id = "coordinator"
+to_agent_id   = "researcher"
+kind          = "spawn"
+
+[[edges]]
+from_agent_id = "coordinator"
+to_agent_id   = "implementer"
+kind          = "spawn"
+
+# ─── Budget ─────────────────────────────────────────────────────────
+
+# ─── Secrets ────────────────────────────────────────────────────────
+#
+# Declared at the *top* of the file (before any section) so the parser
+# treats them as top-level. `duh wave install` surfaces the required
+# env vars to the operator before the swarm starts.
+
+[budget]
+max_concurrent_tasks = 3
+max_tokens_per_hour  = 500_000
+max_usd_per_day      = 5.00

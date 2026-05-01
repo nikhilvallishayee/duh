@@ -1,0 +1,24 @@
+# permissions.toml — declarative envelope for the repo-triage bundle.
+#
+# At install time `duh wave install` reads this file, diffs it against
+# any previously-installed version of the same bundle, and asks the
+# operator to approve. At runtime the kernel permission gate (ADR-005)
+# enforces it — a tool call outside this envelope is rejected even if
+# the bundle's code requests it.
+
+[filesystem]
+read  = ["${PWD}", "${HOME}/.duh/waves/repo-triage/"]
+write = ["${HOME}/.duh/waves/repo-triage/"]
+
+[network]
+allow = [
+  "api.github.com",
+  "api.anthropic.com",
+]
+
+[tools]
+require = [
+  "Read", "Edit", "Write", "Bash", "Glob", "Grep",
+  "Spawn", "SendMessage", "Stop",
+  "Peek", "Search", "Slice",
+]

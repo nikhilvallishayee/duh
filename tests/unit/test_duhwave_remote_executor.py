@@ -3,6 +3,12 @@
 The tests use a small in-process fake HTTP transport rather than spinning
 up a real socket server (the e2e tests in
 ``tests/integration/test_duhwave_remote_e2e.py`` cover real-socket flow).
+
+Tests under :class:`TestSubmitFlow`, :class:`TestAuth`, :class:`TestKill`
+need a real ``aiohttp`` server, so they're gated with
+``pytest.importorskip("aiohttp")`` at module top — they skip cleanly on
+environments where the optional dep isn't installed (matches the
+``croniter`` / ``watchfiles`` listener-test pattern).
 """
 
 from __future__ import annotations
@@ -156,6 +162,7 @@ def registry(tmp_path):
 
 class TestSubmitFlow:
     async def test_post_creates_remote_task_and_completes(self, registry):
+        pytest.importorskip("aiohttp")
         # Spin up a tiny in-memory "server" via a real RemoteTaskServer so
         # the create endpoint exercises both registry + executor paths.
         from duh.duhwave.task.remote_server import RemoteTaskServer
@@ -199,6 +206,7 @@ class TestSubmitFlow:
             await server.stop()
 
     async def test_get_returns_terminal_status_after_run(self, registry):
+        pytest.importorskip("aiohttp")
         """Direct GET on the server registry surfaces terminal state."""
         from duh.duhwave.task.remote_server import RemoteTaskServer
 
@@ -239,6 +247,7 @@ class TestSubmitFlow:
 
 class TestAuth:
     async def test_server_rejects_bad_token(self, registry):
+        pytest.importorskip("aiohttp")
         from duh.duhwave.task.remote_server import RemoteTaskServer
 
         async def runner(task: Task) -> str:
@@ -335,6 +344,7 @@ class TestRetry:
 
 class TestKill:
     async def test_delete_marks_killed_on_server(self, registry):
+        pytest.importorskip("aiohttp")
         from duh.duhwave.task.remote_server import RemoteTaskServer
 
         started = asyncio.Event()

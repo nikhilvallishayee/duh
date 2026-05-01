@@ -12,6 +12,10 @@ import asyncio
 
 import pytest
 
+# RemoteTaskServer needs aiohttp; skip the whole module if it's missing
+# (matches the croniter / watchfiles listener-test pattern).
+pytest.importorskip("aiohttp")
+
 from duh.duhwave.task.registry import (
     Task,
     TaskRegistry,

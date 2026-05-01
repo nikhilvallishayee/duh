@@ -11,7 +11,7 @@
 - Multi-agent Swarm/Agent tools with per-provider tier resolution
 - Three-layer security: 13 vulnerability scanners + taint propagation / confirmation tokens / lethal-trifecta check + macOS Seatbelt / Linux Landlock sandboxing
 - Dual UI: Rich REPL + full Textual TUI, plus print mode for CI and SDK mode (NDJSON)
-- 4160+ tests passing, 100% line coverage, CI-gated PRs
+- 6377+ tests passing, 100% line coverage, CI-gated PRs
 - 28% faster than Claude Code on equivalent tasks (45.7s vs 63.2s avg, same Haiku 4.5 model)
 - 54 Architecture Decision Records documenting every design choice
 - Apache 2.0 licensed, Python 3.12+
@@ -29,9 +29,49 @@ duh -p "fix bug"  # print mode (CI-friendly)
 
 - [README](https://github.com/nikhilvallishayee/duh#readme)
 - [Getting Started](https://nikhilvallishayee.github.io/duh/site/getting-started.html)
+- [duhwave — persistent agentic-swarm extension](https://nikhilvallishayee.github.io/duh/site/duhwave.html)
 - [Security architecture](https://nikhilvallishayee.github.io/duh/site/security.html)
 - [Comparisons vs Claude Code / OpenCode / Codex / Aider](https://nikhilvallishayee.github.io/duh/site/comparisons.html)
+- [Benchmarks (head-to-head + duhwave-agile)](https://nikhilvallishayee.github.io/duh/site/benchmarks.html)
 - [Full long-form context (llms-full.txt)](https://nikhilvallishayee.github.io/duh/site/llms-full.txt)
+
+## duhwave — persistent agentic-swarm extension
+
+duhwave is a layered runtime on top of D.U.H. that turns single-shot
+agent invocations into a persistent, event-driven swarm. Five ADRs
+(028-032), ten runnable demos under `examples/duhwave/`, one TOML file
+per topology.
+
+- **Persistent host daemon** (`duh wave start`) with 10 subcommands:
+  ls, inspect, pause, resume, logs --follow, install, uninstall, web,
+  start, stop.
+- **Event ingress** — webhook (HMAC-verified), filewatch, cron, MCP
+  push, manual seam — all routing through one append-only TriggerLog.
+- **RLM substrate** (ADR-028) — bytes addressed by reference, never
+  summarised; bounded recursion with cycle detection. Cites Zhang,
+  Kraska, Khattab, *Recursive Language Models*, arXiv 2512.24601.
+- **Cross-agent handles** (ADR-029) — workers see selected REPL handles;
+  results bind back as new handles. Cites Yang, Zou, Pan et al.,
+  *Recursive Multi-Agent Systems*, arXiv 2604.25917.
+- **Persistent Task lifecycle** (ADR-030) — forward-only state machine,
+  three execution surfaces (in-process, subprocess, remote), JSONL on
+  disk, survives daemon restart.
+- **Coordinator-as-prompt-role + event ingress** (ADR-031) — one engine,
+  no subclasses; tool filtering by role allowlist enforces the
+  synthesis mandate.
+- **Topology DSL + signed bundles + control plane** (ADR-032) — one
+  TOML file declares the swarm; `.duhwave` ZIPs are deterministic and
+  Ed25519-signable; TOFU trust store on install.
+
+### duhwave-agile benchmark (May 2026)
+
+5-stage agile pipeline (PM → Architect → Engineer → Tester → Reviewer)
+against real OpenAI models. gpt-4o-mini: 35.5s wall, $0.0015, 3/5
+pytest pass. gpt-4o: 29.3s wall, $0.0308 (~20× cost), 5/6 pytest pass.
+Headline finding: real coordination defects surface naturally — the
+Reviewer agent reads but does not execute, missing test failures the
+Tester introduced. Full write-up:
+https://github.com/nikhilvallishayee/duh/blob/main/benchmarks/duhwave-agile/RESULT.md
 
 ## Optional docs (deeper)
 

@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>duhwave — Persistent Agentic-Swarm Extension for D.U.H.</title>
+  <meta name="description" content="duhwave is a persistent, event-driven agentic-swarm extension layered on D.U.H. Long-running host daemon, RLM substrate, cross-agent variable handles, topology-as-TOML, signed bundles.">
+  <meta name="keywords" content="duhwave, agentic swarm, persistent agent, RLM, recursive language models, cross-agent handles, swarm topology, D.U.H.">
+  <meta name="author" content="Nikhil Vallishayee">
+  <meta name="theme-color" content="#0a0a0a">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="duhwave — Persistent Agentic-Swarm Extension">
+  <meta property="og:description" content="A layered runtime on top of D.U.H. that turns single-shot agent invocations into a persistent, event-driven swarm.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://nikhilvallishayee.github.io/duh/site/duhwave.html">
+  <meta property="og:image" content="https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png">
+  <meta property="og:site_name" content="D.U.H.">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="duhwave — Persistent Agentic-Swarm Extension">
+  <meta name="twitter:description" content="Persistent host daemon, RLM substrate, cross-agent handles, topology-as-TOML.">
+  <meta name="twitter:image" content="https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png">
+
+  <!-- Canonical -->
+  <link rel="canonical" href="https://nikhilvallishayee.github.io/duh/site/duhwave.html">
+
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🔧</text></svg>">
+
+  <!-- JSON-LD structured data: TechArticle -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "duhwave — Persistent Agentic-Swarm Extension",
+    "description": "Persistent host daemon, RLM substrate, cross-agent handles, topology-as-TOML, signed bundles. Five ADRs, 10 runnable demos.",
+    "author": { "@type": "Person", "name": "Nikhil Vallishayee" },
+    "publisher": { "@type": "Organization", "name": "D.U.H.", "logo": { "@type": "ImageObject", "url": "https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png" } },
+    "mainEntityOfPage": "https://nikhilvallishayee.github.io/duh/site/duhwave.html",
+    "image": "https://nikhilvallishayee.github.io/duh/site/assets/duh-logo.png",
+    "datePublished": "2026-05-01",
+    "about": ["agentic swarm", "persistent agent runtime", "recursive language models", "RecursiveMAS"]
+  }
+  </script>
+</head>
+<body class="page-body">
+
+<a href="#main-content" class="visually-hidden" style="position:absolute;left:-9999px;">Skip to main content</a>
+
+<!-- ── Navigation ── -->
+<nav class="nav" role="navigation" aria-label="Main navigation">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo"><span>D.U.H.</span></a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="getting-started.html">Get Started</a></li>
+      <li><a href="duhwave.html">duhwave</a></li>
+      <li><a href="security.html">Security</a></li>
+      <li><a href="comparisons.html">Compare</a></li>
+      <li><a href="benchmarks.html">Benchmarks</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="https://github.com/nikhilvallishayee/duh" class="nav-github" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        GitHub
+      </a>
+    </div>
+    <button class="nav-hamburger" aria-label="Toggle menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<!-- ── Page Hero ── -->
+<div class="page-hero">
+  <div class="container">
+    <div class="hero-badge">duhwave · persistent agentic-swarm extension</div>
+    <h1>duhwave</h1>
+    <p>A layered runtime on top of D.U.H. that turns single-shot agent invocations into a persistent, event-driven swarm. Five ADRs, ten runnable demos, one TOML file per topology.</p>
+  </div>
+</div>
+
+<main id="main-content" class="container" style="max-width: 960px; padding: 56px 24px 96px;">
+
+  <!-- ── What is duhwave ── -->
+  <section style="margin-bottom: 56px;">
+    <h2 style="font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 16px;">What is duhwave</h2>
+
+    <p style="color: var(--fg-2); line-height: 1.7; margin-bottom: 16px;">A single-agent harness is one loop: one prompt, one model, one tool registry. It exits when the work is done. duhwave keeps the loop alive past any single CLI invocation, accepts work from external triggers (webhooks, file watches, cron, MCP push), and lets a coordinator delegate to specialised workers via a shared substrate of variable handles instead of prose summaries.</p>
+
+    <p style="color: var(--fg-2); line-height: 1.7; margin-bottom: 16px;">The architecture composes from six primitives: an <strong>RLM substrate</strong> (one Python REPL subprocess per session, large inputs bound as named variables), a <strong>persistent Task lifecycle</strong> (forward-only state machine, three execution surfaces, JSONL on disk), a <strong>coordinator-as-prompt-role</strong> (one engine, no subclasses, tool filtering by allowlist), <strong>recursive cross-agent links</strong> (workers see scoped handles, results bind back as new handles), an <strong>event-ingress layer</strong> (five listeners, one immutable Trigger type, one append-only TriggerLog), and a <strong>topology DSL</strong> (one TOML file, packed and signed as a <code>.duhwave</code> bundle).</p>
+  </section>
+
+  <!-- ── Five ADRs ── -->
+  <section style="margin-bottom: 56px;">
+    <h2 style="font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 16px;">Five ADRs</h2>
+    <p style="color: var(--fg-2); line-height: 1.7; margin-bottom: 24px;">duhwave's design lives in five Architecture Decision Records. Each ADR ships with implementation under <code>duh/duhwave/</code>, unit and integration tests under <code>tests/</code>, and at least one runnable demo under <code>examples/duhwave/</code>.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Title</th>
+            <th>Implementation</th>
+            <th>Tests</th>
+            <th>Demo</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>028</strong></td>
+            <td>RLM context engine</td>
+            <td><code>duh/duhwave/rlm/</code></td>
+            <td><code>tests/duhwave/rlm/</code></td>
+            <td><code>examples/duhwave/01_rlm_demo.py</code></td>
+          </tr>
+          <tr>
+            <td><strong>029</strong></td>
+            <td>Recursive cross-agent links</td>
+            <td><code>duh/duhwave/coordinator/spawn.py</code></td>
+            <td><code>tests/duhwave/coordinator/</code></td>
+            <td><code>examples/duhwave/02_swarm_demo.py</code></td>
+          </tr>
+          <tr>
+            <td><strong>030</strong></td>
+            <td>Persistent Task lifecycle</td>
+            <td><code>duh/duhwave/task/</code></td>
+            <td><code>tests/duhwave/task/</code></td>
+            <td><code>examples/duhwave/repo_triage/main.py</code></td>
+          </tr>
+          <tr>
+            <td><strong>031</strong></td>
+            <td>Coordinator role + event ingress</td>
+            <td><code>duh/duhwave/coordinator/</code> · <code>duh/duhwave/ingress/</code></td>
+            <td><code>tests/duhwave/ingress/</code></td>
+            <td><code>examples/duhwave/03_event_driven.py</code></td>
+          </tr>
+          <tr>
+            <td><strong>032</strong></td>
+            <td>Topology DSL + bundles + control plane</td>
+            <td><code>duh/duhwave/spec/</code> · <code>duh/duhwave/bundle/</code> · <code>duh/duhwave/cli/</code></td>
+            <td><code>tests/duhwave/spec/</code> · <code>tests/duhwave/bundle/</code></td>
+            <td><code>examples/duhwave/04_topology_bundle.py</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Quick Start ── -->
+  <section style="margin-bottom: 56px;">
+    <h2 style="font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 16px;">Quick start</h2>
+
+    <p style="color: var(--fg-2); line-height: 1.7; margin-bottom: 16px;">Install D.U.H., write a minimal <code>swarm.toml</code>, install the bundle, start the host daemon. The daemon stays alive until you stop it; triggers spawn Tasks; Tasks run agents; agents bind results back as REPL handles.</p>
+
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dots"><span></span><span></span><span></span></div>
+        <span class="code-title">bash</span>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <pre><span class="cmt"># 1. Install D.U.H. (duhwave ships in the same package)</span>
+<span class="fn">pip</span> install duh-cli
+
+<span class="cmt"># 2. Author a topology directory: foo.duhwave/{manifest.toml, swarm.toml, permissions.toml}</span>
+<span class="cmt">#    See examples/duhwave/repo_triage/ for the canonical layout.</span>
+
+<span class="cmt"># 3. Install the bundle into ~/.duh/waves/</span>
+<span class="fn">duh</span> wave install ./foo.duhwave
+
+<span class="cmt"># 4. Start the host daemon</span>
+<span class="fn">duh</span> wave start
+
+<span class="cmt"># 5. Inspect what is running</span>
+<span class="fn">duh</span> wave ls
+<span class="fn">duh</span> wave inspect foo
+<span class="fn">duh</span> wave logs <span class="flag">--follow</span> foo
+
+<span class="cmt"># 6. Stop the daemon when done</span>
+<span class="fn">duh</span> wave stop</pre>
+    </div>
+
+    <p style="color: var(--fg-2); line-height: 1.7; margin: 24px 0 12px;">A minimal <code>swarm.toml</code>:</p>
+
+    <div class="code-block">
+      <div class="code-header">
+        <div class="code-dots"><span></span><span></span><span></span></div>
+        <span class="code-title">swarm.toml</span>
+        <button class="copy-btn">Copy</button>
+      </div>
+      <pre><span class="kw">[swarm]</span>
+name           = <span class="str">"hello-wave"</span>
+version        = <span class="str">"0.1.0"</span>
+format_version = 1
+
+<span class="kw">[[agents]]</span>
+id            = <span class="str">"coordinator"</span>
+role          = <span class="str">"coordinator"</span>
+model         = <span class="str">"anthropic/claude-haiku-4-5"</span>
+tools         = [<span class="str">"Spawn"</span>, <span class="str">"SendMessage"</span>, <span class="str">"Stop"</span>, <span class="str">"Peek"</span>, <span class="str">"Search"</span>, <span class="str">"Slice"</span>]
+system_prompt = <span class="str">"prompts/coordinator.md"</span>
+
+<span class="kw">[[agents]]</span>
+id            = <span class="str">"worker"</span>
+role          = <span class="str">"worker"</span>
+model         = <span class="str">"anthropic/claude-haiku-4-5"</span>
+tools         = [<span class="str">"Read"</span>, <span class="str">"Grep"</span>, <span class="str">"Peek"</span>, <span class="str">"Search"</span>, <span class="str">"Slice"</span>]
+system_prompt = <span class="str">"prompts/worker.md"</span>
+
+<span class="kw">[[triggers]]</span>
+kind            = <span class="str">"manual"</span>
+source          = <span class="str">"hello"</span>
+target_agent_id = <span class="str">"coordinator"</span>
+
+<span class="kw">[[edges]]</span>
+from_agent_id = <span class="str">"coordinator"</span>
+to_agent_id   = <span class="str">"worker"</span>
+kind          = <span class="str">"spawn"</span>
+
+<span class="kw">[budget]</span>
+max_concurrent_tasks = 3
+max_usd_per_day      = 1.00</pre>
+    </div>
+  </section>
+
+  <!-- ── Demos ── -->
+  <section style="margin-bottom: 56px;">
+    <h2 style="font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 16px;">10 runnable demos</h2>
+    <p style="color: var(--fg-2); line-height: 1.7; margin-bottom: 24px;">Every duhwave primitive is exercised by a runnable demo under <code>examples/duhwave/</code>. The <code>parity_hermes/</code> set walks through five harness-parity demos; <code>parity_claw/</code> walks through four control-plane demos. The headline showpieces — <code>repo_triage/</code>, <code>agile_team/</code>, <code>real_e2e/</code>, <code>telegram_assistant/</code> — are full end-to-end swarms.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Demo</th>
+            <th>What it shows</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td><code>01_rlm_demo.py</code></td>
+            <td>RLM REPL substrate: bind a 235K-char repo, peek + search by handle, never inline the bytes</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td><code>02_swarm_demo.py</code></td>
+            <td>Coordinator + two workers via Spawn; result bind-back as a new handle</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td><code>03_event_driven.py</code></td>
+            <td>All five ingress listeners: webhook, filewatch, cron, MCP push, manual seam</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td><code>04_topology_bundle.py</code></td>
+            <td>Parse swarm.toml, pack a deterministic <code>.duhwave</code> ZIP, install with TOFU trust</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td><code>repo_triage/main.py</code></td>
+            <td>~400 LOC end-to-end: bundle build → install → daemon → trigger → orchestrate → inspect → stop</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td><code>agile_team/main.py</code></td>
+            <td>5-stage pipeline (PM → Architect → Engineer → Tester → Reviewer); stub or real OpenAI runner</td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td><code>real_e2e/main.py</code></td>
+            <td>Real daemon subprocess + real HTTP webhook + real OpenAI completion + real outbox file</td>
+          </tr>
+          <tr>
+            <td>8</td>
+            <td><code>telegram_assistant/main.py</code></td>
+            <td>Persistent assistant with three flows: inbound webhook, scheduled cron, on-demand manual</td>
+          </tr>
+          <tr>
+            <td>9</td>
+            <td><code>parity_hermes/run_all.py</code></td>
+            <td>Five demos: multimode adapters, tool-arg repair, parallel dispatch, RLM-replaces-compaction, shared budget</td>
+          </tr>
+          <tr>
+            <td>10</td>
+            <td><code>parity_claw/run_all.py</code></td>
+            <td>Four demos: four ingress channels, persistent state, concurrent ingress, per-channel isolation</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Real-OpenAI benchmark ── -->
+  <section style="margin-bottom: 56px;">
+    <h2 style="font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 16px;">Real-OpenAI benchmark</h2>
+
+    <p style="color: var(--fg-2); line-height: 1.7; margin-bottom: 24px;">A single CLI invocation drives a 5-stage agile-team pipeline (<strong>PM → Architect → Engineer → Tester → Reviewer</strong>) against real OpenAI models. Each stage spawns a worker, reads exposed handles from the coordinator's RLM REPL, and binds its result back. The benchmark runs <code>pytest</code> against the produced implementation; the pass rate is the headline number.</p>
+
+    <div class="table-wrap" style="margin-bottom: 24px;">
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>gpt-4o-mini</th>
+            <th>gpt-4o</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Stages completed</td><td class="td-yes">5 / 5</td><td class="td-yes">5 / 5</td></tr>
+          <tr><td>Wall (single-threaded)</td><td class="td-bold">35.5 s</td><td class="td-bold">29.3 s</td></tr>
+          <tr><td>Total prompt tokens</td><td>3,934</td><td>4,706</td></tr>
+          <tr><td>Total completion tokens</td><td>1,553</td><td>1,900</td></tr>
+          <tr><td>Estimated cost</td><td class="td-bold">$0.0015</td><td class="td-bold">$0.0308</td></tr>
+          <tr><td>Cost ratio</td><td>1×</td><td><strong>~20×</strong></td></tr>
+          <tr><td>pytest on produced code</td><td class="td-yes">3/5 pass</td><td class="td-yes">5/6 pass</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <blockquote class="callout info" style="border-left: 3px solid var(--accent); padding: 16px 20px; margin: 24px 0;">
+      <p><strong>Headline finding.</strong> Real coordination defects surface naturally — the <em>Reviewer</em> agent reads but does not execute, missing test failures the <em>Tester</em> introduced. gpt-4o-mini's <code>test_error_handling</code> fails because an earlier <code>time.sleep(2)</code> refills the bucket; gpt-4o's <code>test_rate_limiter_thread_safety</code> references <code>threading.Thread</code> but the test file imports only <code>pytest</code> and <code>time</code>. Both Reviewers issued APPROVE. The obvious next step: add a <em>Runner</em> role that executes the test suite and binds the failures back as a handle for the Reviewer to peek. <em>Architecture composes.</em></p>
+    </blockquote>
+
+    <p style="color: var(--fg-2); line-height: 1.7;">Full write-up with per-stage ledger, cost breakdown, and reproducibility steps: <a href="https://github.com/nikhilvallishayee/duh/blob/main/benchmarks/duhwave-agile/RESULT.md" target="_blank" rel="noopener">benchmarks/duhwave-agile/RESULT.md</a>.</p>
+  </section>
+
+  <!-- ── Architecture ── -->
+  <section style="margin-bottom: 56px;">
+    <h2 style="font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 16px;">Architecture</h2>
+
+    <p style="color: var(--fg-2); line-height: 1.7; margin-bottom: 16px;">duhwave's five ADRs form a dependency DAG. ADR-028 (RLM substrate) is the foundation; everything else builds upward.</p>
+
+    <pre style="background: var(--bg-3); border: 1px solid var(--border); border-radius: 8px; padding: 20px; font-size: 0.85rem; line-height: 1.5; color: var(--fg-2); overflow-x: auto;">
+                  ┌──────────────────────────────────────┐
+                  │          ADR-032 — topology          │
+                  │   swarm.toml · .duhwave bundles ·    │
+                  │      duh wave CLI control plane       │
+                  └─────────────┬────────────────────────┘
+                                │ declares
+                  ┌─────────────▼────────────────────────┐
+                  │     ADR-031 — coordinator + ingress   │
+                  │  Role / tool filtering · 5 listeners ·│
+                  │     SubscriptionMatcher · TriggerLog  │
+                  └──────┬────────────────────────┬──────┘
+                         │ spawns                 │ persists
+              ┌──────────▼─────────┐   ┌──────────▼──────────┐
+              │ ADR-029 — Spawn   │   │ ADR-030 — Task       │
+              │ cross-agent       │   │ state machine       │
+              │ handle exposure ──┼──▶│ 3 execution surfaces │
+              │ + bind-back        │   │ JSONL persistence   │
+              └─────────┬──────────┘   └──────────┬──────────┘
+                        │                          │
+                        │  both stand on           │
+                        ▼                          ▼
+                  ┌──────────────────────────────────────┐
+                  │     ADR-028 — RLM context engine      │
+                  │   one Python REPL subprocess per     │
+                  │   session · handles · Peek / Search  │
+                  │   / Slice · cycle-detected recursion  │
+                  └──────────────────────────────────────┘</pre>
+  </section>
+
+  <!-- ── See also ── -->
+  <section style="margin-bottom: 32px;">
+    <h2 style="font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 16px;">See also</h2>
+    <ul style="color: var(--fg-2); line-height: 1.8; padding-left: 20px;">
+      <li><a href="https://github.com/nikhilvallishayee/duh/blob/main/docs/cookbook/build-your-own-swarm.md" target="_blank" rel="noopener">Cookbook — build your own swarm on D.U.H.</a> · the canonical walkthrough</li>
+      <li><a href="https://github.com/nikhilvallishayee/duh/tree/main/docs/adrs" target="_blank" rel="noopener">All ADRs on GitHub</a> · ADR-028 through ADR-032 cover duhwave</li>
+      <li><a href="https://github.com/nikhilvallishayee/duh/tree/main/examples/duhwave" target="_blank" rel="noopener">examples/duhwave/</a> · 10 runnable demos</li>
+      <li><a href="https://github.com/nikhilvallishayee/duh/blob/main/benchmarks/duhwave-agile/RESULT.md" target="_blank" rel="noopener">benchmarks/duhwave-agile/RESULT.md</a> · real-OpenAI agile-team benchmark</li>
+      <li><a href="https://arxiv.org/abs/2512.24601" target="_blank" rel="noopener">Zhang, Kraska, Khattab — Recursive Language Models (arXiv 2512.24601)</a></li>
+      <li><a href="https://arxiv.org/abs/2604.25917" target="_blank" rel="noopener">Yang, Zou, Pan et al. — Recursive Multi-Agent Systems (arXiv 2604.25917)</a></li>
+      <li><a href="https://github.com/nikhilvallishayee/duh" target="_blank" rel="noopener">github.com/nikhilvallishayee/duh</a> · D.U.H. repo</li>
+    </ul>
+  </section>
+
+</main>
+
+<!-- ── Footer ── -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-logo"><span>D.U.H.</span> — D.U.H. is a Universal Harness</div>
+    <nav class="footer-links" aria-label="Footer navigation">
+      <a href="https://github.com/nikhilvallishayee/duh" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://pypi.org/project/duh-cli/" target="_blank" rel="noopener">PyPI</a>
+      <a href="index.html">Home</a>
+      <a href="getting-started.html">Get Started</a>
+      <a href="security.html">Security</a>
+      <a href="comparisons.html">Compare</a>
+      <a href="https://github.com/nikhilvallishayee/duh/blob/main/LICENSE" target="_blank" rel="noopener">Apache 2.0</a>
+    </nav>
+    <div class="footer-copy">Copyright 2026 Nikhil Vallishayee · Apache 2.0 License</div>
+  </div>
+</footer>
+
+<script src="nav.js"></script>
+</body>
+</html>

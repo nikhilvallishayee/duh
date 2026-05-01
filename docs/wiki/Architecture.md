@@ -254,6 +254,59 @@ Agents are standard `Engine` instances with specialized system prompts. There is
 
 ---
 
+## 5b. duhwave layer (ADRs 028–032)
+
+The `duh.duhwave` package is an opt-in **persistent agentic-swarm** extension that composes on top of the existing kernel + adapters. It does not replace any kernel primitive; the same `Engine`, the same `Deps`, the same `query()` loop run inside every duhwave Task. What duhwave adds is the substrate above one CLI invocation: a host daemon, an event-ingress layer, a persistent Task primitive, recursive cross-agent variable handles, and a topology-as-data DSL.
+
+The five ADRs and how they compose:
+
+| ADR | Title | What it adds |
+|-----|-------|---|
+| **028** | RLM context engine | A sandboxed Python REPL subprocess per session. Bulk inputs bind to *named handles*; the agent operates via `Peek` / `Search` / `Slice` / `Recurse` / `Synthesize` over those names. Bytes never enter the agent's context inline. Implementation: `duh/duhwave/rlm/`. |
+| **029** | Recursive cross-agent links | The `Spawn` tool starts a child agent with a selectively-exposed read-only `RLMHandleView` into the coordinator's REPL; the worker's final result text binds back as a new handle in the coordinator's namespace. Address by reference, never by summary, applied across an agent boundary. Implementation: `duh/duhwave/coordinator/{spawn,view,tool_filter}.py`. |
+| **030** | Persistent Task lifecycle, three execution surfaces | A Task is a record on disk with a 5-state forward-only state machine (`PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`). One writer (the executor); every transition emits an event. Three surfaces share the lifecycle: `InProcessExecutor` (asyncio.Task), `SubprocessExecutor` (isolated `python3 -I` child, survives parent crashes), `RemoteExecutor` (HTTP+bearer to `RemoteTaskServer`). Implementation: `duh/duhwave/task/`. |
+| **031** | Coordinator-as-prompt-role + event ingress | A "coordinator" is a `Role` (frozen dataclass: system prompt + tool allowlist + `spawn_depth`), not an `Engine` subclass. Tools outside the role's allowlist are filtered before the first turn — the synthesis-mandate is enforced by *absence* of execution tools, not by trust. The event-ingress layer normalises webhooks / file watches / cron / MCP push / manual seam into a single immutable `Trigger` type, dispatched by a glob-matching `SubscriptionMatcher`. Implementation: `duh/duhwave/coordinator/role.py` + `duh/duhwave/ingress/` + `duh/duhwave/cli/dispatcher.py`. |
+| **032** | Swarm topology DSL + bundles + control plane | A swarm is one TOML file: agents, models, tools, triggers, edges, budget. Pack into a deterministic `.duhwave` archive (sorted entries, fixed mtime; supports detached Ed25519 signatures). Install/manage via a 10-subcommand CLI (`duh wave start / stop / ls / inspect / pause / resume / logs / install / uninstall / web`) over a Unix-socket RPC to a `HostState` daemon. Implementation: `duh/duhwave/{spec,bundle,cli}/`. |
+
+### Composition diagram
+
+```
+   ADR-028 (RLM substrate — REPL, handles, ops)
+     │
+     ├─→ ADR-029 (cross-agent links — Spawn exposes handles via RLMHandleView)
+     │
+     └─→ ADR-031 (coordinator role + ingress — Peek/Search/Slice in role allowlist)
+
+   ADR-030 (Task primitive — registry, state machine, three executors)
+     │
+     ├─→ ADR-031 (Spawn produces Tasks; trigger dispatcher consumes)
+     │
+     └─→ ADR-032 (HostState wraps a TaskRegistry)
+
+   ADR-031 (coordinator + ingress)
+     │
+     └─→ ADR-032 (topology declares triggers + agents; daemon consumes)
+
+   ADR-032 (topology + bundles + CLI) — composes all four
+```
+
+### How duhwave touches the kernel
+
+The kernel never imports `duh.duhwave`. duhwave imports kernel primitives:
+
+- The `Spawn` tool (ADR-029) does not own an engine — it owns the bind-back protocol. The host injects a `WorkerRunner` callable; that callable typically drives `duh.kernel.engine.Engine` against a real provider.
+- The duhwave Task surfaces (ADR-030) wrap kernel `Engine.run()`; events flow through the same uniform event protocol.
+- The RLM tools (`Peek`, `Search`, `Slice`, `Recurse`, `Synthesize` — ADR-028) implement the standard `Tool` protocol from `duh/kernel/tool.py`, registered via the same registry as Read/Write/Bash.
+- Coordinator role-filtering (ADR-031 §A) happens at the registry layer: tools outside the role's allowlist are simply not registered for that session, so the model never sees their schemas.
+
+### What duhwave deliberately does not prescribe
+
+duhwave is harness-level, not orchestration-prescribing. It gives you persistence, event ingress, variable handles, role/tool filtering, and a control plane. The coordinator-with-two-workers shape is one example; a fan-of-five-reviewers shape, a long-running watchdog, or a single agent with a webhook ingress are all equally idiomatic. Build whatever orchestration pattern your problem calls for; duhwave provides the substrate.
+
+For a complete narrative walkthrough, see the [duhwave guide](Duhwave); for runnable demos see [Examples](Examples).
+
+---
+
 ## 6. Context Management
 
 ### 4-Tier Compaction Pipeline

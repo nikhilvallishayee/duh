@@ -26,6 +26,17 @@ cited symbols resolve against source). Full methodology + raw
 artifacts reproducible via `./run_all.sh`. See
 **[Benchmarks](Benchmarks)** for scoreboards, rubrics, and caveats.
 
+## What's new in v0.9.0 — duhwave
+
+- **duhwave persistent agentic-swarm extension** — 5 Accepted ADRs (028–032), all implemented in `duh/duhwave/`, 343 duhwave-specific tests passing.
+- **RLM context engine** ([ADR-028](../adrs/ADR-028-rlm-context-engine.md)) — bytes by reference, not by summary. Bulk inputs bind to named handles in a sandboxed Python REPL; the agent operates via `Peek` / `Search` / `Slice` / `Recurse` / `Synthesize`. Cites Zhang, Kraska, Khattab — *Recursive Language Models* (arXiv:2512.24601, January 2026).
+- **Recursive cross-agent variable handles** ([ADR-029](../adrs/ADR-029-recursive-cross-agent-links.md)) — coordinator owns the REPL; workers get read-only `RLMHandleView`s scoped by an explicit exposure list; worker output binds back as a new handle (the RecursiveLink mechanism). Cites Yang, Zou, Pan et al. — *Recursive Multi-Agent Systems* (arXiv:2604.25917, April 2026).
+- **Persistent Task lifecycle + three execution surfaces** ([ADR-030](../adrs/ADR-030-persistent-task-lifecycle.md)) — Tasks are records on disk with a 5-state forward-only state machine. `InProcessExecutor`, `SubprocessExecutor`, and `RemoteExecutor` (HTTP+bearer to `RemoteTaskServer`) share the same lifecycle and orphan-recovery semantics.
+- **Topology DSL + signed `.duhwave` bundles + 10-subcommand control plane** ([ADR-031](../adrs/ADR-031-coordinator-prompt-role-event-ingress.md), [ADR-032](../adrs/ADR-032-swarm-topology-bundles-control-plane.md)) — declare your whole swarm in one TOML file (agents, models, tools, triggers, edges, budget); pack into a deterministic Ed25519-signable archive; manage via `duh wave start / stop / ls / inspect / pause / resume / logs / install / uninstall / web`.
+- **Real-OpenAI agile-team benchmark** — 5-stage PM → Architect → Engineer → Tester → Reviewer pipeline. **5/5 stages, 35.5 s wall, $0.0015 per run on gpt-4o-mini** ([benchmark write-up](https://github.com/nikhilvallishayee/duh/blob/main/benchmarks/duhwave-agile/RESULT.md)).
+
+→ [duhwave guide](Duhwave) · [Examples](Examples) · [Cookbook](https://github.com/nikhilvallishayee/duh/blob/main/docs/cookbook/build-your-own-swarm.md)
+
 ## What's new in v0.8.0
 
 - **Native Gemini + Groq adapters** — LiteLLM is now an opt-in fallback ([ADR-075](../adrs/ADR-075-drop-litellm-native-adapters.md)). Supply-chain hardened (no LiteLLM in default install path after the March 2026 compromise); native SDKs unlock Anthropic `cache_control`, Gemini `thinking_budget` + explicit caches, and Groq rate-limit headers.
@@ -95,7 +106,9 @@ duh security scan
 - **[Architecture](Architecture)** — Kernel, ports & adapters, source layout
 - **[Configuration](Configuration)** — Settings precedence, DUH.md, environment variables
 - **[Tools Reference](Tools)** — All 25+ built-in tools
-- **[Multi-Agent Guide](Multi-Agent)** — AgentTool, SwarmTool, worktree isolation
+- **[Multi-Agent Guide](Multi-Agent)** — AgentTool, SwarmTool, worktree isolation, duhwave swarms
+- **[duhwave](Duhwave)** — persistent agentic-swarm extension (ADRs 028–032)
+- **[Examples](Examples)** — runnable demos for every primitive
 - **[Context Management](Context-Management)** — Compaction, token estimation, auto-compact
 - **[Security](Security)** — Vulnerability monitoring, runtime hardening, sandboxing
 - **[Provider Setup](Provider-Setup)** — Anthropic, OpenAI, Ollama, LiteLLM configuration

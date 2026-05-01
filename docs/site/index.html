@@ -65,6 +65,7 @@
     <ul class="nav-links">
       <li><a href="index.html">Home</a></li>
       <li><a href="getting-started.html">Get Started</a></li>
+      <li><a href="duhwave.html">duhwave</a></li>
       <li><a href="security.html">Security</a></li>
       <li><a href="comparisons.html">Compare</a></li>
       <li><a href="benchmarks.html">Benchmarks</a></li>
@@ -318,6 +319,65 @@
     <div class="callout info" style="margin-top: 24px;">
       <span class="callout-icon">ℹ</span>
       <p><strong>Methodology:</strong> Same Anthropic API key, same model (Haiku 4.5), same prompt verbatim, same TASK.md, separate directories, fresh git repo per run, <code>--max-turns 15</code> on both tools. D.U.H. advantage is architectural simplicity — less startup overhead means more time for actual model interaction. See <a href="https://github.com/nikhilvallishayee/duh/blob/main/docs/benchmark-results.md" target="_blank" rel="noopener">full benchmark report</a>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── duhwave ── -->
+<section id="duhwave">
+  <div class="container">
+    <div class="section-header center">
+      <span class="section-label">duhwave</span>
+      <h2 class="section-title">Persistent agentic-swarm extension.</h2>
+      <p class="section-sub">A layered runtime on top of D.U.H. that turns single-shot agent invocations into a persistent, event-driven swarm. One TOML file declares the topology; one host daemon runs forever.</p>
+    </div>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon blue">🛰️</div>
+        <h3>Persistent host daemon</h3>
+        <p><code>duh wave start</code> spins up a long-running process. 10 subcommands: <code>ls</code>, <code>inspect</code>, <code>pause</code>, <code>resume</code>, <code>logs --follow</code>, <code>install</code>, <code>uninstall</code>, <code>web</code>, <code>start</code>, <code>stop</code>.</p>
+        <div class="tag-list">
+          <span class="tag">daemon</span>
+          <span class="tag">RPC</span>
+          <span class="tag">Unix socket</span>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon purple">📡</div>
+        <h3>Event ingress</h3>
+        <p>Webhook (HMAC-verified), filewatch, cron, MCP push, manual seam — all routing through one append-only <code>TriggerLog</code>. Each trigger spawns a Task by topology rule.</p>
+        <div class="tag-list">
+          <span class="tag">webhook</span>
+          <span class="tag">filewatch</span>
+          <span class="tag">cron</span>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon green">🧬</div>
+        <h3>RLM substrate</h3>
+        <p>Bytes addressed by reference, never summarised. Bounded recursion with cycle detection. Cites Zhang/Kraska/Khattab <a href="https://arxiv.org/abs/2512.24601" target="_blank" rel="noopener">arXiv 2512.24601</a>.</p>
+        <div class="tag-list">
+          <span class="tag">REPL handles</span>
+          <span class="tag">ADR-028</span>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon yellow">🔗</div>
+        <h3>Cross-agent handles</h3>
+        <p>Workers see selected REPL handles; results bind back as new handles. Cites Yang/Zou/Pan et al. <a href="https://arxiv.org/abs/2604.25917" target="_blank" rel="noopener">arXiv 2604.25917</a>.</p>
+        <div class="tag-list">
+          <span class="tag">RecursiveMAS</span>
+          <span class="tag">ADR-029</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 32px; text-align: center;">
+      <a href="duhwave.html" class="btn btn-primary">Read the duhwave guide →</a>
     </div>
   </div>
 </section>

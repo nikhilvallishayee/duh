@@ -1255,4 +1255,129 @@ duh -p "hello"
 # Returns: "stub-ok" (deterministic, no API calls)
 ```
 
-This is used extensively in D.U.H.'s own test suite (4000+ tests run without any real provider calls).
+This is used extensively in D.U.H.'s own test suite (6377+ tests run without any real provider calls).
+
+---
+
+# duhwave — persistent agentic-swarm extension
+
+duhwave is a layered runtime on top of D.U.H. that turns single-shot
+agent invocations into a persistent, event-driven swarm. Implementation
+lives under `duh/duhwave/`; runnable demos under `examples/duhwave/`;
+unit and integration tests under `tests/duhwave/`; user-facing docs at
+[duhwave.html](https://nikhilvallishayee.github.io/duh/site/duhwave.html)
+and the cookbook
+[`docs/cookbook/build-your-own-swarm.md`](https://github.com/nikhilvallishayee/duh/blob/main/docs/cookbook/build-your-own-swarm.md).
+
+## Mental model: swarm vs single-agent
+
+A single-agent loop is one adapter, one tool registry, one dispatcher,
+one context manager. Loop until done; exit. duhwave adds five things
+on top:
+
+1. **Persistent host process.** Alive past any single CLI invocation.
+   Accepts work from external triggers, not just a user prompt.
+2. **Event-ingress layer.** Webhooks, file watches, cron, MCP push, and
+   a manual seam normalise into one immutable `Trigger` type. Each
+   trigger may match zero, one, or many subscriptions; each match
+   spawns a Task.
+3. **Persistent Task primitive.** A Task is a record on disk with a
+   forward-only state machine, identity (`session-id:seq`), parent,
+   output log, tool allowlist, and execution surface (in-process,
+   subprocess, remote). Tasks survive host restarts.
+4. **Recursive cross-agent links.** A coordinator owns one REPL
+   substrate per session; workers get read-only views into that REPL
+   scoped by an explicit exposure list. Worker output binds back as a
+   new handle in the coordinator's REPL — addressed by reference,
+   never by summary.
+5. **Topology DSL.** The whole swarm shape — agents, models, tools,
+   triggers, edges, budget — is one TOML file. Audit-able, diffable,
+   sharable as a `.duhwave` bundle.
+
+## Five ADRs
+
+| # | Title | Implementation | Demo |
+|---|---|---|---|
+| 028 | RLM context engine | `duh/duhwave/rlm/` | `examples/duhwave/01_rlm_demo.py` |
+| 029 | Recursive cross-agent links | `duh/duhwave/coordinator/spawn.py` | `examples/duhwave/02_swarm_demo.py` |
+| 030 | Persistent Task lifecycle | `duh/duhwave/task/` | `examples/duhwave/repo_triage/main.py` |
+| 031 | Coordinator role + event ingress | `duh/duhwave/coordinator/` + `duh/duhwave/ingress/` | `examples/duhwave/03_event_driven.py` |
+| 032 | Topology DSL + bundles + control plane | `duh/duhwave/spec/` + `duh/duhwave/bundle/` + `duh/duhwave/cli/` | `examples/duhwave/04_topology_bundle.py` |
+
+ADR-028 cites Zhang, Y.; Kraska, T.; Khattab, O. *Recursive Language
+Models.* arXiv 2512.24601 (January 2026).
+
+ADR-029 cites Yang, R.; Zou, K.; Pan, F.; et al. *Recursive Multi-Agent
+Systems.* arXiv 2604.25917 (April 2026), which reports +8.3% accuracy,
+2.4× speedup, 75.6% fewer tokens vs prose-handoff baselines on
+multi-agent tasks.
+
+## CLI control plane (10 subcommands)
+
+```
+duh wave start              # spin up the long-running host daemon
+duh wave stop               # stop the host daemon
+duh wave ls                 # list running swarms
+duh wave inspect <bundle>   # inspect a swarm's state, agents, tasks
+duh wave pause <bundle>     # pause trigger ingest
+duh wave resume <bundle>    # resume after pause
+duh wave logs --follow <b>  # stream the host's event log
+duh wave install <path>     # install a .duhwave bundle into ~/.duh/waves
+duh wave uninstall <name>   # remove an installed bundle
+duh wave web                # optional web UI (read-only)
+```
+
+## Runnable demos under `examples/duhwave/`
+
+- `01_rlm_demo.py` — RLM REPL substrate; bind, peek, search by handle.
+- `02_swarm_demo.py` — coordinator + two workers via Spawn; bind-back.
+- `03_event_driven.py` — all five ingress listeners.
+- `04_topology_bundle.py` — parse swarm.toml, pack, install with TOFU.
+- `repo_triage/main.py` — ~400 LOC end-to-end stub showpiece.
+- `agile_team/main.py` — 5-stage agile pipeline; stub or real OpenAI.
+- `real_e2e/main.py` — real daemon + real webhook + real OpenAI + real
+  outbox file.
+- `telegram_assistant/main.py` — persistent assistant: webhook + cron +
+  manual flows.
+- `parity_hermes/run_all.py` — five harness-parity demos (multimode
+  adapters, tool-arg repair, parallel dispatch,
+  RLM-replaces-compaction, shared budget).
+- `parity_claw/run_all.py` — four control-plane demos (four ingress
+  channels, persistent state, concurrent ingress, per-channel
+  isolation).
+
+## duhwave-agile benchmark (May 2026)
+
+A single CLI invocation drives a 5-stage agile-team pipeline (PM →
+Architect → Engineer → Tester → Reviewer) against real OpenAI models.
+Each stage spawns a worker via Spawn, reads exposed handles from the
+coordinator's RLM REPL, and binds its result back. The benchmark runs
+pytest against the produced implementation; the pass rate is the
+headline number.
+
+| Metric | gpt-4o-mini | gpt-4o |
+|---|---|---|
+| Stages completed | 5 / 5 | 5 / 5 |
+| Wall (single-threaded) | 35.5 s | 29.3 s |
+| Total prompt tokens | 3,934 | 4,706 |
+| Total completion tokens | 1,553 | 1,900 |
+| Estimated cost | $0.0015 | $0.0308 |
+| Cost ratio | 1× | ~20× |
+| pytest pass rate | 3 / 5 | 5 / 6 |
+
+**Headline finding.** Real coordination defects surface naturally —
+the Reviewer agent reads but does not execute, missing test failures
+the Tester introduced. gpt-4o-mini's `test_error_handling` fails
+because an earlier `time.sleep(2)` refills the bucket; gpt-4o's
+`test_rate_limiter_thread_safety` references `threading.Thread` but
+the test file imports only `pytest` and `time`. Both Reviewers issued
+APPROVE.
+
+The obvious next step: add a sixth role — `Runner` — that executes
+the test suite and binds the failures back as a handle for the
+Reviewer to peek. Adding a sixth handle-passing stage is one new
+entry in the pipeline list. Architecture composes.
+
+Full write-up with per-stage ledger, cost breakdown, and
+reproducibility steps:
+https://github.com/nikhilvallishayee/duh/blob/main/benchmarks/duhwave-agile/RESULT.md

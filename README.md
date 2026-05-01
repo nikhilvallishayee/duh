@@ -8,7 +8,7 @@
 
 [![CI](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml/badge.svg)](https://github.com/nikhilvallishayee/duh/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/duh-cli?color=blue)](https://pypi.org/project/duh-cli/)
-[![Tests](https://img.shields.io/badge/tests-6119%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-6300%20passing-brightgreen)]()
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)]()
 [![Security](https://img.shields.io/badge/security-ADR--053%20%2B%20ADR--054%20%2B%20ADR--075-blueviolet)]()
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)]()
@@ -53,6 +53,13 @@ Done in 3 turns.
 
 A universal, open-source AI coding agent. One harness, any provider — Anthropic Claude, OpenAI API, ChatGPT Plus/Pro subscription (Codex-family models), Google Gemini, Groq, local Ollama, or a deterministic stub for tests. Drop-in compatible with the Claude Agent SDK NDJSON protocol, so it can replace `claude` wherever that binary is expected.
 
+## What's new in v0.9.0
+
+- **duhwave** persistent agentic-swarm extension (5 ADRs, 343 tests) — see [the new section below](#duhwave--persistent-agentic-swarm-extension)
+- **Recursive Language Model** context engine (replaces compaction on read-heavy turns)
+- **Real OpenAI benchmark** on the agile-team pipeline ($0.0015/run on `gpt-4o-mini`)
+- **9 runnable example demos** under [`examples/duhwave/`](examples/duhwave/)
+
 ## Benchmarks
 
 Head-to-head, same model, same task, three LLM judges. Three
@@ -92,6 +99,12 @@ outputs) in [`benchmarks/`](benchmarks/):
 Reproduce B1 with `cd benchmarks/double-agent-tdd && ./run_all.sh && ./judge_all.sh && python3 aggregate.py`.
 Analogous `./run.sh <agent>` / `./adversarial_all.sh` /
 `./consistency_all.sh` / `python3 aggregate.py` flows for B2 and B3.
+
+**duhwave-agile (real OpenAI, May 2026):** 5-stage agile-team pipeline
+(PM → Architect → Engineer → Tester → Reviewer) running on `gpt-4o-mini`
+in 35.5s for $0.0015. Produces an executable pytest project; 3/5 tests
+pass on AI output (real coordination defects surface naturally).
+[Full result](benchmarks/duhwave-agile/RESULT.md).
 
 ## Install
 
@@ -175,6 +188,48 @@ Both accept `agent_type` (`general` / `coder` / `researcher` / `planner` / `revi
 | `inherit` (default) | Use parent's model unchanged | — | — | — |
 
 This means a Gemini-parent → `"small"` child never 404s asking for `"haiku"`. Literal model names (`claude-haiku-4-5`, `gemini-2.5-flash`, …) are still accepted for backwards compatibility. See [docs/wiki/Multi-Agent.md](docs/wiki/Multi-Agent.md) and [ADR-012](docs/adrs/ADR-012-multi-agent.md). Coordinator mode (`duh --coordinator`) turns the main agent into a pure orchestrator that delegates everything to subagents.
+
+## duhwave — persistent agentic-swarm extension
+
+duhwave is a layered runtime on top of D.U.H. that turns single-shot
+agent invocations into a persistent, event-driven swarm:
+
+- **Persistent host daemon** — `duh wave start` + 10-subcommand CLI
+  (start/stop/ls/inspect/pause/resume/logs/install/uninstall/web)
+- **Event ingress** — webhook (HMAC-verified), filewatch, cron, MCP
+  push, manual seam — all routing through one append-only TriggerLog
+- **Topology DSL** — declarative `swarm.toml` + signed `.duhwave`
+  bundles installed under `~/.duh/waves/`
+- **Recursive Language Model substrate** — bytes addressed by reference,
+  never summarised; bounded recursion with cycle detection
+  (cites [Zhang/Kraska/Khattab arXiv 2512.24601](https://arxiv.org/abs/2512.24601))
+- **Cross-agent variable handles** — workers see selected handles
+  from the coordinator's REPL; results bind back as new handles
+  (cites [Yang/Zou/Pan et al. arXiv 2604.25917](https://arxiv.org/abs/2604.25917))
+- **Three Task execution surfaces** — in-process / subprocess / remote
+  HTTP+bearer — one lifecycle, orphan recovery on restart
+
+Five Accepted ADRs (028–032) define the design. 343 unit + integration
+tests cover the implementation.
+
+→ **[Cookbook: Build your own swarm](docs/cookbook/build-your-own-swarm.md)**
+→ **[ADR Index](docs/adrs/)**
+→ **[Benchmark: agile-team on real OpenAI](benchmarks/duhwave-agile/RESULT.md)**
+
+### Runnable demos
+
+| Demo | What it proves | Needs API key |
+|---|---|---|
+| `examples/duhwave/01_rlm_demo.py` | RLM substrate single-agent | no |
+| `examples/duhwave/02_swarm_demo.py` | Cross-agent handle-passing | no |
+| `examples/duhwave/03_event_driven.py` | Webhook → trigger → match | no |
+| `examples/duhwave/04_topology_bundle.py` | Bundle install → daemon → manual seam | no |
+| `examples/duhwave/repo_triage/` | Multi-agent showpiece (stub workers) | no |
+| `examples/duhwave/parity_hermes/` | Hermes feature parity (5 patterns) | no |
+| `examples/duhwave/parity_claw/` | Always-on multi-channel (4 channels) | no |
+| `examples/duhwave/agile_team/` | 5-agent agile-team headless run | optional |
+| `examples/duhwave/telegram_assistant/` | Mock Telegram bus + real OpenAI | yes |
+| `examples/duhwave/real_e2e/` | **Daemon-driven webhook → real OpenAI agent → outbox** | yes |
 
 ## Security
 

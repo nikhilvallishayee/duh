@@ -302,3 +302,64 @@ Override with the `model` field when the defaults don't fit. Use `"small"` aggre
 6. **Coordinator overhead.** In coordinator mode, the coordinator uses an extra turn to break down the task before any work begins. For simple tasks, this overhead is pure waste -- use normal mode instead.
 
 7. **Partial failure visibility.** While the Swarm tool reports per-task success/failure, the parent model must interpret these results and decide how to proceed. There is no automatic retry mechanism.
+
+## duhwave swarms
+
+`Agent` and `Swarm` cover the **in-conversation, transient** subagent shape — spawn a child within one CLI invocation, await its result, the child dies when the parent exits. For **persistent, event-driven, multi-agent** topologies — a swarm that lives past one CLI invocation, accepts external triggers (webhooks, file watches, cron), and passes data between agents by reference instead of by prose — D.U.H. ships the **duhwave** extension (ADRs 028–032). See the dedicated [duhwave guide](Duhwave) for the full surface; this section covers the four design decisions that distinguish duhwave swarms from the simpler Agent / Swarm tools above.
+
+### 1. Coordinator-as-prompt-role
+
+A duhwave "coordinator" is **not** an Engine subclass. It is a frozen `Role` dataclass holding a system prompt, a tool allowlist, and a `spawn_depth`. At session start, the kernel filters the registered tool list to the role's allowlist *before the first turn* — anything outside is not registered, so the model never sees a schema for, e.g., `Bash` or `Edit`. The synthesis-mandate ("you do not have execution tools; you delegate by writing precise worker prompts and spawning workers") is enforced by **absence**, not by trust.
+
+```python
+from duh.duhwave.coordinator import BUILTIN_ROLES, filter_tools_for_role
+
+coord = BUILTIN_ROLES["coordinator"]
+print(coord.tool_allowlist)
+# → ('Spawn', 'SendMessage', 'Stop', 'Peek', 'Search', 'Slice')
+print(coord.spawn_depth)
+# → 1
+```
+
+Custom roles are one frozen dataclass + one prompt file away. Add to `BUILTIN_ROLES` or load from topology via `Role.from_dict`.
+
+### 2. RLMHandleView selective exposure
+
+The coordinator owns a single `RLMRepl` substrate per session. Bulk inputs (the codebase, the spec, the trigger payload, every previous worker's output) bind to *named handles* in that REPL. When the coordinator calls `Spawn`, it lists the handles to expose:
+
+```python
+result = await spawn.call({
+    "prompt": "research: find every authenticate() call site",
+    "expose": ["repo_handle", "spec_handle"],
+    "bind_as": "findings_a",
+}, ctx)
+```
+
+The worker receives an `RLMHandleView` — a read-only wrapper around the parent REPL scoped to the exposure list. Calls referencing a handle outside the list raise `ValueError("handle not exposed: ...")` *before* reaching the underlying REPL, so the view is the worker's complete attack surface. When the worker finishes, its result text binds back as `findings_a` in the coordinator's REPL — a single new handle, not a prose paraphrase.
+
+On the next turn, the coordinator can issue another `Spawn` exposing `findings_a` to a different worker. The implementer reads the researcher's result as a handle in its own view: no re-derivation, no token cost beyond the bind. Yang, Zou, Pan et al. (RecursiveMAS, arXiv:2604.25917) report 75.6% fewer tokens vs prose-handoff baselines using exactly this mechanism.
+
+### 3. The depth-1 invariant
+
+duhwave keeps the same hard cap as `Agent` / `Swarm` above: workers cannot spawn workers. This is enforced by `Role.spawn_depth` — coordinator roles ship with `spawn_depth=1`, worker roles with `spawn_depth=0`. The `Spawn` tool consults the parent role's depth before each call; child role inherits `parent.spawn_depth - 1`, and a worker spawning another worker hits depth 0 and raises.
+
+The invariant is identical to the kernel-level `MAX_AGENT_DEPTH = 1` in `agent_tool.py`; what differs is the enforcement seam. In duhwave it lives in the role definition, so a `reviewer` role or an `archiver` role inherits the constraint automatically.
+
+### 4. When to use duhwave vs Agent / Swarm
+
+Pick the simpler option when you can:
+
+| Need | Use |
+|------|-----|
+| One-shot transient subagent within an interactive `duh` session | `Agent` tool |
+| 2–5 transient subagents in parallel within an interactive session | `Swarm` tool |
+| Multi-file refactor delegated by a coordinator within one invocation | `--coordinator` mode + `Swarm` |
+| Always-on daemon that reacts to webhooks / file changes / cron | duhwave |
+| Multi-agent pipeline where workers pass data by reference (not prose) | duhwave |
+| Topology shared / audited / installed as a versioned artefact | duhwave (`.duhwave` bundle) |
+| Tasks that must survive a host restart | duhwave (persistent Task lifecycle) |
+| Cross-process or cross-host execution | duhwave (`SubprocessExecutor`, `RemoteExecutor`) |
+
+The one-line rule: **`Agent` / `Swarm` are for the conversation; duhwave is for the deployment.**
+
+For the full duhwave surface (5 ADRs, topology DSL, bundle format, control-plane CLI), see the [duhwave guide](Duhwave). For runnable demonstrations of every primitive, see [Examples](Examples).

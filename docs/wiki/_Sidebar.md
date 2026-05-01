@@ -6,6 +6,8 @@
 * [Configuration](Configuration)
 * [Tools Reference](Tools)
 * [Multi-Agent Guide](Multi-Agent)
+* [duhwave](Duhwave)
+* [Examples](Examples)
 * [Context Management](Context-Management)
 * [Security](Security)
 * [Provider Setup](Provider-Setup)

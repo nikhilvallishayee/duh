@@ -50,6 +50,7 @@
     <ul class="nav-links">
       <li><a href="index.html">Home</a></li>
       <li><a href="getting-started.html">Get Started</a></li>
+      <li><a href="duhwave.html">duhwave</a></li>
       <li><a href="security.html">Security</a></li>
       <li><a href="comparisons.html">Compare</a></li>
       <li><a href="benchmarks.html">Benchmarks</a></li>
@@ -206,6 +207,52 @@ under <code>results/</code>. If you run this on a different machine
 with different keys and your numbers come out more than 3 points off
 ours on any agent, file an issue. That is the path to invalidating any
 of H1/H2/H3.</p>
+
+<h2>duhwave-agile (May 2026)</h2>
+
+<p>A separate, complementary benchmark for the persistent-swarm
+extension. A single CLI invocation drives a 5-stage agile-team
+pipeline (<strong>PM → Architect → Engineer → Tester →
+Reviewer</strong>) against real OpenAI models. Each stage spawns a
+worker via duhwave's <code>Spawn</code> tool, reads exposed handles
+from the coordinator's RLM REPL, and binds its result back as a new
+named handle.</p>
+
+<table>
+<thead>
+<tr><th>Metric</th><th>gpt-4o-mini</th><th>gpt-4o</th></tr>
+</thead>
+<tbody>
+<tr><td>Stages completed</td><td>5 / 5</td><td>5 / 5</td></tr>
+<tr><td>Wall (single-threaded by design)</td><td><strong>35.5 s</strong></td><td><strong>29.3 s</strong></td></tr>
+<tr><td>Total prompt tokens</td><td>3,934</td><td>4,706</td></tr>
+<tr><td>Total completion tokens</td><td>1,553</td><td>1,900</td></tr>
+<tr><td>Estimated cost</td><td><strong>$0.0015</strong></td><td><strong>$0.0308</strong></td></tr>
+<tr><td>Cost ratio</td><td>1×</td><td><strong>~20×</strong></td></tr>
+<tr><td>pytest pass rate on produced code</td><td><strong>3 / 5</strong></td><td><strong>5 / 6</strong></td></tr>
+</tbody>
+</table>
+
+<p><strong>Headline finding.</strong> Real coordination defects surface
+naturally — the <em>Reviewer</em> agent reads but does not execute,
+missing test failures the <em>Tester</em> introduced. gpt-4o-mini's
+<code>test_error_handling</code> fails because an earlier
+<code>time.sleep(2)</code> in another test refills the bucket;
+gpt-4o's <code>test_rate_limiter_thread_safety</code> references
+<code>threading.Thread</code> but the test file imports only
+<code>pytest</code> and <code>time</code>. Both Reviewers issued
+APPROVE. The benchmark catches genuine multi-agent coordination bugs
+that wouldn't show up in a stub-only demo.</p>
+
+<p>The obvious next step: add a sixth role — <em>Runner</em> — that
+executes the test suite and binds the failures back as a handle for
+the Reviewer to peek. Adding a sixth handle-passing stage is one new
+entry in the pipeline list. Architecture composes.</p>
+
+<p>Full per-stage ledger, cost breakdown, and reproducibility steps:
+<a href="https://github.com/nikhilvallishayee/duh/blob/main/benchmarks/duhwave-agile/RESULT.md">benchmarks/duhwave-agile/RESULT.md</a>.
+See also the <a href="duhwave.html">duhwave guide</a> for the
+architecture this benchmark exercises.</p>
 
 <h2>Caveats</h2>
 

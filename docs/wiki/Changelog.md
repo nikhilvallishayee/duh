@@ -1,5 +1,50 @@
 # Changelog
 
+## v0.9.0 (2026-05-01) — duhwave persistent agentic-swarm extension
+
+Five Accepted ADRs (028–032), all implemented in `duh/duhwave/`, 343 duhwave-specific tests passing on top of the existing v0.8.0 suite. The headline addition is a substrate that lives **above one CLI invocation**: a host daemon, an event-ingress layer, a persistent Task primitive, recursive cross-agent variable handles, and a topology-as-data DSL. The kernel and adapters are unchanged; duhwave imports kernel primitives, never the other way around.
+
+### duhwave (new)
+
+- **RLM context engine** (`duh/duhwave/rlm/`, [ADR-028](../adrs/ADR-028-rlm-context-engine.md)) — bytes by reference, not by summary. Bulk inputs bind to named handles in a sandboxed `python3 -I` REPL subprocess (memory-capped via `RLIMIT_AS`, no network, no shell, curated stdlib only); the agent operates via `Peek` / `Search` / `Slice` / `Recurse` / `Synthesize`. Cites Zhang, Kraska, Khattab — *Recursive Language Models* (arXiv:2512.24601, January 2026).
+- **Recursive cross-agent variable handles** (`duh/duhwave/coordinator/{spawn,view,tool_filter}.py`, [ADR-029](../adrs/ADR-029-recursive-cross-agent-links.md)) — coordinator owns the RLMRepl; workers get read-only `RLMHandleView`s scoped by an explicit `expose=[...]` list; worker output binds back as a new handle in the coordinator's namespace (the RecursiveLink mechanism). Cites Yang, Zou, Pan et al. — *Recursive Multi-Agent Systems* (arXiv:2604.25917, April 2026).
+- **Persistent Task lifecycle + three execution surfaces** (`duh/duhwave/task/{registry,executors,remote,remote_server}.py`, [ADR-030](../adrs/ADR-030-persistent-task-lifecycle.md)) — Tasks are records on disk with a 5-state forward-only state machine. `InProcessExecutor` (asyncio.Task), `SubprocessExecutor` (`python3 -I` child, survives parent crashes), `RemoteExecutor` (HTTP+bearer to `RemoteTaskServer`) share the same lifecycle and orphan-recovery semantics.
+- **Coordinator-as-prompt-role + event ingress** (`duh/duhwave/coordinator/role.py`, `duh/duhwave/ingress/`, `duh/duhwave/cli/dispatcher.py`, [ADR-031](../adrs/ADR-031-coordinator-prompt-role-event-ingress.md)) — Role = system prompt + tool allowlist + spawn_depth; tool-filtering enforces the synthesis-mandate by absence. Five ingress listeners — `WebhookListener` (aiohttp + HMAC verify via `X-Duh-Signature`), `FileWatchListener` (watchfiles), `CronListener` (croniter), `MCPPushListener` (stub pending MCP notification API), `ManualSeam` (Unix socket).
+- **Topology DSL + signed bundles + 10-subcommand control plane** (`duh/duhwave/{spec,bundle,cli}/`, [ADR-032](../adrs/ADR-032-swarm-topology-bundles-control-plane.md)) — declare your whole swarm in one TOML file (agents, models, tools, triggers, edges, budget); pack into a deterministic Ed25519-signable `.duhwave` archive (sorted entries, fixed mtime); manage via `duh wave start / stop / ls / inspect / pause / resume / logs / install / uninstall / web` over a Unix-socket RPC to a `HostState` daemon.
+- **Real-OpenAI agile-team benchmark** (`benchmarks/duhwave-agile/RESULT.md`, `examples/duhwave/agile_team/`) — 5-stage PM → Architect → Engineer → Tester → Reviewer pipeline. **5/5 stages, 35.5 s wall, $0.0015 per run on gpt-4o-mini** (3,934 prompt + 1,553 completion tokens). gpt-4o lane: 5/5 stages, 29.3 s, $0.0308 — ~20× the cost for ~9% more output. Pytest pass rate on produced code: 3/5 (mini), 5/6 (gpt-4o); both surfaced real cross-agent coordination defects.
+
+### Runnable demos (new)
+
+- `examples/duhwave/01_rlm_demo.py` — RLM substrate single-agent.
+- `examples/duhwave/02_swarm_demo.py` — cross-agent handle-passing.
+- `examples/duhwave/03_event_driven.py` — webhook → trigger → matcher.
+- `examples/duhwave/04_topology_bundle.py` — pack → install → daemon → manual seam.
+- `examples/duhwave/repo_triage/main.py` — full multi-agent showpiece (~400 LOC, stub workers).
+- `examples/duhwave/parity_hermes/run_all.py` — Hermes feature-parity matrix (5 patterns).
+- `examples/duhwave/parity_claw/run_all.py` — always-on multi-channel parity (4 channels).
+- `examples/duhwave/agile_team/main.py` — 5-agent agile-team headless run (stub or real OpenAI).
+- `examples/duhwave/telegram_assistant/main.py` — mock Telegram bus + real OpenAI (3 flows: inbound webhook, scheduled cron, on-demand manual).
+- `examples/duhwave/real_e2e/main.py` — daemon-driven webhook → real OpenAI agent → outbox.
+
+### Cookbook (new)
+
+- `docs/cookbook/build-your-own-swarm.md` — companion to `build-your-own-agent.md`; walks the six duhwave primitives bottom-up, with the `repo_triage/` showpiece as the runnable target.
+
+### Documentation (new)
+
+- New ADR set: ADR-028, ADR-029, ADR-030, ADR-031, ADR-032 — all Accepted (implemented).
+- New wiki pages: [Duhwave](Duhwave), [Examples](Examples).
+- New wiki sections: `Architecture.md` §5b "duhwave layer (ADRs 028–032)"; `Multi-Agent.md` "duhwave swarms".
+
+### Stats
+
+- **343 duhwave tests passing** (319 unit + 24 integration), 0 failing — on top of the v0.8.0 suite, **6377 tests total** across the project (`pytest tests/unit tests/integration -q`).
+- **5 new ADRs**, all Accepted (implemented).
+- **10 new runnable examples** under `examples/duhwave/`, plus the existing single-agent cookbook example at `examples/hermes_style/agent.py`.
+- **Kernel: zero changes.** Adapters: zero changes. duhwave is purely additive.
+
+---
+
 ## v0.8.0 (2026-04-19) — Native providers, tiered agents, TUI parity
 
 Sixteen merged PRs (#33 → #48) across three themes: closing the external QE swarm audit tail (SEC-LOW/INFO and quality-experience follow-ups), a three-wave TUI parity sprint with matching three-tier E2E test infrastructure, and a provider strategy pivot — LiteLLM is demoted from "default" to "opt-in fallback" in favor of native `google-genai` and `groq` SDK adapters.

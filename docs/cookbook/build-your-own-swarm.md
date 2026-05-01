@@ -654,16 +654,18 @@ If you ship any of these, send a PR. The patterns generalise.
 
 ## See also
 
-- [ADR-028](../../adrs/ADR-028-rlm-context-engine.md) — RLM context
+- [ADR-028 (duhwave)](../adrs/ADR-028-duhwave-rlm-context-engine.md) — RLM context
   engine (the substrate this whole cookbook stands on).
-- [ADR-029](../../adrs/ADR-029-recursive-cross-agent-links.md) —
+- [ADR-029 (duhwave)](../adrs/ADR-029-duhwave-recursive-cross-agent-links.md) —
   recursive cross-agent links (handle exposure, bind-back).
-- [ADR-030](../../adrs/ADR-030-persistent-task-lifecycle.md) — Task
+- [ADR-030 (duhwave)](../adrs/ADR-030-duhwave-persistent-task-lifecycle.md) — Task
   primitive (state machine, three surfaces).
-- [ADR-031](../../adrs/ADR-031-coordinator-prompt-role-event-ingress.md)
+- [ADR-031 (duhwave)](../adrs/ADR-031-duhwave-coordinator-prompt-role-event-ingress.md)
   — coordinator role + event ingress.
-- [ADR-032](../../adrs/ADR-032-swarm-topology-bundles-control-plane.md)
+- [ADR-032 (duhwave)](../adrs/ADR-032-duhwave-swarm-topology-bundles-control-plane.md)
   — topology DSL, bundle format, control plane.
+- [Index of all five duhwave ADRs](../adrs/ADR-duhwave-INDEX.md) —
+  cross-cutting summary + verification quick-start.
 - [`build-your-own-agent.md`](./build-your-own-agent.md) — the
   single-agent cookbook this one extends.
 

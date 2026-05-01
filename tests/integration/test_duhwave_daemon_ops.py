@@ -381,10 +381,15 @@ def _post_json(host: str, port: int, path: str, body: dict) -> int:
 class TestDaemonListenerAutoBoot:
     """ADR-031 §B: ``_Host.run`` walks each swarm's triggers and starts
     the appropriate listener. No CLI workaround should be needed.
+
+    The webhook listener requires ``aiohttp``; tests skip cleanly if
+    that optional dep is absent (matches the croniter / watchfiles
+    pattern elsewhere in the suite).
     """
 
     def test_webhook_listener_binds_topology_port(self):
         """A webhook trigger in swarm.toml → daemon binds that port."""
+        pytest.importorskip("aiohttp")
         waves_root = _short_tmp()
         proc: subprocess.Popen | None = None
         port = _free_port()
@@ -403,6 +408,7 @@ class TestDaemonListenerAutoBoot:
             shutil.rmtree(waves_root, ignore_errors=True)
 
     def test_post_to_listener_lands_in_trigger_log(self):
+        pytest.importorskip("aiohttp")
         """POST → daemon-managed listener → triggers.jsonl gets one entry."""
         waves_root = _short_tmp()
         proc: subprocess.Popen | None = None
@@ -440,6 +446,7 @@ class TestDaemonListenerAutoBoot:
             shutil.rmtree(waves_root, ignore_errors=True)
 
     def test_sigterm_stops_listener_cleanly(self):
+        pytest.importorskip("aiohttp")
         """SIGTERM → listener releases the TCP port within a few seconds.
 
         Cleanly, here, means: the next bind on the same port succeeds.

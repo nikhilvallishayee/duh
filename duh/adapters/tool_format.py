@@ -172,14 +172,23 @@ def _hermes_inject(tools: list[Any], base: str) -> str:
 
 
 def _hermes_parse(text: str) -> tuple[str, list[ParsedToolCall]]:
+    from duh.adapters.tool_repair import repair_tool_arguments
+
     calls: list[ParsedToolCall] = []
     for match in _HERMES_PATTERN.finditer(text):
         payload = _extract_first_json(match.group(1))
         if not payload:
             continue
         name = str(payload.get("name", ""))
-        args = payload.get("arguments", {})
-        if not name or not isinstance(args, dict):
+        # Hermes-style fine-tunes (and the Hermes-2 dataset) commonly
+        # emit slightly-broken JSON inside the <tool_call> tag. Repair
+        # the args block before failing.
+        raw_args = payload.get("arguments", {})
+        args = (
+            raw_args if isinstance(raw_args, dict)
+            else repair_tool_arguments(raw_args)
+        )
+        if not name or args is None:
             continue
         calls.append(ParsedToolCall(name=name, arguments=args))
     cleaned = _HERMES_PATTERN.sub("", text).strip()

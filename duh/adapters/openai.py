@@ -323,10 +323,14 @@ class OpenAIProvider:
 
             for idx in sorted(tool_calls):
                 tc = tool_calls[idx]
-                try:
-                    parsed_input = json.loads(tc["arguments"])
-                except (json.JSONDecodeError, KeyError):
-                    parsed_input = {}
+                # ADR-028: Hermes-style argument-repair pipeline. Open-weights
+                # and local-fine-tuned models routinely emit not-quite-JSON
+                # in their tool-call arguments — trailing commas, Python
+                # literals, smart quotes, bare control chars. Strict
+                # ``json.loads`` fails; the repair middleware recovers the
+                # structured args without masking genuine breakage.
+                from duh.adapters.tool_repair import repair_tool_arguments
+                parsed_input = repair_tool_arguments(tc.get("arguments")) or {}
                 content_blocks.append({
                     "type": "tool_use",
                     "id": tc["id"],
